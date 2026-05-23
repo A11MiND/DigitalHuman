@@ -1312,14 +1312,8 @@ inputText.onkeydown = e => {
   }
 };
 
-// Init
-connect();
-document.getElementById('vidIdle').play().catch(() => {});
-// 默认画面位置
+// ── 默认画面位置 ──
 const _videoPos = { idlePosX: 50, idlePosY: 50, idleScale: 100, talkPosX: 50, talkPosY: 50, talkScale: 100 };
-applyVideoPosition(_videoPos);
-
-// ── 设置面板 ──
 
 function thumbTransform(thumbId, px, py, scale) {
   const el = document.getElementById(thumbId);
@@ -1346,8 +1340,8 @@ const TTS = {
 };
 
 function syncTtsToServer() {
-  if (!wsOk || !ws || ws.readyState !== 1) return;
-  ws.send(JSON.stringify({
+  if (!wsOk || !ws || ws.readyState !== 1) { console.warn('[TTS] sync skipped: WS not ready'); return; }
+  const payload = {
     type: 'tts_config',
     language: ttsLanguage, voiceId: ttsVoiceId,
     speed: TTS.speed, vol: TTS.vol, pitch: TTS.pitch,
@@ -1356,7 +1350,9 @@ function syncTtsToServer() {
     voiceModifyIntensity: TTS.vmIntensity,
     voiceModifyTimbre: TTS.vmTimbre,
     soundEffect: TTS.soundEffect || null,
-  }));
+  };
+  console.log('[TTS] sync →', payload.language, payload.voiceId, 'speed:', payload.speed, 'vol:', payload.vol);
+  ws.send(JSON.stringify(payload));
 }
 
 connect();
