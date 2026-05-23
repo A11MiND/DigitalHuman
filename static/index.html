@@ -873,12 +873,14 @@ function connect() {
   ws = new WebSocket(`${protocol}//${location.host}/ws`);
   ws.binaryType = 'arraybuffer';
 
-  ws.onopen = () => { wsOk = true; updateStatus('在線'); syncTtsToServer(); };
-  ws.onclose = () => { wsOk = false; setTimeout(connect, 3000); };
+  let _wsDelay = 1000;
+  ws.onopen = () => { wsOk = true; _wsDelay = 1000; updateStatus('在線'); syncTtsToServer(); };
+  ws.onclose = () => { wsOk = false; setTimeout(connect, _wsDelay); _wsDelay = Math.min(_wsDelay * 2, 30000); };
   ws.onerror = e => console.error('WS error:', e);
   ws.onmessage = e => {
     if (typeof e.data === 'string') {
-      handleMsg(JSON.parse(e.data));
+      try { handleMsg(JSON.parse(e.data)); }
+      catch (err) { console.warn('WS bad JSON:', err); }
     } else {
       playAudio(e.data);
     }
@@ -1102,7 +1104,6 @@ function stopRecognition() {
 // ── Events: 顶部开关 vs 底部触发按钮 ──
 
 // 底部按钮：触发录音动作
-let pendingVoiceResult = false;
 btnTalk.onclick = () => {
   if (!micOn) { alert('請先在設置中開啟語音輸入'); return; }
   if (processing) return;

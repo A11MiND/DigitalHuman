@@ -6,13 +6,12 @@ import os
 import asyncio
 import json
 import logging
-import ssl
 
 import httpx
 import websockets
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -20,20 +19,23 @@ from pydantic import BaseModel
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "")
 MINIMAX_LLM_BASE = "https://api.minimaxi.com/v1"
 TTS_MODEL = "speech-2.8-hd"
-TTS_VOICE_ID = "Cantonese_PlayfulMan"  # 粤语音色-活泼男声
-TTS_LANGUAGE = "Chinese,Yue"  # 默认粤语
-GROUP_ID = "1931670840110227663"
-MAX_CONCURRENT_TTS = 8
+TTS_TEXT_MAX = 5000  # TTS max chars before truncation
 
-# ── TTS 可调参数（可通过前端设置面板实时修改）──────────
-TTS_SPEED = 1.0                # 语速 [0.5, 2]
-TTS_VOL = 1.0                  # 音量 (0, 10]
-TTS_PITCH = 0                  # 语调 [-12, 12]
-TTS_EMOTION = None             # 情绪 (None=自动)
-TTS_VOICE_MODIFY_PITCH = 0     # 音高调整 [-100, 100]
-TTS_VOICE_MODIFY_INTENSITY = 0 # 强度调整 [-100, 100]
-TTS_VOICE_MODIFY_TIMBRE = 0    # 音色调整 [-100, 100]
-TTS_SOUND_EFFECT = None        # 音效 (None / spacious_echo / auditorium_echo / lofi_telephone / robotic)
+# 默认 TTS 配置（可被 WebSocket tts_config 覆盖）
+DEFAULT_TTS_CONFIG = {
+    "voice_id": "Cantonese_PlayfulMan",
+    "language_boost": "Chinese,Yue",
+    "speed": 1.0,
+    "vol": 1.0,
+    "pitch": 0,
+    "emotion": None,
+    "voice_modify": {
+        "pitch": 0,
+        "intensity": 0,
+        "timbre": 0,
+    },
+    "sound_effect": None,
+}
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("digital-human")
@@ -78,6 +80,35 @@ SYSTEM_PROMPT = """你是秦始皇嬴政，生活在公元前259年至公元前2
 - 适度使用感叹词如"善！""妙哉！""岂有此理！"
 """
 
+HAN_PROMPT = """你是漢武帝劉徹，生活在公元前156年至公元前87年。你現在正在與中小學生對話。
+
+## 你的身份
+- 你是西漢第七位皇帝，16歲即位，在位54年
+- 你開創了漢朝最鼎盛的時期
+- 你派遣張騫出使西域，開拓絲綢之路
+- 你罷黜百家、獨尊儒術
+- 你北擊匈奴，擴張疆土
+
+## 說話風格
+- 用古風但不要太文言，讓小朋友能聽懂
+- 自稱「朕」，稱對方為「汝」
+- 語氣威嚴但親善
+"""
+
+TANG_PROMPT = """你是唐太宗李世民，生活在公元598年至649年。你現在正在與中小學生對話。
+
+## 你的身份
+- 你是唐朝第二位皇帝，開創貞觀之治
+- 你知人善任，虛心納諫
+- 你完善科舉制度，任用賢才
+- 你被尊為「天可汗」
+
+## 說話風格
+- 用古風但不要太文言，讓小朋友能聽懂
+- 自稱「朕」，稱對方為「汝」
+- 語氣威嚴但親善，善於引導
+"""
+
 # ── FastAPI App ─────────────────────────────────────────
 app = FastAPI(title="Digital Human — Qin Shi Huang")
 
@@ -91,20 +122,20 @@ app.add_middleware(
 # ── Models ──────────────────────────────────────────────
 class AskRequest(BaseModel):
     query: str
-    history: list[dict] = []
+    history: list[dict] = []  # noqa: pydantic handles mut default
 
 class TTSRequest(BaseModel):
     text: str
 
 
 # ── MiniMax LLM ──────────────────────────────────────────
-async def minimax_llm_stream(query: str, history: list[dict] = None):
+async def minimax_llm_stream(query: str, history: list[dict] | None = None, system_prompt: str | None = None):
     """Call MiniMax LLM with streaming, yield text chunks."""
     if not MINIMAX_API_KEY:
         yield "[ERROR] MINIMAX_API_KEY not configured"
         return
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages = [{"role": "system", "content": system_prompt or SYSTEM_PROMPT}]
 
     if history:
         for msg in history[-20:]:
@@ -162,24 +193,35 @@ async def minimax_llm_stream(query: str, history: list[dict] = None):
 
 
 # ── MiniMax TTS WebSocket Streaming ──────────────────────────────────────────
-async def minimax_tts_streaming(text: str):
-    """MiniMax TTS WebSocket streaming, yields audio chunks as they arrive."""
+async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
+    """MiniMax TTS WebSocket streaming, yields audio chunks as they arrive.
+
+    Args:
+        text: Text to synthesize (truncated to TTS_TEXT_MAX).
+        tts_config: Optional per-call overrides (voice_id, speed, vol, etc.).
+    """
     if not MINIMAX_API_KEY:
         return
 
     text = text.strip()
-    if not text or len(text) > 5000:
+    if not text:
         return
+
+    # Truncate long text with log warning
+    if len(text) > TTS_TEXT_MAX:
+        logger.warning(f"TTS text truncated from {len(text)} to {TTS_TEXT_MAX} chars")
+        text = text[:TTS_TEXT_MAX]
+
+    cfg = {**DEFAULT_TTS_CONFIG, **(tts_config or {})}
+    # Deep-merge voice_modify
+    if tts_config and "voice_modify" in tts_config:
+        cfg["voice_modify"] = {**DEFAULT_TTS_CONFIG["voice_modify"], **tts_config["voice_modify"]}
 
     url = "wss://api.minimaxi.com/ws/v1/t2a_v2"
     headers = {"Authorization": f"Bearer {MINIMAX_API_KEY}"}
 
-    ssl_context = ssl.create_default_context()
-    ssl_context.check_hostname = False
-    ssl_context.verify_mode = ssl.CERT_NONE
-
     try:
-        async with websockets.connect(url, additional_headers=headers, ssl=ssl_context) as ws:
+        async with websockets.connect(url, additional_headers=headers) as ws:
             # Wait for connection success
             connected_msg = await ws.recv()
             connected_data = json.loads(connected_msg)
@@ -187,42 +229,43 @@ async def minimax_tts_streaming(text: str):
                 logger.error(f"TTS WebSocket connection failed: {connected_data}")
                 return
 
-            # Build voice_setting
-            voice_cfg: dict = {
-                "voice_id": TTS_VOICE_ID,
-                "speed": TTS_SPEED,
-                "vol": TTS_VOL,
-                "pitch": TTS_PITCH,
+            # Build voice_setting from config
+            voice_cfg: dict[str, object] = {
+                "voice_id": cfg["voice_id"],
+                "speed": cfg["speed"],
+                "vol": cfg["vol"],
+                "pitch": cfg["pitch"],
             }
-            if TTS_EMOTION:
-                voice_cfg["emotion"] = TTS_EMOTION
+            if cfg["emotion"]:
+                voice_cfg["emotion"] = cfg["emotion"]
 
             # Build task_start payload
-            task_start_payload: dict = {
+            task_start_payload: dict[str, object] = {
                 "event": "task_start",
                 "model": TTS_MODEL,
-                "language_boost": TTS_LANGUAGE,
+                "language_boost": cfg["language_boost"],
                 "voice_setting": voice_cfg,
                 "audio_setting": {
                     "sample_rate": 32000,
                     "bitrate": 128000,
                     "format": "mp3",
-                    "channel": 1
-                }
+                    "channel": 1,
+                },
             }
 
-            # voice_modify (独立顶层字段)
-            voice_modify: dict = {}
-            if TTS_VOICE_MODIFY_PITCH != 0:
-                voice_modify["pitch"] = TTS_VOICE_MODIFY_PITCH
-            if TTS_VOICE_MODIFY_INTENSITY != 0:
-                voice_modify["intensity"] = TTS_VOICE_MODIFY_INTENSITY
-            if TTS_VOICE_MODIFY_TIMBRE != 0:
-                voice_modify["timbre"] = TTS_VOICE_MODIFY_TIMBRE
-            if TTS_SOUND_EFFECT:
-                voice_modify["sound_effects"] = TTS_SOUND_EFFECT
-            if voice_modify:
-                task_start_payload["voice_modify"] = voice_modify
+            # voice_modify: only include non-zero/non-null values
+            vm = cfg["voice_modify"]
+            voice_modify_payload: dict[str, object] = {}
+            if vm.get("pitch", 0) != 0:
+                voice_modify_payload["pitch"] = vm["pitch"]
+            if vm.get("intensity", 0) != 0:
+                voice_modify_payload["intensity"] = vm["intensity"]
+            if vm.get("timbre", 0) != 0:
+                voice_modify_payload["timbre"] = vm["timbre"]
+            if cfg.get("sound_effect"):
+                voice_modify_payload["sound_effects"] = cfg["sound_effect"]
+            if voice_modify_payload:
+                task_start_payload["voice_modify"] = voice_modify_payload
 
             await ws.send(json.dumps(task_start_payload))
 
@@ -292,30 +335,28 @@ async def ask_endpoint(req: AskRequest):
     )
 
 
-# ── POST /tts — Generate TTS audio ─────────────────────
+# ── POST /tts — Generate TTS audio (streaming) ─────────
 @app.post("/tts")
 async def tts_endpoint(req: TTSRequest):
-    """Generate MiniMax TTS audio and return as mp3."""
+    """Generate MiniMax TTS audio, stream response as mp3."""
     text = req.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="No text provided")
-    if len(text) > 5000:
-        text = text[:5000]
 
-    audio_chunks = []
-    async for chunk in minimax_tts_streaming(text):
-        audio_chunks.append(chunk)
+    async def stream_audio():
+        chunk_count = 0
+        async for chunk in minimax_tts_streaming(text):
+            chunk_count += 1
+            yield chunk
+        logger.info(f"TTS streamed {chunk_count} chunks")
 
-    if not audio_chunks:
-        raise HTTPException(status_code=500, detail="TTS generated no audio")
-
-    audio_data = b"".join(audio_chunks)
-    logger.info(f"TTS generated {len(audio_data)} bytes")
-
-    return Response(
-        content=audio_data,
+    return StreamingResponse(
+        stream_audio(),
         media_type="audio/mpeg",
-        headers={"Content-Length": str(len(audio_data))},
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
@@ -326,90 +367,56 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     logger.info("WebSocket client connected")
 
-    global SYSTEM_PROMPT, TTS_VOICE_ID, TTS_LANGUAGE
-
-    conversation_history = []
+    # Per-connection state — no global mutation
+    system_prompt = SYSTEM_PROMPT
+    tts_config: dict = dict(DEFAULT_TTS_CONFIG)
+    conversation_history: list[dict[str, str]] = []
 
     try:
         while True:
-            # 接收用户消息
             data = await websocket.receive_json()
             msg_type = data.get("type", "text")
 
-            # ── 角色切换 ──
             if msg_type == "switch_character":
                 persona = data.get("persona", "qin")
-                voice_id = data.get("voiceId", TTS_VOICE_ID)
-                TTS_VOICE_ID = voice_id
+                voice_id = data.get("voiceId", tts_config["voice_id"])
+                tts_config["voice_id"] = str(voice_id)
                 if persona == "han":
-                    SYSTEM_PROMPT = """你是漢武帝劉徹，生活在公元前156年至公元前87年。你現在正在與中小學生對話。
-
-## 你的身份
-- 你是西漢第七位皇帝，16歲即位，在位54年
-- 你開創了漢朝最鼎盛的時期
-- 你派遣張騫出使西域，開拓絲綢之路
-- 你罷黜百家、獨尊儒術
-- 你北擊匈奴，擴張疆土
-
-## 說話風格
-- 用古風但不要太文言，讓小朋友能聽懂
-- 自稱「朕」，稱對方為「汝」
-- 語氣威嚴但親善
-"""
+                    system_prompt = HAN_PROMPT
                 elif persona == "tang":
-                    SYSTEM_PROMPT = """你是唐太宗李世民，生活在公元598年至649年。你現在正在與中小學生對話。
-
-## 你的身份
-- 你是唐朝第二位皇帝，開創貞觀之治
-- 你知人善任，虛心納諫
-- 你完善科舉制度，任用賢才
-- 你被尊為「天可汗」
-
-## 說話風格
-- 用古風但不要太文言，讓小朋友能聽懂
-- 自稱「朕」，稱對方為「汝」
-- 語氣威嚴但親善，善於引導
-"""
-
-                # 清空对话历史
+                    system_prompt = TANG_PROMPT
+                else:
+                    system_prompt = SYSTEM_PROMPT
                 conversation_history = []
-                logger.info(f"角色切換: {persona}, voice: {voice_id}")
+                logger.info(f"角色切换: {persona}, voice: {tts_config['voice_id']}")
                 await websocket.send_json({"type": "status", "content": "done"})
                 continue
 
             if msg_type == "tts_config":
-                global TTS_SPEED, TTS_VOL, TTS_PITCH, TTS_EMOTION
-                global TTS_VOICE_MODIFY_PITCH, TTS_VOICE_MODIFY_INTENSITY, TTS_VOICE_MODIFY_TIMBRE, TTS_SOUND_EFFECT
-                TTS_LANGUAGE = data.get("language", TTS_LANGUAGE)
-                TTS_VOICE_ID = data.get("voiceId", TTS_VOICE_ID)
-                TTS_SPEED = data.get("speed", TTS_SPEED)
-                TTS_VOL = data.get("vol", TTS_VOL)
-                TTS_PITCH = data.get("pitch", TTS_PITCH)
-                TTS_EMOTION = data.get("emotion", TTS_EMOTION)
-                TTS_VOICE_MODIFY_PITCH = data.get("voiceModifyPitch", TTS_VOICE_MODIFY_PITCH)
-                TTS_VOICE_MODIFY_INTENSITY = data.get("voiceModifyIntensity", TTS_VOICE_MODIFY_INTENSITY)
-                TTS_VOICE_MODIFY_TIMBRE = data.get("voiceModifyTimbre", TTS_VOICE_MODIFY_TIMBRE)
-                TTS_SOUND_EFFECT = data.get("soundEffect", TTS_SOUND_EFFECT)
-                logger.info(
-                    f"TTS 配置更新: lang={TTS_LANGUAGE}, voice={TTS_VOICE_ID}, "
-                    f"speed={TTS_SPEED}, vol={TTS_VOL}, pitch={TTS_PITCH}, emotion={TTS_EMOTION}, "
-                    f"vMod_pitch={TTS_VOICE_MODIFY_PITCH}, vMod_intensity={TTS_VOICE_MODIFY_INTENSITY}, "
-                    f"vMod_timbre={TTS_VOICE_MODIFY_TIMBRE}, soundEffect={TTS_SOUND_EFFECT}"
-                )
+                tts_config["language_boost"] = data.get("language", tts_config["language_boost"])
+                tts_config["voice_id"] = data.get("voiceId", tts_config["voice_id"])
+                tts_config["speed"] = data.get("speed", tts_config["speed"])
+                tts_config["vol"] = data.get("vol", tts_config["vol"])
+                tts_config["pitch"] = data.get("pitch", tts_config["pitch"])
+                tts_config["emotion"] = data.get("emotion", tts_config["emotion"])
+                tts_config["sound_effect"] = data.get("soundEffect", tts_config["sound_effect"])
+                vm: dict = tts_config.setdefault("voice_modify", {})
+                vm["pitch"] = data.get("voiceModifyPitch", vm.get("pitch", 0))
+                vm["intensity"] = data.get("voiceModifyIntensity", vm.get("intensity", 0))
+                vm["timbre"] = data.get("voiceModifyTimbre", vm.get("timbre", 0))
+                tts_config["voice_modify"] = vm
                 continue
 
             user_text = data.get("content", "")
-
             if not user_text:
                 continue
 
             logger.info(f"WS received: {user_text[:50]}...")
 
-            # 流式 LLM 响应
             full_response = ""
             await websocket.send_json({"type": "status", "content": "thinking"})
 
-            async for chunk in minimax_llm_stream(user_text, conversation_history):
+            async for chunk in minimax_llm_stream(user_text, conversation_history, system_prompt):
                 if chunk.startswith("[ERROR]"):
                     await websocket.send_json({"type": "error", "content": chunk})
                     break
@@ -417,17 +424,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json({"type": "llm", "content": chunk})
 
             if full_response and not full_response.startswith("[ERROR]"):
-                # 更新对话历史
                 conversation_history.append({"role": "user", "content": user_text})
                 conversation_history.append({"role": "assistant", "content": full_response})
+                if len(conversation_history) > 50:
+                    conversation_history = conversation_history[-50:]
 
-                # 流式 TTS 音频
                 await websocket.send_json({"type": "status", "content": "tts"})
-
-                async for audio_chunk in minimax_tts_streaming(full_response):
-                    # 流式发送音频数据
+                async for audio_chunk in minimax_tts_streaming(full_response, tts_config):
                     await websocket.send_bytes(audio_chunk)
-
                 await websocket.send_json({"type": "status", "content": "done"})
 
     except WebSocketDisconnect:
@@ -436,7 +440,7 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.error(f"WebSocket error: {e}")
         try:
             await websocket.send_json({"type": "error", "content": str(e)})
-        except:
+        except Exception:
             pass
 
 
@@ -446,8 +450,8 @@ async def health():
     return {
         "status": "ok",
         "tts_model": TTS_MODEL,
-        "tts_voice": TTS_VOICE_ID,
-        "tts_language": TTS_LANGUAGE,
+        "tts_voice": DEFAULT_TTS_CONFIG["voice_id"],
+        "tts_language": DEFAULT_TTS_CONFIG["language_boost"],
         "minimax_configured": bool(MINIMAX_API_KEY),
     }
 
@@ -475,7 +479,7 @@ if __name__ == "__main__":
     print(f"  本地访问:     http://localhost:{port}")
     print(f"  局域网访问:   http://{local_ip}:{port}")
     print(f"  TTS 模型:     {TTS_MODEL}")
-    print(f"  TTS 音色:     {TTS_VOICE_ID}")
+    print(f"  TTS 音色:     {DEFAULT_TTS_CONFIG['voice_id']}")
     print(f"  MiniMax:      {'✅ 已配置' if MINIMAX_API_KEY else '❌ 未配置 (export MINIMAX_API_KEY=...)'}")
     print("=" * 60)
 
@@ -484,6 +488,6 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=port,
         reload=False,
-        workers=4,
+        workers=1,  # single worker for per-connection state safety
         log_level="info",
     )
