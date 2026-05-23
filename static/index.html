@@ -899,7 +899,7 @@ function _startStreamingAudio() {
   _msEnd();
   _ms = null; _msBuf = null; _msQueue = []; _msUpdating = false;
 
-  const mime = 'audio/mpeg; codecs="mp3"';
+  const mime = 'audio/mpeg';
   if (!window.MediaSource || !MediaSource.isTypeSupported(mime)) {
     // Fallback: buffer and blob (Safari, old browsers)
     console.log('[Audio] MediaSource 不支援，降級 blob 模式');
