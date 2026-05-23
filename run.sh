@@ -89,7 +89,7 @@ if $USE_TUNNEL; then
     fi
 
     export PORT
-    python3 server.py &
+    /opt/homebrew/bin/python3.13 server.py &
     SERVER_PID=$!
     sleep 2
 
@@ -114,5 +114,5 @@ else
     echo "  ⌨️  按 Ctrl+C 關閉"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     export PORT
-    exec python3 server.py
+    exec /opt/homebrew/bin/python3.13 server.py
 fi
