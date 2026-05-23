@@ -6,6 +6,7 @@ import os
 import asyncio
 import json
 import logging
+import time
 from copy import deepcopy
 
 import httpx
@@ -376,6 +377,51 @@ async def websocket_endpoint(websocket: WebSocket):
                 vm["intensity"] = data.get("voiceModifyIntensity", vm.get("intensity", 0))
                 vm["timbre"] = data.get("voiceModifyTimbre", vm.get("timbre", 0))
                 tts_config["voice_modify"] = vm
+                continue
+
+            if msg_type == "diag_test":
+                # 用当前 tts_config 参数做一次真实 TTS 调用
+                diag_start = time.time()
+                diag_config: dict = dict(data.get("ttsConfig", {}))  # 前端可选参数
+                diag_lang: str = str(data.get("language", tts_config["language_boost"]))
+                diag_voice: str = str(data.get("voiceId", tts_config["voice_id"]))
+                # 合并前端传来的值
+                effective = dict(tts_config)
+                if diag_config:
+                    effective.update(diag_config)
+                effective["language_boost"] = diag_lang
+                effective["voice_id"] = diag_voice
+                try:
+                    first_chunk = None
+                    async for chunk in minimax_tts_streaming("測試", effective):
+                        if chunk:
+                            first_chunk = chunk
+                            break
+                    diag_ms = int((time.time() - diag_start) * 1000)
+                    if first_chunk:
+                        await websocket.send_json({
+                            "type": "diag_result",
+                            "ok": True,
+                            "ttsMs": diag_ms,
+                            "voiceId": effective["voice_id"],
+                            "language": effective["language_boost"],
+                            "model": TTS_MODEL,
+                        })
+                    else:
+                        await websocket.send_json({
+                            "type": "diag_result",
+                            "ok": False,
+                            "error": "TTS 返回空白音頻",
+                            "ttsMs": diag_ms,
+                        })
+                except Exception as diag_err:
+                    diag_ms = int((time.time() - diag_start) * 1000)
+                    await websocket.send_json({
+                        "type": "diag_result",
+                        "ok": False,
+                        "error": str(diag_err),
+                        "ttsMs": diag_ms,
+                    })
                 continue
 
             user_text = data.get("content", "")

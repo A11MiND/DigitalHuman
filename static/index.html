@@ -1556,27 +1556,68 @@ $('btnDiag').onclick = async () => {
   diagResults.innerHTML = `
     <div class="diag-item"><span class="diag-dot pending"></span> WebSocket 連線檢測中...</div>
     <div class="diag-item"><span class="diag-dot pending"></span> LLM API 檢測中...</div>
-    <div class="diag-item"><span class="diag-dot pending"></span> TTS 服務檢測中...</div>
+    <div class="diag-item"><span class="diag-dot pending"></span> TTS 服務檢測中（當前設置）...</div>
     <div class="diag-item"><span class="diag-dot pending"></span> 麥克風權限檢測中...</div>
   `;
 
   // 1. WebSocket
   updateDiag(0, wsOk ? 'ok' : 'fail', wsOk ? `WebSocket 已連線` : `WebSocket 斷線`);
 
-  // 2. LLM + TTS (health check)
+  // 2. LLM (health check)
   try {
     const start = Date.now();
     const res = await fetch('/health');
     const data = await res.json();
     const ping = Date.now() - start;
-    updateDiag(1, 'ok', `LLM API 延遲 ${ping}ms (${data.tts_model})`);
-    updateDiag(2, 'ok', `TTS ${data.tts_voice} 已就緒`);
+    updateDiag(1, 'ok', `LLM API 延遲 ${ping}ms（模型: ${data.tts_model}）`);
   } catch(e) {
     updateDiag(1, 'fail', 'LLM API 無法連線');
-    updateDiag(2, 'fail', 'TTS 服務異常');
   }
 
-  // 3. Mic
+  // 3. TTS 实际测试（用当前设置参数）
+  if (wsOk && ws && ws.readyState === 1) {
+    const diagReq = {
+      type: 'diag_test',
+      language: ttsLanguage,
+      voiceId: ttsVoiceId,
+      ttsConfig: {
+        speed: TTS.speed, vol: TTS.vol, pitch: TTS.pitch,
+        emotion: TTS.emotion || null,
+        voice_modify: {
+          pitch: TTS.vmPitch, intensity: TTS.vmIntensity, timbre: TTS.vmTimbre,
+        },
+        sound_effect: TTS.soundEffect || null,
+      },
+    };
+    // 临时监听 diag_result
+    const onDiagResult = (msg) => {
+      try {
+        const d = JSON.parse(msg.data);
+        if (d.type !== 'diag_result') return;
+        ws.removeEventListener('message', onDiagResult);
+        if (d.ok) {
+          const langLabel = { 'Chinese,Yue': '粵語', 'Chinese': '普通話', 'English': 'English', 'auto': '自動' };
+          updateDiag(2, 'ok', `TTS 通過 ⚡${d.ttsMs}ms｜${langLabel[d.language] || d.language}·${d.voiceId}`);
+        } else {
+          updateDiag(2, 'fail', `TTS 失敗: ${d.error || '未知錯誤'}`);
+        }
+      } catch(e) {}
+    };
+    ws.addEventListener('message', onDiagResult);
+    ws.send(JSON.stringify(diagReq));
+    // 5秒超时
+    setTimeout(() => {
+      ws.removeEventListener('message', onDiagResult);
+      const el = diagResults.querySelectorAll('.diag-item')[2];
+      if (el && el.querySelector('.diag-dot.pending')) {
+        updateDiag(2, 'fail', 'TTS 測試超時');
+      }
+    }, 8000);
+  } else {
+    updateDiag(2, 'fail', 'TTS 無法測試（WebSocket 未連線）');
+  }
+
+  // 4. Mic
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     stream.getTracks().forEach(t => t.stop());
