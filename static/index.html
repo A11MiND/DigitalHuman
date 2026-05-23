@@ -880,7 +880,6 @@ let audioOn = true;
 let micOn = true;
 let callMode = false;       // 通话模式开关
 let callActive = false;     // 通话是否进行中
-let pressRecording = false; // 按住说话中
 let currentAudio = null;
 let audioUnlocked = false;
 let ws = null;
@@ -1165,28 +1164,26 @@ function initSR() {
     }
     if (final) {
       inputText.value = final;
+      // 普通模式 & 通话模式：都自动发送
+      sendQuery(final);
+      listening = false;
+      stopRecognition();
       if (callActive) {
-        // 通话模式：自动发送
-        sendQuery(final);
-        listening = false;
-        stopRecognition();
-        // 等 TTS 播完再继续聆听
+        // 通话模式：等 TTS 播完再继续
         _callWaitResume();
+      } else {
+        // 普通模式：短暂停顿后自动续听
+        setTimeout(() => { if (!processing && micOn && !callActive) { listening = true; try { recognition.start(); } catch(e) {} } }, 1200);
       }
-      // 正常模式：不自动发，等松手
     }
   };
 
   recognition.onerror = e => {
-    if (e.error !== 'no-speech') {
-      stopListening();
-      if (callActive) _callWaitResume();
-    }
+    if (e.error !== 'no-speech') stopListening();
   };
 
   recognition.onend = () => {
-    // 通话模式：持续复听（除非挂断）
-    if (callActive && listening) { try { recognition.start(); } catch(e) {} }
+    if (listening) { try { recognition.start(); } catch(e) {} }
   };
 
   return true;
@@ -1227,46 +1224,27 @@ function _callWaitResume() {
 
 // ── 按钮事件：双模式 ──
 
-// 正常模式：按住说话
-function _onTalkDown(e) {
-  if (callMode) return;
-  if (!micOn) { alert('請先在設置中開啟語音輸入'); return; }
-  if (processing) return;
-  e.preventDefault();
-  pressRecording = true;
-  inputText.value = '';
-  startListening();
-}
-
-function _onTalkUp(e) {
-  if (callMode) return;
-  if (!pressRecording) return;
-  e.preventDefault();
-  pressRecording = false;
-  stopListening();
-  // 延迟一下等 recognition 返回 final result
-  setTimeout(() => {
-    const t = inputText.value.trim();
-    if (t && !processing) sendQuery(t);
-    inputText.value = '';
-  }, 250);
-}
-
 // 通话模式：点击切换
 function _toggleCall() {
-  if (!callMode) return;
+  if (!callMode) {
+    // 普通模式：点一下开始聆听 → 再点停止（原有逻辑）
+    if (!micOn) { alert('請先在設置中開啟語音輸入'); return; }
+    if (processing) return;
+    if (listening) stopListening();
+    else startListening();
+    return;
+  }
+  // 通话模式
   if (!micOn) { alert('請先在設置中開啟語音輸入'); return; }
   if (processing && !callActive) return;
 
   if (callActive) {
-    // 挂断
     callActive = false;
     stopListening();
     btnTalk.classList.remove('call-mode', 'busy');
     btnTalk.title = '開始通話';
     updateStatus('在線');
   } else {
-    // 开始通话
     callActive = true;
     btnTalk.classList.add('call-mode');
     btnTalk.title = '掛斷';
@@ -1274,11 +1252,6 @@ function _toggleCall() {
   }
 }
 
-// 绑定
-btnTalk.addEventListener('pointerdown', _onTalkDown);
-btnTalk.addEventListener('pointerup', _onTalkUp);
-btnTalk.addEventListener('pointerleave', _onTalkUp);
-btnTalk.addEventListener('pointercancel', _onTalkUp);
 btnTalk.onclick = _toggleCall;
 
 // 顶部按钮：麦克风开关
