@@ -860,22 +860,99 @@ let listening = false;
 let audioOn = true;
 let micOn = true;
 let currentAudio = null;
-let audioBuffer = [];
 let audioUnlocked = false;
 let ws = null;
 let wsOk = false;
 let llmEl = null;
 let llmText = '';
 
+// ── MediaSource 真流式播放 ──
+let _ms = null;          // MediaSource instance
+let _msBuf = null;       // SourceBuffer
+let _msQueue = [];       // pending chunks while SourceBuffer updating
+let _msUpdating = false;
+
+function _msFlush() {
+  if (_msUpdating || !_msBuf || _msQueue.length === 0) return;
+  try {
+    _msUpdating = true;
+    _msBuf.appendBuffer(_msQueue.shift());
+  } catch (e) {
+    console.warn('[MS] append failed:', e);
+    _msUpdating = false;
+    _msQueue = [];
+  }
+}
+
+function _msFeed(chunk) {
+  _msQueue.push(chunk);
+  _msFlush();
+}
+
+function _msEnd() {
+  if (_ms && _ms.readyState === 'open') {
+    // Wait for queue to drain
+    const drain = () => {
+      if (_msQueue.length > 0 || _msUpdating) { setTimeout(drain, 50); return; }
+      try { _ms.endOfStream(); } catch (e) { /* already ended */ }
+    };
+    drain();
+  }
+  _msBuf = null;
+}
+
+function _startStreamingAudio() {
+  // Clean up previous
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  _msEnd();
+  _ms = null; _msBuf = null; _msQueue = []; _msUpdating = false;
+
+  const mime = 'audio/mpeg; codecs="mp3"';
+  if (!window.MediaSource || !MediaSource.isTypeSupported(mime)) {
+    // Fallback: buffer and blob (Safari, old browsers)
+    console.log('[Audio] MediaSource 不支援，降級 blob 模式');
+    window._audioBuffer = [];
+    return false;
+  }
+
+  _ms = new MediaSource();
+  const audio = new Audio();
+  audio.src = URL.createObjectURL(_ms);
+
+  _ms.addEventListener('sourceopen', () => {
+    try {
+      _msBuf = _ms.addSourceBuffer(mime);
+      _msBuf.mode = 'sequence';
+      _msBuf.addEventListener('updateend', () => {
+        _msUpdating = false;
+        _msFlush();
+      });
+      // Flush any chunks that arrived before sourceopen
+      _msFlush();
+    } catch (e) {
+      console.warn('[MS] sourceopen error:', e);
+    }
+  });
+
+  audio.play().catch(e => console.warn('[Audio] autoplay blocked:', e.message));
+  currentAudio = audio;
+  return true;
+}
+
 // WebSocket
+let _wsDelay = 1000;
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${protocol}//${location.host}/ws`);
   ws.binaryType = 'arraybuffer';
 
-  let _wsDelay = 1000;
   ws.onopen = () => { wsOk = true; _wsDelay = 1000; updateStatus('在線'); syncTtsToServer(); };
-  ws.onclose = () => { wsOk = false; setTimeout(connect, _wsDelay); _wsDelay = Math.min(_wsDelay * 2, 30000); };
+  ws.onclose = () => {
+    wsOk = false;
+    if (processing) { processing = false; updateStatus('離線'); switchVideo('idle'); _msEnd(); }
+    setTimeout(connect, _wsDelay);
+    _wsDelay = Math.min(_wsDelay * 2, 30000);
+  };
   ws.onerror = e => console.error('WS error:', e);
   ws.onmessage = e => {
     if (typeof e.data === 'string') {
@@ -891,22 +968,50 @@ function handleMsg(msg) {
   switch (msg.type) {
     case 'status':
       if (msg.content === 'thinking') updateStatus('思考中', 'thinking');
-      else if (msg.content === 'tts') { updateStatus('說話中', 'speaking'); audioBuffer = []; switchVideo('talk'); }
-      else if (msg.content === 'done') { processing = false; updateStatus('在線'); playBufferedAudio(); }
+      else if (msg.content === 'tts') {
+        updateStatus('說話中', 'speaking');
+        window._audioBuffer = [];
+        _startStreamingAudio();
+        switchVideo('talk');
+      }
+      else if (msg.content === 'done') {
+        processing = false; updateStatus('在線');
+        _msEnd();
+        // Fallback: if blob mode was used, play now
+        if (window._audioBuffer && window._audioBuffer.length > 0) {
+          const blob = new Blob(window._audioBuffer, { type: 'audio/mpeg' });
+          const url = URL.createObjectURL(blob);
+          const a = new Audio(url);
+          a.onended = () => { URL.revokeObjectURL(url); switchVideo('idle'); };
+          a.onerror = () => { URL.revokeObjectURL(url); switchVideo('idle'); };
+          a.play().catch(() => {});
+          currentAudio = a;
+        } else if (!_ms) {
+          switchVideo('idle');
+        } else if (currentAudio) {
+          currentAudio.onended = () => switchVideo('idle');
+        }
+      }
       break;
     case 'llm': appendLLM(msg.content); break;
-    case 'error': console.error('Error:', msg.content); processing = false; break;
+    case 'error': console.error('Error:', msg.content); processing = false; updateStatus('在線'); break;
   }
 }
 
 function send(text) {
-  if (!wsOk) return;
+  if (!wsOk) { processing = false; updateStatus('離線'); return; }
   ws.send(JSON.stringify({ type: 'text', content: text }));
 }
 
 function playAudio(data) {
   if (!audioOn) return;
-  audioBuffer.push(data);
+  if (_msBuf && _ms && _ms.readyState === 'open') {
+    _msFeed(new Uint8Array(data));
+  } else {
+    // Fallback blob mode
+    if (!window._audioBuffer) window._audioBuffer = [];
+    window._audioBuffer.push(data);
+  }
 }
 
 function appendLLM(delta) {
@@ -952,38 +1057,6 @@ function scrollBottom() {
   });
 }
 
-// ── Buffered Audio Playback ──
-function playBufferedAudio() {
-  if (!audioOn || audioBuffer.length === 0) { switchVideo('idle'); return; }
-
-  const blob = new Blob(audioBuffer, { type: 'audio/mpeg' });
-  const url = URL.createObjectURL(blob);
-  const audio = new Audio(url);
-
-  if (currentAudio) currentAudio.pause();
-  currentAudio = audio;
-
-  audio.onended = () => {
-    currentAudio = null;
-    URL.revokeObjectURL(url);
-    switchVideo('idle');
-  };
-  audio.onerror = () => {
-    currentAudio = null;
-    URL.revokeObjectURL(url);
-    switchVideo('idle');
-  };
-
-  audio.play().then(() => {
-    console.log('[Audio] 播放中, ' + audioBuffer.length + ' chunks');
-  }).catch(e => {
-    console.warn('[Audio] 瀏覽器阻止自動播放:', e.message);
-    updateStatus('點擊播放', 'speaking');
-  });
-
-  audioBuffer = [];
-}
-
 // Unlock audio on first user interaction
 ['click', 'touchstart'].forEach(evt => {
   document.addEventListener(evt, () => {
@@ -1023,9 +1096,11 @@ function switchVideo(type) {
 
 function sendQuery(text) {
   if (processing || !text.trim()) return;
+  if (!wsOk) { updateStatus('離線'); return; }
   processing = true;
   if (currentAudio) { currentAudio.pause(); currentAudio = null; }
-  audioBuffer = [];
+  _msEnd(); _ms = null; _msBuf = null; _msQueue = []; _msUpdating = false;
+  window._audioBuffer = [];
 
   addBubble('user', text);
   history.push({ role: 'user', content: text });

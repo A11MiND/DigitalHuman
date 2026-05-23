@@ -6,6 +6,7 @@ import os
 import asyncio
 import json
 import logging
+from copy import deepcopy
 
 import httpx
 import websockets
@@ -137,8 +138,8 @@ async def minimax_llm_stream(query: str, history: list[dict] | None = None, syst
 
     messages = [{"role": "system", "content": system_prompt or SYSTEM_PROMPT}]
 
-    if history:
-        for msg in history[-20:]:
+    history = history or []
+    for msg in history[-20:]:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             if role in ("user", "assistant") and content:
@@ -212,10 +213,11 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
         logger.warning(f"TTS text truncated from {len(text)} to {TTS_TEXT_MAX} chars")
         text = text[:TTS_TEXT_MAX]
 
-    cfg = {**DEFAULT_TTS_CONFIG, **(tts_config or {})}
-    # Deep-merge voice_modify
-    if tts_config and "voice_modify" in tts_config:
-        cfg["voice_modify"] = {**DEFAULT_TTS_CONFIG["voice_modify"], **tts_config["voice_modify"]}
+    cfg = deepcopy(DEFAULT_TTS_CONFIG)
+    if tts_config:
+        cfg.update({k: v for k, v in tts_config.items() if k != "voice_modify"})
+        if "voice_modify" in tts_config:
+            cfg["voice_modify"].update(tts_config["voice_modify"])
 
     url = "wss://api.minimaxi.com/ws/v1/t2a_v2"
     headers = {"Authorization": f"Bearer {MINIMAX_API_KEY}"}
@@ -309,6 +311,7 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
 
     except Exception as e:
         logger.error(f"MiniMax TTS WebSocket error: {e}")
+        raise  # propagate to caller for proper error handling
 
 
 # ── POST /ask — Stream LLM response (HTTP SSE) ──────────
@@ -430,8 +433,12 @@ async def websocket_endpoint(websocket: WebSocket):
                     conversation_history = conversation_history[-50:]
 
                 await websocket.send_json({"type": "status", "content": "tts"})
-                async for audio_chunk in minimax_tts_streaming(full_response, tts_config):
-                    await websocket.send_bytes(audio_chunk)
+                try:
+                    async for audio_chunk in minimax_tts_streaming(full_response, tts_config):
+                        await websocket.send_bytes(audio_chunk)
+                except Exception as tts_err:
+                    logger.error(f"TTS streaming failed: {tts_err}")
+                    await websocket.send_json({"type": "error", "content": f"TTS failed: {tts_err}"})
                 await websocket.send_json({"type": "status", "content": "done"})
 
     except WebSocketDisconnect:
