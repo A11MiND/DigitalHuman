@@ -827,15 +827,7 @@
     <button class="diag-btn" id="btnDiag">執行診斷</button>
     <div class="diag-results" id="diagResults" style="display:none"></div>
 
-    <!-- 模块2：角色切换 -->
-    <div class="settings-section-title">角色切換</div>
-    <select class="settings-select" id="charSelect">
-      <option value="qin">秦始皇嬴政</option>
-      <option value="han">漢武帝劉徹（即將推出）</option>
-      <option value="tang">唐太宗李世民（即將推出）</option>
-    </select>
-
-    <!-- 模块3：导出 -->
+    <!-- 模块2：导出对话 -->
     <div class="settings-section-title">對話記錄</div>
     <button class="export-btn" id="btnExport">匯出對話紀錄 (.json)</button>
 
@@ -1076,19 +1068,18 @@ function updateStatus(text, cls = '') {
 function switchVideo(type) {
   const vidIdle = document.getElementById('vidIdle');
   const vidTalk = document.getElementById('vidTalk');
-  const char = CHARACTERS[currentChar];
   if (type === 'talk') {
     vidIdle.style.display = 'none';
     vidTalk.style.display = 'block';
-    vidTalk.style.objectPosition = char.talkPosX + '% ' + char.talkPosY + '%';
-    vidTalk.style.transform = 'scale(' + (char.talkScale / 100) + ')';
+    vidTalk.style.objectPosition = _videoPos.talkPosX + '% ' + _videoPos.talkPosY + '%';
+    vidTalk.style.transform = 'scale(' + (_videoPos.talkScale / 100) + ')';
     vidTalk.play().catch(() => {});
     vidIdle.pause();
   } else {
     vidTalk.style.display = 'none';
     vidIdle.style.display = 'block';
-    vidIdle.style.objectPosition = char.idlePosX + '% ' + char.idlePosY + '%';
-    vidIdle.style.transform = 'scale(' + (char.idleScale / 100) + ')';
+    vidIdle.style.objectPosition = _videoPos.idlePosX + '% ' + _videoPos.idlePosY + '%';
+    vidIdle.style.transform = 'scale(' + (_videoPos.idleScale / 100) + ')';
     vidIdle.play().catch(() => {});
     vidTalk.pause();
   }
@@ -1217,35 +1208,14 @@ inputText.onkeydown = e => {
   }
 };
 
-// ── 角色配置 ──
-const CHARACTERS = {
-  qin: { name: '秦始皇嬴政', voiceId: 'Cantonese_PlayfulMan', idleVid: '/videos/idle.mp4', talkVid: '/videos/talk.mp4', idlePosX: 50, idlePosY: 50, idleScale: 100, talkPosX: 50, talkPosY: 50, talkScale: 100, persona: 'qin' },
-  han: { name: '漢武帝劉徹', voiceId: 'Cantonese_PlayfulMan', idleVid: '/videos/idle.mp4', talkVid: '/videos/talk.mp4', idlePosX: 50, idlePosY: 50, idleScale: 100, talkPosX: 50, talkPosY: 50, talkScale: 100, persona: 'han' },
-  tang: { name: '唐太宗李世民', voiceId: 'Cantonese_PlayfulMan', idleVid: '/videos/idle.mp4', talkVid: '/videos/talk.mp4', idlePosX: 50, idlePosY: 50, idleScale: 100, talkPosX: 50, talkPosY: 50, talkScale: 100, persona: 'tang' },
-};
-let currentChar = 'qin';
-let ttsLanguage = 'Chinese,Yue';
-let ttsVoiceId = 'Cantonese_PlayfulMan';
+// Init
+connect();
+document.getElementById('vidIdle').play().catch(() => {});
+// 默认画面位置
+const _videoPos = { idlePosX: 50, idlePosY: 50, idleScale: 100, talkPosX: 50, talkPosY: 50, talkScale: 100 };
+applyVideoPosition(_videoPos);
 
-// TTS 可调参数
-const TTS = {
-  speed: 1.0, vol: 1.0, pitch: 0, emotion: '',
-  vmPitch: 0, vmIntensity: 0, vmTimbre: 0, soundEffect: '',
-};
-
-function syncTtsToServer() {
-  if (!wsOk) return;
-  ws.send(JSON.stringify({
-    type: 'tts_config',
-    language: ttsLanguage, voiceId: ttsVoiceId,
-    speed: TTS.speed, vol: TTS.vol, pitch: TTS.pitch,
-    emotion: TTS.emotion || null,
-    voiceModifyPitch: TTS.vmPitch,
-    voiceModifyIntensity: TTS.vmIntensity,
-    voiceModifyTimbre: TTS.vmTimbre,
-    soundEffect: TTS.soundEffect || null,
-  }));
-}
+// ── 设置面板 ──
 
 function thumbTransform(thumbId, px, py, scale) {
   const el = document.getElementById(thumbId);
@@ -1266,7 +1236,7 @@ function applyVideoPosition(char) {
 connect();
 // 自动播放 idle 视频
 document.getElementById('vidIdle').play().catch(() => {});
-applyVideoPosition(CHARACTERS[currentChar]);
+applyVideoPosition(_videoPos);
 
 // ── 设置面板 ──
 const settingsOverlay = $('settingsOverlay');
@@ -1274,13 +1244,11 @@ const htmlEl = document.documentElement;
 const toggleMic = $('toggleMic');
 const toggleVoice = $('toggleVoice');
 const diagResults = $('diagResults');
-const charSelect = $('charSelect');
 
 // 打开设置
 $('btnMenu').onclick = () => {
   toggleMic.classList.toggle('on', micOn);
   toggleVoice.classList.toggle('on', audioOn);
-  charSelect.value = currentChar;
   $('ttsLang').value = ttsLanguage;
   filterVoiceGroups();
   $('ttsVoice').value = ttsVoiceId;
@@ -1288,12 +1256,12 @@ $('btnMenu').onclick = () => {
   // TTS 参数回填
   populateTtsControls();
   // 画面调整双栏
-  $('idlePosX').value = CHARACTERS[currentChar].idlePosX;
-  $('idlePosY').value = CHARACTERS[currentChar].idlePosY;
-  $('talkPosX').value = CHARACTERS[currentChar].talkPosX;
-  $('talkPosY').value = CHARACTERS[currentChar].talkPosY;
-  $('idleScale').value = CHARACTERS[currentChar].idleScale;
-  $('talkScale').value = CHARACTERS[currentChar].talkScale;
+$('idlePosX').value = _videoPos.idlePosX;
+  $('idlePosY').value = _videoPos.idlePosY;
+  $('talkPosX').value = _videoPos.talkPosX;
+  $('talkPosY').value = _videoPos.talkPosY;
+  $('idleScale').value = _videoPos.idleScale;
+  $('talkScale').value = _videoPos.talkScale;
   thumbTransform('thumbIdle', $('idlePosX').value, $('idlePosY').value, $('idleScale').value);
   thumbTransform('thumbTalk', $('talkPosX').value, $('talkPosY').value, $('talkScale').value);
   diagResults.style.display = 'none';
@@ -1400,14 +1368,13 @@ function bindThumbSlider(sliderId, thumbId) {
 });
 
 $('btnApplyPos').onclick = () => {
-  const char = CHARACTERS[currentChar];
-  char.idlePosX = parseInt($('idlePosX').value);
-  char.idlePosY = parseInt($('idlePosY').value);
-  char.idleScale = parseInt($('idleScale').value);
-  char.talkPosX = parseInt($('talkPosX').value);
-  char.talkPosY = parseInt($('talkPosY').value);
-  char.talkScale = parseInt($('talkScale').value);
-  applyVideoPosition(char);
+  _videoPos.idlePosX = parseInt($('idlePosX').value);
+  _videoPos.idlePosY = parseInt($('idlePosY').value);
+  _videoPos.idleScale = parseInt($('idleScale').value);
+  _videoPos.talkPosX = parseInt($('talkPosX').value);
+  _videoPos.talkPosY = parseInt($('talkPosY').value);
+  _videoPos.talkScale = parseInt($('talkScale').value);
+  applyVideoPosition(_videoPos);
   switchVideo(currentAudio ? 'talk' : 'idle');
   settingsOverlay.classList.remove('open');
   htmlEl.style.overflow = '';
@@ -1484,38 +1451,12 @@ function updateDiag(idx, cls, text) {
   }
 }
 
-// ── 模块2：角色切换 ──
-charSelect.addEventListener('change', () => {
-  const val = charSelect.value;
-  if (val === currentChar) return;
-  const char = CHARACTERS[val];
-  if (!char) return;
-
-  // 切换角色视频
-  switchVideo('idle');
-  applyVideoPosition(char);
-
-  // 通知后端切换角色（通过 WebSocket）
-  if (wsOk) {
-    ws.send(JSON.stringify({ type: 'switch_character', persona: char.persona, voiceId: char.voiceId }));
-  }
-
-  // 清空当前对话
-  history = [];
-  $('messagesInner').innerHTML = '';
-  llmEl = null;
-  llmText = '';
-
-  currentChar = val;
-  console.log('[角色] 已切換為:', char.name);
-});
-
-// ── 模块3：导出对话 ──
+// ── 导出对话 ──
 $('btnExport').onclick = () => {
   if (history.length === 0) { alert('暫無對話記錄'); return; }
   const exportData = {
     exportTime: new Date().toISOString(),
-    character: CHARACTERS[currentChar].name,
+    character: '秦始皇嬴政',
     messages: history,
   };
   const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });

@@ -89,52 +89,6 @@ SYSTEM_PROMPT = """你是秦始皇嬴政，生活在公元前259年至公元前2
 - 标签在句中自然穿插，每次最多用 1 个
 """
 
-HAN_PROMPT = """你是漢武帝劉徹，生活在公元前156年至公元前87年。你現在正在與中小學生對話。
-
-## 你的身份
-- 你是西漢第七位皇帝，16歲即位，在位54年
-- 你開創了漢朝最鼎盛的時期
-- 你派遣張騫出使西域，開拓絲綢之路
-- 你罷黜百家、獨尊儒術
-- 你北擊匈奴，擴張疆土
-
-## 說話風格
-- 用古風但不要太文言，讓小朋友能聽懂
-- 自稱「朕」，稱對方為「汝」
-- 語氣威嚴但親善
-
-## 语音表达（语气标签）
-你可以在对话中插入 MiniMax 语气标签，让你的语音更生动：
-- (sighs) 感慨 — 谈匈奴："匈奴屡犯边境…(sighs)"
-- (laughs) 豪迈 — 谈功业："张骞通西域，我大汉威震四方！(laughs)"
-- (emm) 沉吟 — 思考时："(emm) 此事朕需三思。"
-- (breath) 换气 — 长句之间
-- 每次最多 1 个标签
-"""
-
-TANG_PROMPT = """你是唐太宗李世民，生活在公元598年至649年。你現在正在與中小學生對話。
-
-## 你的身份
-- 你是唐朝第二位皇帝，開創貞觀之治
-- 你知人善任，虛心納諫
-- 你完善科舉制度，任用賢才
-- 你被尊為「天可汗」
-
-## 說話風格
-- 用古風但不要太文言，讓小朋友能聽懂
-- 自稱「朕」，稱對方為「汝」
-- 語氣威嚴但親善，善於引導
-
-## 语音表达（语气标签）
-你可以在对话中插入 MiniMax 语气标签，让你的语音更生动：
-- (sighs) 感叹 — 谈民生："百姓之苦，朕心甚忧…(sighs)"
-- (chuckle) 欣慰 — 受谏时："魏征此言，令朕茅塞顿开。(chuckle)"
-- (laughs) 开怀 — 谈盛世："贞观之治，天下太平！(laughs)"
-- (emm) 沉思 — 斟酌时："(emm) 汝言有理，容朕细想。"
-- (breath) 换气 — 长句之间
-- 每次最多 1 个标签
-"""
-
 # ── FastAPI App ─────────────────────────────────────────
 app = FastAPI(title="Digital Human — Qin Shi Huang")
 
@@ -396,7 +350,6 @@ async def websocket_endpoint(websocket: WebSocket):
     logger.info("WebSocket client connected")
 
     # Per-connection state — no global mutation
-    system_prompt = SYSTEM_PROMPT
     tts_config: dict = dict(DEFAULT_TTS_CONFIG)
     conversation_history: list[dict[str, str]] = []
 
@@ -404,21 +357,6 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             data = await websocket.receive_json()
             msg_type = data.get("type", "text")
-
-            if msg_type == "switch_character":
-                persona = data.get("persona", "qin")
-                voice_id = data.get("voiceId", tts_config["voice_id"])
-                tts_config["voice_id"] = str(voice_id)
-                if persona == "han":
-                    system_prompt = HAN_PROMPT
-                elif persona == "tang":
-                    system_prompt = TANG_PROMPT
-                else:
-                    system_prompt = SYSTEM_PROMPT
-                conversation_history = []
-                logger.info(f"角色切换: {persona}, voice: {tts_config['voice_id']}")
-                await websocket.send_json({"type": "status", "content": "done"})
-                continue
 
             if msg_type == "tts_config":
                 tts_config["language_boost"] = data.get("language", tts_config["language_boost"])
@@ -444,7 +382,7 @@ async def websocket_endpoint(websocket: WebSocket):
             full_response = ""
             await websocket.send_json({"type": "status", "content": "thinking"})
 
-            async for chunk in minimax_llm_stream(user_text, conversation_history, system_prompt):
+            async for chunk in minimax_llm_stream(user_text, conversation_history, SYSTEM_PROMPT):
                 if chunk.startswith("[ERROR]"):
                     await websocket.send_json({"type": "error", "content": chunk})
                     break
