@@ -201,96 +201,105 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
     url = "wss://api.minimaxi.com/ws/v1/t2a_v2"
     headers = {"Authorization": f"Bearer {MINIMAX_API_KEY}"}
 
+    ws = None
     try:
-        async with websockets.connect(url, additional_headers=headers) as ws:
-            # Wait for connection success
-            connected_msg = await ws.recv()
-            connected_data = json.loads(connected_msg)
-            if connected_data.get("event") != "connected_success":
-                logger.error(f"TTS WebSocket connection failed: {connected_data}")
-                return
+        # Connect with auth headers (handles websockets 13+ and legacy)
+        try:
+            ws = await websockets.connect(url, additional_headers=headers)
+        except TypeError:
+            ws = await websockets.connect(url, extra_headers=headers)
 
-            # Build voice_setting from config
-            voice_cfg: dict[str, object] = {
-                "voice_id": cfg["voice_id"],
-                "speed": cfg["speed"],
-                "vol": cfg["vol"],
-                "pitch": cfg["pitch"],
-            }
-            if cfg["emotion"]:
-                voice_cfg["emotion"] = cfg["emotion"]
+        # Wait for connection success
+        connected_msg = await ws.recv()
+        connected_data = json.loads(connected_msg)
+        if connected_data.get("event") != "connected_success":
+            logger.error(f"TTS WebSocket connection failed: {connected_data}")
+            return
 
-            # Build task_start payload
-            task_start_payload: dict[str, object] = {
-                "event": "task_start",
-                "model": TTS_MODEL,
-                "language_boost": cfg["language_boost"],
-                "voice_setting": voice_cfg,
-                "audio_setting": {
-                    "sample_rate": 32000,
-                    "bitrate": 128000,
-                    "format": "mp3",
-                    "channel": 1,
-                },
-            }
+        # Build voice_setting from config
+        voice_cfg: dict[str, object] = {
+            "voice_id": cfg["voice_id"],
+            "speed": cfg["speed"],
+            "vol": cfg["vol"],
+            "pitch": cfg["pitch"],
+        }
+        if cfg["emotion"]:
+            voice_cfg["emotion"] = cfg["emotion"]
 
-            # voice_modify: only include non-zero/non-null values
-            vm = cfg["voice_modify"]
-            voice_modify_payload: dict[str, object] = {}
-            if vm.get("pitch", 0) != 0:
-                voice_modify_payload["pitch"] = vm["pitch"]
-            if vm.get("intensity", 0) != 0:
-                voice_modify_payload["intensity"] = vm["intensity"]
-            if vm.get("timbre", 0) != 0:
-                voice_modify_payload["timbre"] = vm["timbre"]
-            if cfg.get("sound_effect"):
-                voice_modify_payload["sound_effects"] = cfg["sound_effect"]
-            if voice_modify_payload:
-                task_start_payload["voice_modify"] = voice_modify_payload
+        # Build task_start payload
+        task_start_payload: dict[str, object] = {
+            "event": "task_start",
+            "model": TTS_MODEL,
+            "language_boost": cfg["language_boost"],
+            "voice_setting": voice_cfg,
+            "audio_setting": {
+                "sample_rate": 32000,
+                "bitrate": 128000,
+                "format": "mp3",
+                "channel": 1,
+            },
+        }
 
-            await ws.send(json.dumps(task_start_payload))
+        # voice_modify: only include non-zero/non-null values
+        vm = cfg["voice_modify"]
+        voice_modify_payload: dict[str, object] = {}
+        if vm.get("pitch", 0) != 0:
+            voice_modify_payload["pitch"] = vm["pitch"]
+        if vm.get("intensity", 0) != 0:
+            voice_modify_payload["intensity"] = vm["intensity"]
+        if vm.get("timbre", 0) != 0:
+            voice_modify_payload["timbre"] = vm["timbre"]
+        if cfg.get("sound_effect"):
+            voice_modify_payload["sound_effects"] = cfg["sound_effect"]
+        if voice_modify_payload:
+            task_start_payload["voice_modify"] = voice_modify_payload
 
-            # Wait for task_started
-            started_msg = await ws.recv()
-            started_data = json.loads(started_msg)
-            if started_data.get("event") != "task_started":
-                logger.error(f"TTS task start failed: {started_data}")
-                return
+        await ws.send(json.dumps(task_start_payload))
 
-            # Send text
-            await ws.send(json.dumps({
-                "event": "task_continue",
-                "text": text
-            }))
+        # Wait for task_started
+        started_msg = await ws.recv()
+        started_data = json.loads(started_msg)
+        if started_data.get("event") != "task_started":
+            logger.error(f"TTS task start failed: {started_data}")
+            return
 
-            # Receive audio chunks
-            while True:
-                try:
-                    msg = await asyncio.wait_for(ws.recv(), timeout=30.0)
-                    data = json.loads(msg)
+        # Send text
+        await ws.send(json.dumps({
+            "event": "task_continue",
+            "text": text
+        }))
 
-                    if data.get("event") == "task_finished":
-                        break
+        # Receive audio chunks
+        while True:
+            try:
+                msg = await asyncio.wait_for(ws.recv(), timeout=30.0)
+                data = json.loads(msg)
 
-                    if "data" in data and "audio" in data["data"]:
-                        audio_hex = data["data"]["audio"]
-                        if audio_hex:
-                            audio_bytes = bytes.fromhex(audio_hex)
-                            yield audio_bytes
-
-                    if data.get("is_final"):
-                        break
-
-                except asyncio.TimeoutError:
-                    logger.warning("TTS WebSocket timeout")
+                if data.get("event") == "task_finished":
                     break
 
-            # Finish
-            await ws.send(json.dumps({"event": "task_finish"}))
+                if "data" in data and "audio" in data["data"]:
+                    audio_hex = data["data"]["audio"]
+                    if audio_hex:
+                        audio_bytes = bytes.fromhex(audio_hex)
+                        yield audio_bytes
+
+                if data.get("is_final"):
+                    break
+
+            except asyncio.TimeoutError:
+                logger.warning("TTS WebSocket timeout")
+                break
+
+        # Finish
+        await ws.send(json.dumps({"event": "task_finish"}))
 
     except Exception as e:
         logger.error(f"MiniMax TTS WebSocket error: {e}")
-        raise  # propagate to caller for proper error handling
+        raise
+    finally:
+        if ws is not None:
+            await ws.close()
 
 
 # ── POST /ask — Stream LLM response (HTTP SSE) ──────────
