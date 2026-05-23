@@ -991,7 +991,7 @@ function handleMsg(msg) {
 }
 
 function send(text) {
-  if (!wsOk) { processing = false; updateStatus('離線'); return; }
+  if (!wsOk || !ws || ws.readyState !== 1) { processing = false; updateStatus('離線'); return; }
   ws.send(JSON.stringify({ type: 'text', content: text }));
 }
 
@@ -1242,7 +1242,7 @@ const TTS = {
 };
 
 function syncTtsToServer() {
-  if (!wsOk) return;
+  if (!wsOk || !ws || ws.readyState !== 1) return;
   ws.send(JSON.stringify({
     type: 'tts_config',
     language: ttsLanguage, voiceId: ttsVoiceId,
