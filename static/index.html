@@ -1100,8 +1100,9 @@ function sendQuery(text) {
   llmEl = null;
   llmText = '';
 
-  updateStatus('思考中', 'listening');
+  updateStatus('思考中', 'thinking');
   send(text);
+  inputText.value = '';
 }
 
 // ── Speech Recognition ──
