@@ -876,6 +876,7 @@ const statusText = $('statusText');
 let history = [];
 let processing = false;
 let listening = false;
+let _resumeTimer = null;  // normal mode auto-resume timer
 let audioOn = true;
 let micOn = true;
 let callMode = false;       // 通话模式开关
@@ -970,7 +971,9 @@ function connect() {
   ws.onopen = () => { wsOk = true; _wsDelay = 1000; updateStatus('在線'); syncTtsToServer(); };
   ws.onclose = () => {
     wsOk = false;
-    if (processing) { processing = false; updateStatus('離線'); switchVideo('idle'); _msEnd(); }
+    if (processing) { processing = false; _msEnd(); }
+    updateStatus('離線');
+    switchVideo('idle');
     setTimeout(connect, _wsDelay);
     _wsDelay = Math.min(_wsDelay * 2, 30000);
   };
@@ -1022,7 +1025,7 @@ function handleMsg(msg) {
 }
 
 function send(text) {
-  if (!wsOk || !ws || ws.readyState !== 1) { processing = false; updateStatus('離線'); return; }
+  if (!wsOk || !ws || ws.readyState !== 1) { processing = false; updateStatus('離線'); alert('連線中斷，請重新整理頁面'); return; }
   ws.send(JSON.stringify({ type: 'text', content: text }));
 }
 
@@ -1172,8 +1175,14 @@ function initSR() {
         // 通话模式：等 TTS 播完再继续
         _callWaitResume();
       } else {
-        // 普通模式：短暂停顿后自动续听
-        setTimeout(() => { if (!processing && micOn && !callActive) { listening = true; try { recognition.start(); } catch(e) {} } }, 1200);
+        // 普通模式：短暂停顿后自动续听（轮询直到 processing 结束）
+        const _resumeNormal = () => {
+          if (!micOn || callActive) { return; }
+          if (processing || currentAudio) { _resumeTimer = setTimeout(_resumeNormal, 400); return; }
+          listening = true;
+          try { recognition.start(); } catch(e) {}
+        };
+        _resumeTimer = setTimeout(_resumeNormal, 1200);
       }
     }
   };
@@ -1195,6 +1204,7 @@ function startListening() {
 }
 
 function stopListening() {
+  clearTimeout(_resumeTimer);
   if (recognition) { try { recognition.stop(); } catch(e) {} }
   listening = false;
   btnTalk.classList.remove('recording');
@@ -1240,6 +1250,7 @@ function _toggleCall() {
 
   if (callActive) {
     callActive = false;
+    clearInterval(_callResumeTimer);
     stopListening();
     btnTalk.classList.remove('call-mode', 'busy');
     btnTalk.title = '開始通話';

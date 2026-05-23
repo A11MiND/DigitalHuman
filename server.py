@@ -385,9 +385,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 diag_config: dict = dict(data.get("ttsConfig", {}))  # 前端可选参数
                 diag_lang: str = str(data.get("language", tts_config["language_boost"]))
                 diag_voice: str = str(data.get("voiceId", tts_config["voice_id"]))
-                # 合并前端传来的值
-                effective = dict(tts_config)
+                # 合并前端传来的值 — deepcopy 防止共享 voice_modify
+                effective = deepcopy(tts_config)
                 if diag_config:
+                    if "voice_modify" in diag_config and isinstance(diag_config["voice_modify"], dict):
+                        effective["voice_modify"].update(diag_config["voice_modify"])
+                        del diag_config["voice_modify"]
                     effective.update(diag_config)
                 effective["language_boost"] = diag_lang
                 effective["voice_id"] = diag_voice
