@@ -25,6 +25,16 @@ TTS_LANGUAGE = "Chinese,Yue"  # 默认粤语
 GROUP_ID = "1931670840110227663"
 MAX_CONCURRENT_TTS = 8
 
+# ── TTS 可调参数（可通过前端设置面板实时修改）──────────
+TTS_SPEED = 1.0                # 语速 [0.5, 2]
+TTS_VOL = 1.0                  # 音量 (0, 10]
+TTS_PITCH = 0                  # 语调 [-12, 12]
+TTS_EMOTION = None             # 情绪 (None=自动)
+TTS_VOICE_MODIFY_PITCH = 0     # 音高调整 [-100, 100]
+TTS_VOICE_MODIFY_INTENSITY = 0 # 强度调整 [-100, 100]
+TTS_VOICE_MODIFY_TIMBRE = 0    # 音色调整 [-100, 100]
+TTS_SOUND_EFFECT = None        # 音效 (None / spacious_echo / auditorium_echo / lofi_telephone / robotic)
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("digital-human")
 
@@ -177,24 +187,44 @@ async def minimax_tts_streaming(text: str):
                 logger.error(f"TTS WebSocket connection failed: {connected_data}")
                 return
 
-            # Send task_start
-            await ws.send(json.dumps({
+            # Build voice_setting
+            voice_cfg: dict = {
+                "voice_id": TTS_VOICE_ID,
+                "speed": TTS_SPEED,
+                "vol": TTS_VOL,
+                "pitch": TTS_PITCH,
+            }
+            if TTS_EMOTION:
+                voice_cfg["emotion"] = TTS_EMOTION
+
+            # Build task_start payload
+            task_start_payload: dict = {
                 "event": "task_start",
                 "model": TTS_MODEL,
                 "language_boost": TTS_LANGUAGE,
-                "voice_setting": {
-                    "voice_id": TTS_VOICE_ID,
-                    "speed": 1,
-                    "vol": 1,
-                    "pitch": 0,
-                },
+                "voice_setting": voice_cfg,
                 "audio_setting": {
                     "sample_rate": 32000,
                     "bitrate": 128000,
                     "format": "mp3",
                     "channel": 1
                 }
-            }))
+            }
+
+            # voice_modify (独立顶层字段)
+            voice_modify: dict = {}
+            if TTS_VOICE_MODIFY_PITCH != 0:
+                voice_modify["pitch"] = TTS_VOICE_MODIFY_PITCH
+            if TTS_VOICE_MODIFY_INTENSITY != 0:
+                voice_modify["intensity"] = TTS_VOICE_MODIFY_INTENSITY
+            if TTS_VOICE_MODIFY_TIMBRE != 0:
+                voice_modify["timbre"] = TTS_VOICE_MODIFY_TIMBRE
+            if TTS_SOUND_EFFECT:
+                voice_modify["sound_effects"] = TTS_SOUND_EFFECT
+            if voice_modify:
+                task_start_payload["voice_modify"] = voice_modify
+
+            await ws.send(json.dumps(task_start_payload))
 
             # Wait for task_started
             started_msg = await ws.recv()
@@ -348,9 +378,24 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             if msg_type == "tts_config":
+                global TTS_SPEED, TTS_VOL, TTS_PITCH, TTS_EMOTION
+                global TTS_VOICE_MODIFY_PITCH, TTS_VOICE_MODIFY_INTENSITY, TTS_VOICE_MODIFY_TIMBRE, TTS_SOUND_EFFECT
                 TTS_LANGUAGE = data.get("language", TTS_LANGUAGE)
                 TTS_VOICE_ID = data.get("voiceId", TTS_VOICE_ID)
-                logger.info(f"TTS 配置更新: lang={TTS_LANGUAGE}, voice={TTS_VOICE_ID}")
+                TTS_SPEED = data.get("speed", TTS_SPEED)
+                TTS_VOL = data.get("vol", TTS_VOL)
+                TTS_PITCH = data.get("pitch", TTS_PITCH)
+                TTS_EMOTION = data.get("emotion", TTS_EMOTION)
+                TTS_VOICE_MODIFY_PITCH = data.get("voiceModifyPitch", TTS_VOICE_MODIFY_PITCH)
+                TTS_VOICE_MODIFY_INTENSITY = data.get("voiceModifyIntensity", TTS_VOICE_MODIFY_INTENSITY)
+                TTS_VOICE_MODIFY_TIMBRE = data.get("voiceModifyTimbre", TTS_VOICE_MODIFY_TIMBRE)
+                TTS_SOUND_EFFECT = data.get("soundEffect", TTS_SOUND_EFFECT)
+                logger.info(
+                    f"TTS 配置更新: lang={TTS_LANGUAGE}, voice={TTS_VOICE_ID}, "
+                    f"speed={TTS_SPEED}, vol={TTS_VOL}, pitch={TTS_PITCH}, emotion={TTS_EMOTION}, "
+                    f"vMod_pitch={TTS_VOICE_MODIFY_PITCH}, vMod_intensity={TTS_VOICE_MODIFY_INTENSITY}, "
+                    f"vMod_timbre={TTS_VOICE_MODIFY_TIMBRE}, soundEffect={TTS_SOUND_EFFECT}"
+                )
                 continue
 
             user_text = data.get("content", "")

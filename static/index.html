@@ -487,6 +487,60 @@
   }
   .export-btn:active { background: rgba(138,109,59,0.18); }
 
+  /* ── TTS 滑块行（参考设计风格）── */
+  .tts-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+  }
+  .tts-name {
+    font-size: 13px;
+    color: #4a3828;
+    min-width: 36px;
+    flex-shrink: 0;
+  }
+  .tts-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 38px;
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 12px;
+    background: rgba(138,109,59,0.09);
+    color: #6a5028;
+    font-size: 12px;
+    font-weight: 600;
+    flex-shrink: 0;
+    letter-spacing: 0.3px;
+  }
+  .tts-hint {
+    font-size: 10px;
+    color: #9a8a7a;
+    white-space: nowrap;
+  }
+  .tts-end {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+  .tts-row input[type="range"] {
+    flex: 1;
+    min-width: 60px;
+    accent-color: #8a6d3b;
+    height: 4px;
+  }
+  .tts-row.select-row {
+    gap: 12px;
+  }
+  /* bipolar 对称布局 */
+  .tts-row.bipolar .tts-end:first-child { order: 1; }
+  .tts-row.bipolar input { order: 2; }
+  .tts-row.bipolar .tts-end:last-child { order: 3; }
+
   /* ── 画面调整预览 ── */
   .crop-preview {
     width: 100%;
@@ -513,6 +567,10 @@
     border-radius: 8px;
     border: 2px solid rgba(0,0,0,0.1);
     background: #000;
+  }
+  /* 画面调整滑块统一金色 */
+  .settings-card input[type="range"] {
+    accent-color: #8a6d3b;
   }
 
 </style>
@@ -661,6 +719,77 @@
         <option value="en-US">English</option>
       </select>
     </div>
+
+    <!-- ═══ 语音参数调试 ═══ -->
+    <div class="settings-section-title">🎛️ 語音參數調試</div>
+
+    <!-- 語速 / 音量（单极） -->
+    <div class="tts-row">
+      <span class="tts-name">語速</span>
+      <span class="tts-pill" id="valSpeed">1.0</span>
+      <input type="range" id="ttsSpeed" min="0.5" max="2.0" step="0.1" value="1.0">
+    </div>
+    <div class="tts-row">
+      <span class="tts-name">音量</span>
+      <span class="tts-pill" id="valVol">1.0</span>
+      <input type="range" id="ttsVol" min="0.1" max="10" step="0.1" value="1.0">
+    </div>
+
+    <!-- 語調（双极对称） -->
+    <div class="tts-row bipolar">
+      <div class="tts-end"><span class="tts-pill" id="valPitch">0</span><span class="tts-hint">低沉</span></div>
+      <input type="range" id="ttsPitch" min="-12" max="12" step="1" value="0">
+      <div class="tts-end"><span class="tts-pill" id="valPitchR">0</span><span class="tts-hint">明亮</span></div>
+    </div>
+
+    <div class="tts-row select-row">
+      <span class="tts-name">情緒</span>
+      <select class="settings-select" id="ttsEmotion" style="width:auto;padding:4px 10px;font-size:12px;">
+        <option value="" selected>自動</option>
+        <option value="happy">😊 高興</option>
+        <option value="sad">😢 悲傷</option>
+        <option value="angry">😠 憤怒</option>
+        <option value="fearful">😨 害怕</option>
+        <option value="disgusted">🤢 厭惡</option>
+        <option value="surprised">😲 驚訝</option>
+        <option value="calm">😐 中性</option>
+        <option value="fluent">🗣️ 生動</option>
+      </select>
+    </div>
+
+    <div class="settings-section-title" style="margin-top:4px;">🎚️ 聲音效果器</div>
+
+    <!-- 音高 -->
+    <div class="tts-row bipolar">
+      <div class="tts-end"><span class="tts-pill" id="valVMPitch">0</span><span class="tts-hint">低沉</span></div>
+      <input type="range" id="ttsVMPitch" min="-100" max="100" step="5" value="0">
+      <div class="tts-end"><span class="tts-pill" id="valVMPitchR">0</span><span class="tts-hint">明亮</span></div>
+    </div>
+    <!-- 強度 -->
+    <div class="tts-row bipolar">
+      <div class="tts-end"><span class="tts-pill" id="valVMIntensity">0</span><span class="tts-hint">剛勁</span></div>
+      <input type="range" id="ttsVMIntensity" min="-100" max="100" step="5" value="0">
+      <div class="tts-end"><span class="tts-pill" id="valVMIntensityR">0</span><span class="tts-hint">柔和</span></div>
+    </div>
+    <!-- 音色 -->
+    <div class="tts-row bipolar">
+      <div class="tts-end"><span class="tts-pill" id="valVMTimbre">0</span><span class="tts-hint">渾厚</span></div>
+      <input type="range" id="ttsVMTimbre" min="-100" max="100" step="5" value="0">
+      <div class="tts-end"><span class="tts-pill" id="valVMTimbreR">0</span><span class="tts-hint">清脆</span></div>
+    </div>
+
+    <div class="tts-row select-row">
+      <span class="tts-name">音效</span>
+      <select class="settings-select" id="ttsSoundEffect" style="width:auto;padding:4px 10px;font-size:12px;">
+        <option value="" selected>無</option>
+        <option value="spacious_echo">🔁 空曠回音</option>
+        <option value="auditorium_echo">🏛️ 禮堂廣播</option>
+        <option value="lofi_telephone">📞 電話失真</option>
+        <option value="robotic">🤖 電音</option>
+      </select>
+    </div>
+
+    <button class="diag-btn" id="btnResetTTS" style="margin-top:8px;">重置全部語音參數</button>
 
     <!-- 画面调整 -->
     <div class="settings-section-title">畫面調整</div>
@@ -1022,6 +1151,26 @@ let currentChar = 'qin';
 let ttsLanguage = 'Chinese,Yue';
 let ttsVoiceId = 'Cantonese_PlayfulMan';
 
+// TTS 可调参数
+const TTS = {
+  speed: 1.0, vol: 1.0, pitch: 0, emotion: '',
+  vmPitch: 0, vmIntensity: 0, vmTimbre: 0, soundEffect: '',
+};
+
+function syncTtsToServer() {
+  if (!wsOk) return;
+  ws.send(JSON.stringify({
+    type: 'tts_config',
+    language: ttsLanguage, voiceId: ttsVoiceId,
+    speed: TTS.speed, vol: TTS.vol, pitch: TTS.pitch,
+    emotion: TTS.emotion || null,
+    voiceModifyPitch: TTS.vmPitch,
+    voiceModifyIntensity: TTS.vmIntensity,
+    voiceModifyTimbre: TTS.vmTimbre,
+    soundEffect: TTS.soundEffect || null,
+  }));
+}
+
 function thumbTransform(thumbId, px, py, scale) {
   const el = document.getElementById(thumbId);
   el.style.backgroundPosition = px + '% ' + py + '%';
@@ -1057,8 +1206,11 @@ $('btnMenu').onclick = () => {
   toggleVoice.classList.toggle('on', audioOn);
   charSelect.value = currentChar;
   $('ttsLang').value = ttsLanguage;
+  filterVoiceGroups();
   $('ttsVoice').value = ttsVoiceId;
   $('asrLang').value = recognition ? recognition.lang : 'zh-HK';
+  // TTS 参数回填
+  populateTtsControls();
   // 画面调整双栏
   $('idlePosX').value = CHARACTERS[currentChar].idlePosX;
   $('idlePosY').value = CHARACTERS[currentChar].idlePosY;
@@ -1077,8 +1229,7 @@ $('btnSettingsClose').onclick = () => { settingsOverlay.classList.remove('open')
 $('btnRefresh').onclick = () => location.reload();
 
 // TTS 语言与音色
-$('ttsLang').addEventListener('change', () => {
-  ttsLanguage = $('ttsLang').value;
+function filterVoiceGroups() {
   const opts = $('ttsVoice').querySelectorAll('optgroup');
   let firstVisible = null;
   opts.forEach(g => {
@@ -1086,6 +1237,10 @@ $('ttsLang').addEventListener('change', () => {
     else { g.style.display = 'none'; }
   });
   if (firstVisible) { ttsVoiceId = firstVisible.value; $('ttsVoice').value = ttsVoiceId; }
+}
+$('ttsLang').addEventListener('change', () => {
+  ttsLanguage = $('ttsLang').value;
+  filterVoiceGroups();
   syncTtsToServer();
 });
 $('ttsVoice').addEventListener('change', () => {
@@ -1096,9 +1251,66 @@ $('asrLang').addEventListener('change', () => {
   const lang = $('asrLang').value;
   if (recognition) { recognition.lang = lang; if (listening) { stopListening(); setTimeout(() => { if (micOn) startListening(); }, 200); } }
 });
-function syncTtsToServer() {
-  if (wsOk) ws.send(JSON.stringify({ type: 'tts_config', language: ttsLanguage, voiceId: ttsVoiceId }));
-}
+
+// ── TTS 参数调试 ──
+(function() {
+  const SLIDERS = [
+    { id:'ttsSpeed',        key:'speed',       label:'valSpeed',      labelR:null,           fmt: v => Number(v).toFixed(1) },
+    { id:'ttsVol',          key:'vol',         label:'valVol',        labelR:null,           fmt: v => Number(v).toFixed(1) },
+    { id:'ttsPitch',        key:'pitch',       label:'valPitch',      labelR:'valPitchR',    fmt: v => String(Math.round(v)) },
+    { id:'ttsVMPitch',      key:'vmPitch',     label:'valVMPitch',    labelR:'valVMPitchR',  fmt: v => String(Math.round(v)) },
+    { id:'ttsVMIntensity',  key:'vmIntensity', label:'valVMIntensity',labelR:'valVMIntensityR',fmt: v => String(Math.round(v)) },
+    { id:'ttsVMTimbre',     key:'vmTimbre',    label:'valVMTimbre',   labelR:'valVMTimbreR', fmt: v => String(Math.round(v)) },
+  ];
+
+  function setPills(entry) {
+    const v = TTS[entry.key];
+    const s = entry.fmt(v);
+    const el = document.getElementById(entry.label);
+    if (el) el.textContent = s;
+    if (entry.labelR) {
+      const er = document.getElementById(entry.labelR);
+      if (er) er.textContent = (v >= 0 ? '' : '') + s;
+    }
+  }
+
+  function readSlider(entry) {
+    const s = document.getElementById(entry.id);
+    const v = Number(s?.value);
+    if (!isNaN(v)) { TTS[entry.key] = v; setPills(entry); syncTtsToServer(); }
+  }
+
+  SLIDERS.forEach(entry => {
+    const s = document.getElementById(entry.id);
+    if (s) s.addEventListener('input', () => readSlider(entry));
+  });
+
+  // 回填 slider + label（外部调用）
+  window.populateTtsControls = function() {
+    SLIDERS.forEach(entry => {
+      const s = document.getElementById(entry.id);
+      if (s) s.value = TTS[entry.key];
+      setPills(entry);
+    });
+    document.getElementById('ttsEmotion').value = TTS.emotion;
+    document.getElementById('ttsSoundEffect').value = TTS.soundEffect;
+  };
+})();
+
+$('ttsEmotion').addEventListener('change', () => {
+  TTS.emotion = $('ttsEmotion').value;
+  syncTtsToServer();
+});
+$('ttsSoundEffect').addEventListener('change', () => {
+  TTS.soundEffect = $('ttsSoundEffect').value;
+  syncTtsToServer();
+});
+
+$('btnResetTTS').onclick = () => {
+  Object.assign(TTS, { speed:1, vol:1, pitch:0, emotion:'', vmPitch:0, vmIntensity:0, vmTimbre:0, soundEffect:'' });
+  populateTtsControls();
+  syncTtsToServer();
+};
 
 // 画面调整：双栏实时预览
 function bindThumbSlider(sliderId, thumbId) {
