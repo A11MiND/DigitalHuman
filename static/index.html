@@ -1233,6 +1233,28 @@ function applyVideoPosition(char) {
 }
 
 // Init
+let ttsLanguage = 'Chinese,Yue';
+let ttsVoiceId = 'Cantonese_PlayfulMan';
+
+const TTS = {
+  speed: 1.0, vol: 1.0, pitch: 0, emotion: '',
+  vmPitch: 0, vmIntensity: 0, vmTimbre: 0, soundEffect: '',
+};
+
+function syncTtsToServer() {
+  if (!wsOk) return;
+  ws.send(JSON.stringify({
+    type: 'tts_config',
+    language: ttsLanguage, voiceId: ttsVoiceId,
+    speed: TTS.speed, vol: TTS.vol, pitch: TTS.pitch,
+    emotion: TTS.emotion || null,
+    voiceModifyPitch: TTS.vmPitch,
+    voiceModifyIntensity: TTS.vmIntensity,
+    voiceModifyTimbre: TTS.vmTimbre,
+    soundEffect: TTS.soundEffect || null,
+  }));
+}
+
 connect();
 // 自动播放 idle 视频
 document.getElementById('vidIdle').play().catch(() => {});
