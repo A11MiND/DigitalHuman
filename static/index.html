@@ -46,12 +46,19 @@
     position: fixed;
     top: 0; left: 0;
     width: 100%; height: 100%;
+    overflow: hidden;
     z-index: 1;
   }
   .character-img {
     width: 100%; height: 100%;
     object-fit: cover;
     object-position: center top;
+  }
+
+  .character-video {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transform-origin: center center;
   }
 
   /* ── 顶部控制栏（毛玻璃浮层）── */
@@ -480,6 +487,34 @@
   }
   .export-btn:active { background: rgba(138,109,59,0.18); }
 
+  /* ── 画面调整预览 ── */
+  .crop-preview {
+    width: 100%;
+    aspect-ratio: 9 / 16;
+    max-height: 260px;
+    overflow: hidden;
+    border-radius: 12px;
+    border: 2px solid rgba(0,0,0,0.08);
+    background: #000;
+    margin-top: 6px;
+  }
+  .crop-preview video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* ── 双栏缩略图预览 ── */
+  .crop-thumb {
+    width: 100%;
+    aspect-ratio: 9 / 16;
+    max-height: 200px;
+    overflow: hidden;
+    border-radius: 8px;
+    border: 2px solid rgba(0,0,0,0.1);
+    background: #000;
+  }
+
 </style>
 </head>
 <body>
@@ -488,7 +523,8 @@
 
 <!-- 全屏角色背景 -->
 <div class="scene">
-  <img class="character-img" src="/images/qingshihuang.jpg" alt="秦始皇">
+  <video class="character-video" id="vidIdle" src="/videos/idle.mp4" loop muted playsinline style="display:block"></video>
+  <video class="character-video" id="vidTalk" src="/videos/talk.mp4" loop muted playsinline style="display:none"></video>
 </div>
 
 <!-- 顶部控制栏 -->
@@ -626,6 +662,37 @@
       </select>
     </div>
 
+    <!-- 画面调整 -->
+    <div class="settings-section-title">畫面調整</div>
+    <div style="display:flex;gap:10px;margin-bottom:4px;">
+      <div style="flex:1;">
+        <div class="crop-thumb" id="thumbIdle" style="background-image:url(/videos/idle_thumb.jpg);background-size:100%;background-position:50% 50%;background-repeat:no-repeat;">
+        </div>
+        <div style="font-size:11px;color:#888;text-align:center;margin-top:4px;">在線畫面</div>
+        <div style="font-size:11px;color:#aaa;">X</div>
+        <input type="range" id="idlePosX" min="0" max="100" value="50" style="width:100%;margin:2px 0;">
+        <div style="font-size:11px;color:#aaa;">Y</div>
+        <input type="range" id="idlePosY" min="0" max="100" value="50" style="width:100%;margin:2px 0;">
+        <div style="font-size:11px;color:#aaa;">縮放</div>
+        <input type="range" id="idleScale" min="80" max="200" value="100" style="width:100%;margin:2px 0;">
+      </div>
+      <div style="flex:1;">
+        <div class="crop-thumb" id="thumbTalk" style="background-image:url(/videos/talk_thumb.jpg);background-size:100%;background-position:50% 50%;background-repeat:no-repeat;">
+        </div>
+        <div style="font-size:11px;color:#888;text-align:center;margin-top:4px;">說話畫面</div>
+        <div style="font-size:11px;color:#aaa;">X</div>
+        <input type="range" id="talkPosX" min="0" max="100" value="50" style="width:100%;margin:2px 0;">
+        <div style="font-size:11px;color:#aaa;">Y</div>
+        <input type="range" id="talkPosY" min="0" max="100" value="50" style="width:100%;margin:2px 0;">
+        <div style="font-size:11px;color:#aaa;">縮放</div>
+        <input type="range" id="talkScale" min="80" max="200" value="100" style="width:100%;margin:2px 0;">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:6px;">
+      <button class="diag-btn" id="btnResetPos" style="flex:1;">重置居中</button>
+      <button class="diag-btn" id="btnApplyPos" style="flex:1;background:rgba(138,109,59,0.12);border-color:rgba(138,109,59,0.3);">應用</button>
+    </div>
+
     <!-- 模块1：系统诊断 -->
     <div class="settings-section-title">系統診斷</div>
     <button class="diag-btn" id="btnDiag">執行診斷</button>
@@ -693,7 +760,7 @@ function handleMsg(msg) {
   switch (msg.type) {
     case 'status':
       if (msg.content === 'thinking') updateStatus('思考中', 'thinking');
-      else if (msg.content === 'tts') { updateStatus('說話中', 'speaking'); audioBuffer = []; }
+      else if (msg.content === 'tts') { updateStatus('說話中', 'speaking'); audioBuffer = []; switchVideo('talk'); }
       else if (msg.content === 'done') { processing = false; updateStatus('在線'); playBufferedAudio(); }
       break;
     case 'llm': appendLLM(msg.content); break;
@@ -756,7 +823,7 @@ function scrollBottom() {
 
 // ── Buffered Audio Playback ──
 function playBufferedAudio() {
-  if (!audioOn || audioBuffer.length === 0) return;
+  if (!audioOn || audioBuffer.length === 0) { switchVideo('idle'); return; }
 
   const blob = new Blob(audioBuffer, { type: 'audio/mpeg' });
   const url = URL.createObjectURL(blob);
@@ -768,10 +835,12 @@ function playBufferedAudio() {
   audio.onended = () => {
     currentAudio = null;
     URL.revokeObjectURL(url);
+    switchVideo('idle');
   };
   audio.onerror = () => {
     currentAudio = null;
     URL.revokeObjectURL(url);
+    switchVideo('idle');
   };
 
   audio.play().then(() => {
@@ -797,6 +866,28 @@ function playBufferedAudio() {
 function updateStatus(text, cls = '') {
   statusText.textContent = text;
   statusDot.className = 'status-dot ' + cls;
+}
+
+/* 切换视频并保持画面位置 */
+function switchVideo(type) {
+  const vidIdle = document.getElementById('vidIdle');
+  const vidTalk = document.getElementById('vidTalk');
+  const char = CHARACTERS[currentChar];
+  if (type === 'talk') {
+    vidIdle.style.display = 'none';
+    vidTalk.style.display = 'block';
+    vidTalk.style.objectPosition = char.talkPosX + '% ' + char.talkPosY + '%';
+    vidTalk.style.transform = 'scale(' + (char.talkScale / 100) + ')';
+    vidTalk.play().catch(() => {});
+    vidIdle.pause();
+  } else {
+    vidTalk.style.display = 'none';
+    vidIdle.style.display = 'block';
+    vidIdle.style.objectPosition = char.idlePosX + '% ' + char.idlePosY + '%';
+    vidIdle.style.transform = 'scale(' + (char.idleScale / 100) + ')';
+    vidIdle.play().catch(() => {});
+    vidTalk.pause();
+  }
 }
 
 function sendQuery(text) {
@@ -921,21 +1012,40 @@ inputText.onkeydown = e => {
   }
 };
 
-// Init
-connect();
-
 // ── 角色配置 ──
 const CHARACTERS = {
-  qin: { name: '秦始皇嬴政', voiceId: 'Cantonese_PlayfulMan', bg: '/images/qingshihuang.jpg', persona: 'qin' },
-  han: { name: '漢武帝劉徹', voiceId: 'Cantonese_PlayfulMan', bg: '/images/qingshihuang.jpg', persona: 'han' },
-  tang: { name: '唐太宗李世民', voiceId: 'Cantonese_PlayfulMan', bg: '/images/qingshihuang.jpg', persona: 'tang' },
+  qin: { name: '秦始皇嬴政', voiceId: 'Cantonese_PlayfulMan', idleVid: '/videos/idle.mp4', talkVid: '/videos/talk.mp4', idlePosX: 50, idlePosY: 50, idleScale: 100, talkPosX: 50, talkPosY: 50, talkScale: 100, persona: 'qin' },
+  han: { name: '漢武帝劉徹', voiceId: 'Cantonese_PlayfulMan', idleVid: '/videos/idle.mp4', talkVid: '/videos/talk.mp4', idlePosX: 50, idlePosY: 50, idleScale: 100, talkPosX: 50, talkPosY: 50, talkScale: 100, persona: 'han' },
+  tang: { name: '唐太宗李世民', voiceId: 'Cantonese_PlayfulMan', idleVid: '/videos/idle.mp4', talkVid: '/videos/talk.mp4', idlePosX: 50, idlePosY: 50, idleScale: 100, talkPosX: 50, talkPosY: 50, talkScale: 100, persona: 'tang' },
 };
 let currentChar = 'qin';
 let ttsLanguage = 'Chinese,Yue';
 let ttsVoiceId = 'Cantonese_PlayfulMan';
 
+function thumbTransform(thumbId, px, py, scale) {
+  const el = document.getElementById(thumbId);
+  el.style.backgroundPosition = px + '% ' + py + '%';
+  el.style.backgroundSize = scale + '%';
+}
+
+function applyVideoPosition(char) {
+  ['vidIdle','vidTalk'].forEach(id => {
+    const v = document.getElementById(id);
+    const isIdle = id === 'vidIdle';
+    v.style.objectPosition = (isIdle ? char.idlePosX : char.talkPosX) + '% ' + (isIdle ? char.idlePosY : char.talkPosY) + '%';
+    v.style.transform = 'scale(' + ((isIdle ? char.idleScale : char.talkScale) / 100) + ')';
+  });
+}
+
+// Init
+connect();
+// 自动播放 idle 视频
+document.getElementById('vidIdle').play().catch(() => {});
+applyVideoPosition(CHARACTERS[currentChar]);
+
 // ── 设置面板 ──
 const settingsOverlay = $('settingsOverlay');
+const htmlEl = document.documentElement;
 const toggleMic = $('toggleMic');
 const toggleVoice = $('toggleVoice');
 const diagResults = $('diagResults');
@@ -949,14 +1059,21 @@ $('btnMenu').onclick = () => {
   $('ttsLang').value = ttsLanguage;
   $('ttsVoice').value = ttsVoiceId;
   $('asrLang').value = recognition ? recognition.lang : 'zh-HK';
+  // 画面调整双栏
+  $('idlePosX').value = CHARACTERS[currentChar].idlePosX;
+  $('idlePosY').value = CHARACTERS[currentChar].idlePosY;
+  $('talkPosX').value = CHARACTERS[currentChar].talkPosX;
+  $('talkPosY').value = CHARACTERS[currentChar].talkPosY;
+  $('idleScale').value = CHARACTERS[currentChar].idleScale;
+  $('talkScale').value = CHARACTERS[currentChar].talkScale;
+  thumbTransform('thumbIdle', $('idlePosX').value, $('idlePosY').value, $('idleScale').value);
+  thumbTransform('thumbTalk', $('talkPosX').value, $('talkPosY').value, $('talkScale').value);
   diagResults.style.display = 'none';
-  // 打开设置时禁止背景滚动
-  const htmlEl = document.documentElement;
   htmlEl.style.overflow = 'hidden';
   settingsOverlay.classList.add('open');
 };
 
-$('btnSettingsClose').onclick = () => { settingsOverlay.classList.remove('open'); htmlEl.style.overflow = ''; };
+$('btnSettingsClose').onclick = () => { settingsOverlay.classList.remove('open'); htmlEl.style.overflow = ''; switchVideo(currentAudio ? 'talk' : 'idle'); };
 $('btnRefresh').onclick = () => location.reload();
 
 // TTS 语言与音色
@@ -983,8 +1100,39 @@ function syncTtsToServer() {
   if (wsOk) ws.send(JSON.stringify({ type: 'tts_config', language: ttsLanguage, voiceId: ttsVoiceId }));
 }
 
+// 画面调整：双栏实时预览
+function bindThumbSlider(sliderId, thumbId) {
+  $(sliderId).addEventListener('input', () => {
+    const pfx = thumbId === 'thumbIdle' ? 'idle' : 'talk';
+    thumbTransform(thumbId, $(pfx + 'PosX').value, $(pfx + 'PosY').value, $(pfx + 'Scale').value);
+  });
+}
+['idlePosX','idlePosY','idleScale','talkPosX','talkPosY','talkScale'].forEach(id => {
+  bindThumbSlider(id, id.startsWith('idle') ? 'thumbIdle' : 'thumbTalk');
+});
+
+$('btnApplyPos').onclick = () => {
+  const char = CHARACTERS[currentChar];
+  char.idlePosX = parseInt($('idlePosX').value);
+  char.idlePosY = parseInt($('idlePosY').value);
+  char.idleScale = parseInt($('idleScale').value);
+  char.talkPosX = parseInt($('talkPosX').value);
+  char.talkPosY = parseInt($('talkPosY').value);
+  char.talkScale = parseInt($('talkScale').value);
+  applyVideoPosition(char);
+  switchVideo(currentAudio ? 'talk' : 'idle');
+  settingsOverlay.classList.remove('open');
+  htmlEl.style.overflow = '';
+};
+
+$('btnResetPos').onclick = () => {
+  ['idlePosX','idlePosY','idleScale','talkPosX','talkPosY','talkScale'].forEach(id => $(id).value = (id.includes('Scale') ? 100 : 50));
+  thumbTransform('thumbIdle', 50, 50, 100);
+  thumbTransform('thumbTalk', 50, 50, 100);
+};
+
 settingsOverlay.addEventListener('click', e => {
-  if (e.target === settingsOverlay) { settingsOverlay.classList.remove('open'); htmlEl.style.overflow = ''; }
+  if (e.target === settingsOverlay) { settingsOverlay.classList.remove('open'); htmlEl.style.overflow = ''; switchVideo(currentAudio ? 'talk' : 'idle'); }
 });
 
 // 语音输入开关
@@ -1055,8 +1203,9 @@ charSelect.addEventListener('change', () => {
   const char = CHARACTERS[val];
   if (!char) return;
 
-  // 切换背景图片
-  document.querySelector('.character-img').src = char.bg;
+  // 切换角色视频
+  switchVideo('idle');
+  applyVideoPosition(char);
 
   // 通知后端切换角色（通过 WebSocket）
   if (wsOk) {
