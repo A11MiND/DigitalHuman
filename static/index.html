@@ -1015,7 +1015,8 @@ function appendLLM(delta) {
     typingEl?.remove();
   }
   llmText += delta;
-  llmEl.querySelector('.text').textContent = llmText;
+  // Strip TTS voice tags from display: (laughs), (sighs), etc.
+  llmEl.querySelector('.text').textContent = llmText.replace(/\((?:laughs|chuckle|coughs|clear-throat|groans|breath|pant|inhale|exhale|gasps|sniffs|sighs|snorts|burps|lip-smacking|humming|hissing|emm|sneezes|whistles|crying|applause)\)/gi, '');
   scrollBottom();
 }
 
