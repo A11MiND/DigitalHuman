@@ -109,7 +109,7 @@ class TTSRequest(BaseModel):
 
 
 # ── MiniMax LLM ──────────────────────────────────────────
-async def minimax_llm_stream(query: str, history: list[dict] | None = None, system_prompt: str | None = None):
+async def minimax_llm_stream(query: str, history=None, system_prompt=None):
     """Call MiniMax LLM with streaming, yield text chunks."""
     if not MINIMAX_API_KEY:
         yield "[ERROR] MINIMAX_API_KEY not configured"
@@ -173,7 +173,7 @@ async def minimax_llm_stream(query: str, history: list[dict] | None = None, syst
 
 
 # ── MiniMax TTS WebSocket Streaming ──────────────────────────────────────────
-async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
+async def minimax_tts_streaming(text: str, tts_config=None):
     """MiniMax TTS WebSocket streaming, yields audio chunks as they arrive.
 
     Args:
@@ -203,11 +203,7 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
 
     ws = None
     try:
-        # Connect with auth headers (handles websockets 13+ and legacy)
-        try:
-            ws = await websockets.connect(url, additional_headers=headers)
-        except TypeError:
-            ws = await websockets.connect(url, extra_headers=headers)
+        ws = await websockets.connect(url, extra_headers=headers)
 
         # Wait for connection success
         connected_msg = await ws.recv()
