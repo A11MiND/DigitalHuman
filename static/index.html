@@ -974,14 +974,16 @@ function handleMsg(msg) {
           const blob = new Blob(window._audioBuffer, { type: 'audio/mpeg' });
           const url = URL.createObjectURL(blob);
           const a = new Audio(url);
-          a.onended = () => { URL.revokeObjectURL(url); switchVideo('idle'); };
-          a.onerror = () => { URL.revokeObjectURL(url); switchVideo('idle'); };
+          a.onended = () => { currentAudio = null; URL.revokeObjectURL(url); switchVideo('idle'); };
+          a.onerror = () => { currentAudio = null; URL.revokeObjectURL(url); switchVideo('idle'); };
           a.play().catch(() => {});
           currentAudio = a;
         } else if (!_ms) {
+          currentAudio = null;
           switchVideo('idle');
         } else if (currentAudio) {
-          currentAudio.onended = () => switchVideo('idle');
+          currentAudio.onended = () => { currentAudio = null; switchVideo('idle'); };
+          currentAudio.onerror = () => { currentAudio = null; switchVideo('idle'); };
         }
       }
       break;
