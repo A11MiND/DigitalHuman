@@ -132,6 +132,7 @@ class CharacterManager:
                 "name_en": c.get("name_en", ""),
                 "role": c.get("role", ""),
                 "icon": f"/characters/{c['id']}/{c.get('icon', 'portrait.jpg')}",
+                "avatar_idle": f"/characters/{c['id']}/{c.get('avatar_idle', 'idle.mp4')}",
                 "theme_color": c.get("theme_color", "#8A6D3B"),
             }
             for c in self._chars.values()
