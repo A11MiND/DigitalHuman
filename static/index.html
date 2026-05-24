@@ -890,11 +890,16 @@ async function loadCharacter(id) {
     // Set video sources
     $('vidIdle').src = charConfig.avatar_idle;
     $('vidTalk').src = charConfig.avatar_talk;
-    // Update thumbnails
+    // Update thumbnails (silent if _thumb.jpg missing)
     const thumbIdle = $('thumbIdle');
     const thumbTalk = $('thumbTalk');
-    if (thumbIdle) thumbIdle.style.backgroundImage = `url(${charConfig.avatar_idle.replace('.mp4','_thumb.jpg')})`;
-    if (thumbTalk) thumbTalk.style.backgroundImage = `url(${charConfig.avatar_talk.replace('.mp4','_thumb.jpg')})`;
+    function _setThumb(el, url) {
+      const img = new Image();
+      img.onload = () => { el.style.backgroundImage = `url(${url})`; };
+      img.src = url;
+    }
+    if (thumbIdle) _setThumb(thumbIdle, charConfig.avatar_idle.replace('.mp4','_thumb.jpg'));
+    if (thumbTalk) _setThumb(thumbTalk, charConfig.avatar_talk.replace('.mp4','_thumb.jpg'));
     // Update placeholder
     inputText.placeholder = `問${charConfig.name}...`;
     // Update title
