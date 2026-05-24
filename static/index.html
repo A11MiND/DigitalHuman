@@ -924,6 +924,9 @@ let callMode = false;       // 通话模式开关
 let callActive = false;     // 通话是否进行中
 let currentAudio = null;
 let audioUnlocked = false;
+let _audioCtx = null;     // Web Audio API context (mobile-safe)
+let _audioBufs = [];      // pending audio chunks for AudioContext mode
+let _audioSource = null;  // current playing source node
 let ws = null;
 let wsOk = false;
 let llmEl = null;
@@ -965,15 +968,19 @@ function _msEnd() {
 }
 
 function _startStreamingAudio() {
-  // Clean up previous
   if (currentAudio) { currentAudio.pause(); currentAudio = null; }
   _msEnd();
   _ms = null; _msBuf = null; _msQueue = []; _msUpdating = false;
+  _audioBufs = [];
+
+  // Lazy-init AudioContext for mobile-safe playback
+  if (!_audioCtx && window.AudioContext) {
+    _audioCtx = new AudioContext();
+  }
 
   const mime = 'audio/mpeg';
   if (!window.MediaSource || !MediaSource.isTypeSupported(mime)) {
-    // Fallback: buffer and blob (Safari, old browsers)
-    console.log('[Audio] MediaSource 不支援，降級 blob 模式');
+    console.log('[Audio] MediaSource 不支援，使用 AudioContext 模式');
     window._audioBuffer = [];
     return false;
   }
@@ -1000,6 +1007,23 @@ function _startStreamingAudio() {
   audio.play().catch(e => console.warn('[Audio] autoplay blocked:', e.message));
   currentAudio = audio;
   return true;
+}
+
+// Mobile-safe audio playback via AudioContext (avoids autoplay block)
+function _playBlobViaAudioContext(blob) {
+  if (!_audioCtx) return;
+  const url = URL.createObjectURL(blob);
+  if (_audioSource) { try { _audioSource.disconnect(); } catch(e) {}; _audioSource = null; }
+  if (_audioCtx.state === 'suspended') { _audioCtx.resume().catch(() => {}); }
+
+  const audio = new Audio(url);
+  const source = _audioCtx.createMediaElementSource(audio);
+  source.connect(_audioCtx.destination);
+  _audioSource = source;
+  audio.onended = () => { currentAudio = null; URL.revokeObjectURL(url); switchVideo('idle'); };
+  audio.onerror = () => { currentAudio = null; URL.revokeObjectURL(url); switchVideo('idle'); };
+  audio.play().catch(e => console.warn('[Audio] mobile play:', e.message));
+  currentAudio = audio;
 }
 
 // WebSocket
@@ -1048,15 +1072,13 @@ function handleMsg(msg) {
       else if (msg.content === 'done') {
         processing = false; updateStatus('在線');
         _msEnd();
-        // Fallback: if blob mode was used, play now
+        // Fallback: if blob mode was used, play via AudioContext (mobile-safe)
         if (window._audioBuffer && window._audioBuffer.length > 0) {
           const blob = new Blob(window._audioBuffer, { type: 'audio/mpeg' });
-          const url = URL.createObjectURL(blob);
-          const a = new Audio(url);
-          a.onended = () => { currentAudio = null; URL.revokeObjectURL(url); switchVideo('idle'); };
-          a.onerror = () => { currentAudio = null; URL.revokeObjectURL(url); switchVideo('idle'); };
-          a.play().catch(() => {});
-          currentAudio = a;
+          _playBlobViaAudioContext(blob);
+        } else if (_audioBufs.length > 0) {
+          const blob = new Blob(_audioBufs, { type: 'audio/mpeg' });
+          _playBlobViaAudioContext(blob);
         } else if (!_ms) {
           currentAudio = null;
           switchVideo('idle');
@@ -1080,8 +1102,11 @@ function playAudio(data) {
   if (!audioOn) return;
   if (_msBuf && _ms && _ms.readyState === 'open') {
     _msFeed(new Uint8Array(data));
+  } else if (_audioCtx) {
+    // AudioContext mode (mobile-safe): buffer all chunks
+    _audioBufs.push(data);
   } else {
-    // Fallback blob mode
+    // Legacy blob fallback
     if (!window._audioBuffer) window._audioBuffer = [];
     window._audioBuffer.push(data);
   }
@@ -1135,14 +1160,14 @@ function scrollBottom() {
   });
 }
 
-// Unlock audio on first user interaction
+// Unlock audio on EVERY user interaction (mobile requires gesture-per-play)
 ['click', 'touchstart'].forEach(evt => {
   document.addEventListener(evt, () => {
     if (!audioUnlocked) {
       const a = new Audio();
       a.play().then(() => { a.pause(); audioUnlocked = true; }).catch(() => {});
     }
-  }, { once: true });
+  });
 });
 
 function updateStatus(text, cls = '') {
@@ -1180,6 +1205,9 @@ function sendQuery(text) {
   if (callActive) btnTalk.classList.add('busy');
   _msEnd(); _ms = null; _msBuf = null; _msQueue = []; _msUpdating = false;
   window._audioBuffer = [];
+  _audioBufs = [];
+  // 移动端：提前 resume AudioContext 锁住用户手势
+  if (_audioCtx && _audioCtx.state === 'suspended') { _audioCtx.resume().catch(() => {}); }
 
   addBubble('user', text);
   history.push({ role: 'user', content: text });
