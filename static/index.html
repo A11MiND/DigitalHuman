@@ -598,8 +598,8 @@
 
 <!-- 全屏角色背景 -->
 <div class="scene">
-  <video class="character-video" id="vidIdle" src="/videos/idle.mp4" loop muted playsinline style="display:block"></video>
-  <video class="character-video" id="vidTalk" src="/videos/talk.mp4" loop muted playsinline style="display:none"></video>
+  <video class="character-video" id="vidIdle" loop muted playsinline style="display:block"></video>
+  <video class="character-video" id="vidTalk" loop muted playsinline style="display:none"></video>
 </div>
 
 <!-- 顶部控制栏 -->
@@ -822,7 +822,7 @@
     <div class="settings-section-title">畫面調整</div>
     <div style="display:flex;gap:10px;margin-bottom:4px;">
       <div style="flex:1;">
-        <div class="crop-thumb" id="thumbIdle" style="background-image:url(/videos/idle_thumb.jpg);background-size:100%;background-position:50% 50%;background-repeat:no-repeat;">
+        <div class="crop-thumb" id="thumbIdle" style="background-size:100%;background-position:50% 50%;background-repeat:no-repeat;">
         </div>
         <div style="font-size:11px;color:#888;text-align:center;margin-top:4px;">在線畫面</div>
         <div style="font-size:11px;color:#aaa;">X</div>
@@ -833,7 +833,7 @@
         <input type="range" id="idleScale" min="80" max="200" value="100" style="width:100%;margin:2px 0;">
       </div>
       <div style="flex:1;">
-        <div class="crop-thumb" id="thumbTalk" style="background-image:url(/videos/talk_thumb.jpg);background-size:100%;background-position:50% 50%;background-repeat:no-repeat;">
+        <div class="crop-thumb" id="thumbTalk" style="background-size:100%;background-position:50% 50%;background-repeat:no-repeat;">
         </div>
         <div style="font-size:11px;color:#888;text-align:center;margin-top:4px;">說話畫面</div>
         <div style="font-size:11px;color:#aaa;">X</div>
@@ -871,6 +871,44 @@ const btnMic = $('btnMic');
 const btnVoice = $('btnVoice');
 const statusDot = $('statusDot');
 const statusText = $('statusText');
+
+// Character config (loaded from API)
+let charId = new URLSearchParams(location.search).get('char') || '';
+if (!charId) { location.replace('/lobby.html'); }
+let charConfig = null;
+
+async function loadCharacter(id) {
+  try {
+    const res = await fetch(`/api/characters/${id}`);
+    if (!res.ok) throw new Error(`Character '${id}' not found`);
+    charConfig = await res.json();
+    console.log('[Char] loaded:', charConfig);
+
+    // Set video sources
+    $('vidIdle').src = charConfig.avatar_idle;
+    $('vidTalk').src = charConfig.avatar_talk;
+    // Update thumbnails
+    const thumbIdle = $('thumbIdle');
+    const thumbTalk = $('thumbTalk');
+    if (thumbIdle) thumbIdle.style.backgroundImage = `url(${charConfig.avatar_idle.replace('.mp4','_thumb.jpg')})`;
+    if (thumbTalk) thumbTalk.style.backgroundImage = `url(${charConfig.avatar_talk.replace('.mp4','_thumb.jpg')})`;
+    // Update placeholder
+    inputText.placeholder = `問${charConfig.name}...`;
+    // Update title
+    document.title = `${charConfig.name} — 數字人`;
+    // Set initial TTS values from character
+    ttsLanguage = charConfig.tts_language || 'Chinese,Yue';
+    ttsVoiceId = charConfig.tts_voice_id || 'Cantonese_PlayfulMan';
+    // Update recognition lang
+    if (recognition) recognition.lang = charConfig.tts_language === 'Chinese,Yue' ? 'zh-HK' : 'zh-CN';
+
+    return true;
+  } catch(e) {
+    console.error('[Char] load failed:', e);
+    alert(`角色「${id}」加載失敗`);
+    return false;
+  }
+}
 
 // State
 let history = [];
@@ -965,7 +1003,7 @@ function _startStreamingAudio() {
 let _wsDelay = 1000;
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(`${protocol}//${location.host}/ws`);
+  ws = new WebSocket(`${protocol}//${location.host}/ws?char=${encodeURIComponent(charId)}`);
   ws.binaryType = 'arraybuffer';
 
   ws.onopen = () => { wsOk = true; _wsDelay = 1000; updateStatus('在線'); syncTtsToServer(); };
@@ -1149,7 +1187,8 @@ function initSR() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return false;
   recognition = new SR();
-  recognition.lang = 'zh-HK';
+  // Use character's listening language: Cantonese→zh-HK, otherwise→zh-CN
+  recognition.lang = (charConfig && charConfig.tts_language === 'Chinese,Yue') ? 'zh-HK' : 'zh-CN';
   recognition.interimResults = true;
   recognition.continuous = true;
 
@@ -1339,10 +1378,16 @@ function syncTtsToServer() {
   ws.send(JSON.stringify(payload));
 }
 
-connect();
-// 自动播放 idle 视频
-document.getElementById('vidIdle').play().catch(() => {});
-applyVideoPosition(_videoPos);
+// Init — load character then connect
+(async function init() {
+  if (!charId) return;  // redirected to lobby
+  const ok = await loadCharacter(charId);
+  if (!ok) { updateStatus('角色加載失敗', ''); return; }
+  connect();
+  document.getElementById('vidIdle').play().catch(() => {});
+  applyVideoPosition(_videoPos);
+  console.log('[Init] 數字人已就緒');
+})();
 
 // ── 设置面板 ──
 const settingsOverlay = $('settingsOverlay');
@@ -1549,7 +1594,7 @@ $('btnDiag').onclick = async () => {
     const res = await fetch('/health');
     const data = await res.json();
     const ping = Date.now() - start;
-    updateDiag(1, 'ok', `LLM API 延遲 ${ping}ms（模型: ${data.tts_model}）`);
+    updateDiag(1, 'ok', `LLM API 延遲 ${ping}ms｜角色: ${data.characters_loaded} 個`);
   } catch(e) {
     updateDiag(1, 'fail', 'LLM API 無法連線');
   }
@@ -1632,7 +1677,7 @@ $('btnExport').onclick = () => {
   URL.revokeObjectURL(url);
 };
 
-console.log('[Init] 秦始皇數字人已就緒');
+console.log('[Init] 數字人已就緒');
 </script>
 </div>
 

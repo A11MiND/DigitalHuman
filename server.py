@@ -8,10 +8,15 @@ import json
 import logging
 import time
 from copy import deepcopy
+from pathlib import Path
 
 import httpx
 import websockets
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+import shutil
+import zipfile
+import io
+import tempfile
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -88,7 +93,77 @@ SYSTEM_PROMPT = """你是秦始皇嬴政，生活在公元前259年至公元前2
 - (chuckle) 轻轻一笑 — 如："汝这小童，倒有几分见识。(chuckle)"
 - (breath) 自然换气 — 长句中途停顿
 - 标签在句中自然穿插，每次最多用 1 个
-"""
+"""  # kept as fallback
+
+
+# ── Character Manager ───────────────────────────────────
+class CharacterManager:
+    """Scan characters/ directory, provide per-character config."""
+
+    def __init__(self, base_dir: str = "characters"):
+        self.base_dir = Path(base_dir)
+        self._chars: dict[str, dict] = {}
+        self.reload()
+
+    def reload(self):
+        """Re-scan characters/ for character.json files."""
+        self._chars.clear()
+        if not self.base_dir.is_dir():
+            logger.warning(f"Character dir not found: {self.base_dir}")
+            return
+        for d in sorted(self.base_dir.iterdir()):
+            if d.is_dir() and not d.name.startswith("."):
+                cfg = d / "character.json"
+                if cfg.is_file():
+                    try:
+                        ch = json.loads(cfg.read_text(encoding="utf-8"))
+                        ch["_dir"] = str(d)
+                        self._chars[ch["id"]] = ch
+                        logger.info(f"Character loaded: {ch['id']} ({ch.get('name', '?')})")
+                    except (json.JSONDecodeError, KeyError) as err:
+                        logger.error(f"Failed to load character {cfg}: {err}")
+
+    def list_all(self) -> list[dict]:
+        """Return summary list for lobby display."""
+        return [
+            {
+                "id": c["id"],
+                "name": c.get("name", c["id"]),
+                "name_en": c.get("name_en", ""),
+                "icon": f"/characters/{c['id']}/{c.get('icon', 'portrait.jpg')}",
+                "theme_color": c.get("theme_color", "#8A6D3B"),
+            }
+            for c in self._chars.values()
+        ]
+
+    def get(self, char_id: str) -> dict | None:
+        """Return full character config."""
+        return self._chars.get(char_id)
+
+    def get_system_prompt(self, char_id: str) -> str:
+        """Return system prompt for a character, with fallback."""
+        ch = self._chars.get(char_id)
+        if ch and ch.get("system_prompt"):
+            return ch["system_prompt"]
+        return SYSTEM_PROMPT
+
+    def get_tts_defaults(self, char_id: str) -> dict:
+        """Return TTS defaults from character config, falling back to system defaults."""
+        ch = self._chars.get(char_id)
+        if not ch:
+            return dict(DEFAULT_TTS_CONFIG)
+        cfg = dict(DEFAULT_TTS_CONFIG)
+        cfg["voice_id"] = ch.get("tts_voice_id", cfg["voice_id"])
+        cfg["language_boost"] = ch.get("tts_language", cfg["language_boost"])
+        cfg["speed"] = ch.get("tts_speed", cfg["speed"])
+        cfg["vol"] = ch.get("tts_vol", cfg["vol"])
+        cfg["pitch"] = ch.get("tts_pitch", cfg["pitch"])
+        return cfg
+
+
+# ── Global Character Manager ────────────────────────────
+char_mgr = CharacterManager()
+
 
 # ── FastAPI App ─────────────────────────────────────────
 app = FastAPI(title="Digital Human — Qin Shi Huang")
@@ -352,12 +427,14 @@ async def tts_endpoint(req: TTSRequest):
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket full-duplex real-time dialogue with streaming TTS."""
+    char_id = websocket.query_params.get("char", "qin-shihuang")
     await websocket.accept()
-    logger.info("WebSocket client connected")
+    logger.info(f"WebSocket client connected (char={char_id})")
 
     # Per-connection state — no global mutation
-    tts_config: dict = dict(DEFAULT_TTS_CONFIG)
+    tts_config: dict = char_mgr.get_tts_defaults(char_id)
     conversation_history: list[dict[str, str]] = []
+    system_prompt: str = char_mgr.get_system_prompt(char_id)
 
     try:
         while True:
@@ -436,7 +513,7 @@ async def websocket_endpoint(websocket: WebSocket):
             full_response = ""
             await websocket.send_json({"type": "status", "content": "thinking"})
 
-            async for chunk in minimax_llm_stream(user_text, conversation_history, SYSTEM_PROMPT):
+            async for chunk in minimax_llm_stream(user_text, conversation_history, system_prompt):
                 if chunk.startswith("[ERROR]"):
                     await websocket.send_json({"type": "error", "content": chunk})
                     break
@@ -468,19 +545,111 @@ async def websocket_endpoint(websocket: WebSocket):
             pass
 
 
+# ── Character API ───────────────────────────────────────
+@app.get("/api/characters")
+async def list_characters():
+    """List all available characters for the lobby page."""
+    return char_mgr.list_all()
+
+
+@app.get("/api/characters/{char_id}")
+async def get_character(char_id: str):
+    """Get full character config (without system_prompt)."""
+    ch = char_mgr.get(char_id)
+    if not ch:
+        raise HTTPException(status_code=404, detail=f"Character '{char_id}' not found")
+    # Return config without system_prompt (only sent via WS)
+    return {
+        "id": ch["id"],
+        "name": ch.get("name", ch["id"]),
+        "name_en": ch.get("name_en", ""),
+        "icon": f"/characters/{ch['id']}/{ch.get('icon', 'portrait.jpg')}",
+        "avatar_idle": f"/characters/{ch['id']}/{ch.get('avatar_idle', 'idle.mp4')}",
+        "avatar_talk": f"/characters/{ch['id']}/{ch.get('avatar_talk', 'talk.mp4')}",
+        "theme_color": ch.get("theme_color", "#8A6D3B"),
+        "tts_voice_id": ch.get("tts_voice_id", DEFAULT_TTS_CONFIG["voice_id"]),
+        "tts_language": ch.get("tts_language", DEFAULT_TTS_CONFIG["language_boost"]),
+    }
+
+
+@app.post("/api/characters/import")
+async def import_character(file: UploadFile = File(...)):
+    """Import a character from a .zip file.
+    Expected structure: char_id/character.json + resource files.
+    """
+    if not file.filename or not file.filename.endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Only .zip files accepted")
+
+    try:
+        contents = await file.read()
+        with zipfile.ZipFile(io.BytesIO(contents)) as zf:
+            # Find the character directory (first subfolder)
+            char_dirs: set[str] = set()
+            for name in zf.namelist():
+                parts = name.split("/")
+                if len(parts) >= 2 and parts[0] and not parts[0].startswith("."):
+                    char_dirs.add(parts[0])
+
+            if not char_dirs:
+                raise HTTPException(status_code=400, detail="Zip must contain a character folder")
+
+            char_id = sorted(char_dirs)[0]  # Use first folder as char_id
+
+            # Validate: must have character.json
+            cfg_path = f"{char_id}/character.json"
+            if cfg_path not in zf.namelist():
+                raise HTTPException(status_code=400, detail="character.json not found in zip")
+
+            cfg_data = json.loads(zf.read(cfg_path))
+            if not cfg_data.get("id"):
+                raise HTTPException(status_code=400, detail="character.json missing 'id' field")
+            if not cfg_data.get("name"):
+                raise HTTPException(status_code=400, detail="character.json missing 'name' field")
+
+            # Extract to temp directory first, validate, then move
+            dest = Path("characters") / char_id
+            if dest.exists():
+                # If overwriting, remove old
+                shutil.rmtree(dest)
+
+            with tempfile.TemporaryDirectory() as tmp:
+                zf.extractall(tmp)
+                src = Path(tmp) / char_id
+                if src.is_dir():
+                    shutil.copytree(src, dest)
+                else:
+                    raise HTTPException(status_code=400, detail="Invalid zip structure")
+
+        # Reload character manager
+        char_mgr.reload()
+        return {"ok": True, "id": char_id, "name": cfg_data.get("name")}
+
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Invalid zip file")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Import character failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ── GET /health ─────────────────────────────────────────
 @app.get("/health")
 async def health():
+    chars = char_mgr.list_all()
     return {
         "status": "ok",
         "tts_model": TTS_MODEL,
-        "tts_voice": DEFAULT_TTS_CONFIG["voice_id"],
-        "tts_language": DEFAULT_TTS_CONFIG["language_boost"],
+        "characters_loaded": len(chars),
+        "characters": [c["id"] for c in chars],
         "minimax_configured": bool(MINIMAX_API_KEY),
     }
 
 
-# ── Static Files (must be last) ─────────────────────────
+# ── Static Files ───────────────────────────────────────
+# Mount characters/ for avatar resources (videos, icons)
+app.mount("/characters", StaticFiles(directory="characters"), name="characters")
+# Mount the SPA (must be last)
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
 
@@ -498,13 +667,14 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", "8080"))
 
     print("=" * 60)
-    print("  🏯 秦始皇数字人 — Digital Human (Qin Shi Huang)")
+    print("  🏯 数字人平台 — Digital Human Platform")
     print("=" * 60)
     print(f"  本地访问:     http://localhost:{port}")
     print(f"  局域网访问:   http://{local_ip}:{port}")
+    chars = char_mgr.list_all()
+    print(f"  已加载角色:   {len(chars)} 个 ({', '.join(c['id'] for c in chars)})")
     print(f"  TTS 模型:     {TTS_MODEL}")
-    print(f"  TTS 音色:     {DEFAULT_TTS_CONFIG['voice_id']}")
-    print(f"  MiniMax:      {'✅ 已配置' if MINIMAX_API_KEY else '❌ 未配置 (export MINIMAX_API_KEY=...)'}")
+    print(f"  MiniMax:      {'✅ 已配置' if MINIMAX_API_KEY else '❌ 未配置'}")
     print("=" * 60)
 
     uvicorn.run(

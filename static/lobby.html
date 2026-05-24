@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>數字人平台</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Noto Sans TC", sans-serif;
+    background: #0a0a0f;
+    color: #e0d5c0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .header {
+    padding: 40px 20px 20px;
+    text-align: center;
+  }
+  .header h1 { font-size: 28px; font-weight: 300; letter-spacing: 4px; }
+  .header p { font-size: 13px; color: #888; margin-top: 6px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 20px;
+    padding: 20px;
+    max-width: 700px;
+    width: 100%;
+  }
+  .card {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.2s, border-color 0.2s;
+  }
+  .card:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.2); }
+  .card-icon {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    background: rgba(255,255,255,0.03);
+  }
+  .card-name {
+    padding: 14px 16px;
+    font-size: 16px;
+    font-weight: 500;
+    text-align: center;
+  }
+  .card-import {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 280px;
+    border: 2px dashed rgba(255,255,255,0.15);
+    border-radius: 16px;
+    cursor: pointer;
+    color: #888;
+    transition: border-color 0.2s, color 0.2s;
+  }
+  .card-import:hover { border-color: rgba(255,255,255,0.3); color: #ccc; }
+  .card-import svg { width: 32px; height: 32px; margin-bottom: 10px; opacity: 0.5; }
+  .card-import span { font-size: 14px; }
+  #fileInput { display: none; }
+  .loading { padding: 60px 20px; color: #888; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🏯 數字人平台</h1>
+  <p>選擇一位歷史人物開始對話</p>
+</div>
+<div class="grid" id="grid">
+  <div class="loading">載入中...</div>
+</div>
+<input type="file" id="fileInput" accept=".zip">
+
+<script>
+const grid = document.getElementById('grid');
+const fileInput = document.getElementById('fileInput');
+
+async function loadCharacters() {
+  try {
+    const res = await fetch('/api/characters');
+    const chars = await res.json();
+    grid.innerHTML = '';
+
+    chars.forEach(ch => {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.onclick = () => { location.href = `/?char=${encodeURIComponent(ch.id)}`; };
+      card.innerHTML = `
+        <img class="card-icon" src="${ch.icon}" alt="${ch.name}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23333%22 width=%22100%22 height=%22100%22/><text y=%2255%22 x=%2250%22 text-anchor=%22middle%22 fill=%22%23888%22 font-size=%2220%22>${ch.name[0]}</text></svg>'">
+        <div class="card-name">${ch.name}</div>`;
+      grid.appendChild(card);
+    });
+
+    // Import card
+    const imp = document.createElement('div');
+    imp.className = 'card-import';
+    imp.onclick = () => fileInput.click();
+    imp.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>導入角色 (.zip)</span>`;
+    grid.appendChild(imp);
+
+  } catch(e) {
+    grid.innerHTML = '<div class="loading">無法連接服務器</div>';
+  }
+}
+
+fileInput.onchange = async () => {
+  const file = fileInput.files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const res = await fetch('/api/characters/import', { method: 'POST', body: form });
+    if (res.ok) { alert('導入成功！'); loadCharacters(); }
+    else { const e = await res.json(); alert('導入失敗: ' + (e.detail || '未知錯誤')); }
+  } catch(e) { alert('導入失敗: ' + e.message); }
+  fileInput.value = '';
+};
+
+loadCharacters();
+</script>
+</body>
+</html>
