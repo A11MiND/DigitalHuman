@@ -633,6 +633,29 @@ async def import_character(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/characters/{char_id}/export")
+async def export_character(char_id: str):
+    """Export a character as a .zip file."""
+    ch = char_mgr.get(char_id)
+    if not ch:
+        raise HTTPException(status_code=404, detail=f"Character '{char_id}' not found")
+
+    char_dir = Path(ch["_dir"])
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in sorted(char_dir.rglob("*")):
+            if f.is_file():
+                arcname = str(f.relative_to(char_dir.parent))
+                zf.write(f, arcname)
+    buf.seek(0)
+
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename={char_id}.zip"},
+    )
+
+
 # ── GET /health ─────────────────────────────────────────
 @app.get("/health")
 async def health():
