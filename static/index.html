@@ -1124,12 +1124,17 @@ function appendLLM(delta) {
     typingEl?.remove();
   }
   llmText += delta;
-  // Strip TTS voice tags from display
+  // Strip TTS voice tags + markdown formatting from display
   llmEl.querySelector('.text').textContent = llmText
     .replace(/\((?:laughs|chuckle|coughs|clear-throat|groans|breath|pant|inhale|exhale|gasps|sniffs|sighs|snorts|burps|lip-smacking|humming|hissing|emm|sneezes|whistles|crying|applause)\)/gi, '')
     .replace(/[（(]语气[：:][^）)]*[）)]/g, '')
     .replace(/#\s*[\[（(]?语气[：:][^#]*#/g, '')
-    .replace(/[（(](?:得意|威严|低沉|严肃|冷笑|感慨|叹息|沉吟|轻笑|大笑)[^）)]*[）)]/g, '');
+    .replace(/[（(](?:得意|威严|低沉|严肃|冷笑|感慨|叹息|沉吟|轻笑|大笑)[^）)]*[）)]/g, '')
+    // Strip markdown: **bold**, *italic*, ## headings, - bullets
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/^#{1,3}\s*/gm, '')
+    .replace(/^[-*]\s+/gm, '');
   scrollBottom();
 }
 
