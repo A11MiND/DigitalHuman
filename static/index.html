@@ -893,10 +893,11 @@ async function loadCharacter(id) {
     // Update thumbnails (silent if _thumb.jpg missing)
     const thumbIdle = $('thumbIdle');
     const thumbTalk = $('thumbTalk');
-    function _setThumb(el, url) {
-      const img = new Image();
-      img.onload = () => { el.style.backgroundImage = `url(${url})`; };
-      img.src = url;
+    async function _setThumb(el, url) {
+      try {
+        const r = await fetch(url, { method: 'HEAD' });
+        if (r.ok) el.style.backgroundImage = `url(${url})`;
+      } catch(e) { /* no thumb, fine */ }
     }
     if (thumbIdle) _setThumb(thumbIdle, charConfig.avatar_idle.replace('.mp4','_thumb.jpg'));
     if (thumbTalk) _setThumb(thumbTalk, charConfig.avatar_talk.replace('.mp4','_thumb.jpg'));
