@@ -896,8 +896,10 @@ async function loadCharacter(id) {
     async function _setThumb(el, url) {
       try {
         const r = await fetch(url, { method: 'HEAD' });
-        if (r.ok) el.style.backgroundImage = `url(${url})`;
-      } catch(e) { /* no thumb, fine */ }
+        if (r.ok) { el.style.backgroundImage = `url(${url})`; return; }
+      } catch(e) {}
+      // Fallback: use character portrait
+      el.style.backgroundImage = `url(${charConfig.icon})`;
     }
     if (thumbIdle) _setThumb(thumbIdle, charConfig.avatar_idle.replace('.mp4','_thumb.jpg'));
     if (thumbTalk) _setThumb(thumbTalk, charConfig.avatar_talk.replace('.mp4','_thumb.jpg'));
