@@ -1001,6 +1001,12 @@ function _startStreamingAudio() {
 
 // WebSocket
 let _wsDelay = 1000;
+function ensureConnected() {
+  if (wsOk && ws && ws.readyState === 1) return;  // already open
+  if (!ws || ws.readyState === WebSocket.CLOSED) connect();
+  // If CONNECTING, onopen will handle it — caller waits for wsOk
+}
+
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${protocol}//${location.host}/ws?char=${encodeURIComponent(charId)}`);
@@ -1063,7 +1069,7 @@ function handleMsg(msg) {
 }
 
 function send(text) {
-  if (!wsOk || !ws || ws.readyState !== 1) { processing = false; updateStatus('離線'); alert('連線中斷，請重新整理頁面'); return; }
+  if (!wsOk || !ws || ws.readyState !== 1) { processing = false; updateStatus('連接中斷'); return; }
   ws.send(JSON.stringify({ type: 'text', content: text }));
 }
 
@@ -1160,7 +1166,7 @@ function switchVideo(type) {
 
 function sendQuery(text) {
   if (processing || !text.trim()) return;
-  if (!wsOk) { updateStatus('離線'); return; }
+  if (!wsOk) { ensureConnected(); updateStatus('連接中...', ''); return; }
   processing = true;
   if (currentAudio) { currentAudio.pause(); currentAudio = null; }
   // 通话模式：按钮变黄（思考中）
@@ -1279,8 +1285,9 @@ function _toggleCall() {
     // 普通模式：点一下开始聆听 → 再点停止（原有逻辑）
     if (!micOn) { alert('請先在設置中開啟語音輸入'); return; }
     if (processing) return;
-    if (listening) stopListening();
-    else startListening();
+    if (listening) { stopListening(); return; }
+    ensureConnected();
+    startListening();
     return;
   }
   // 通话模式
@@ -1295,6 +1302,7 @@ function _toggleCall() {
     btnTalk.title = '開始通話';
     updateStatus('在線');
   } else {
+    ensureConnected();
     callActive = true;
     btnTalk.classList.add('call-mode');
     btnTalk.title = '掛斷';
@@ -1378,15 +1386,16 @@ function syncTtsToServer() {
   ws.send(JSON.stringify(payload));
 }
 
-// Init — load character then connect
+// Init — load character then connect (lazy: only on first interaction)
 (async function init() {
   if (!charId) return;  // redirected to lobby
   const ok = await loadCharacter(charId);
   if (!ok) { updateStatus('角色加載失敗', ''); return; }
-  connect();
+  // Don't auto-connect — WebSocket connects on first send/voice/diag
   document.getElementById('vidIdle').play().catch(() => {});
   applyVideoPosition(_videoPos);
-  console.log('[Init] 數字人已就緒');
+  updateStatus('就緒');
+  console.log('[Init] 數字人已就緒（WS 懒连接）');
 })();
 
 // ── 设置面板 ──
@@ -1600,6 +1609,7 @@ $('btnDiag').onclick = async () => {
   }
 
   // 3. TTS 实际测试（用当前设置参数）
+  ensureConnected();
   if (wsOk && ws && ws.readyState === 1) {
     const diagReq = {
       type: 'diag_test',
