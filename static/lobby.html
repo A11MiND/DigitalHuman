@@ -113,11 +113,11 @@
     object-fit: cover;
     transform: scale(1.08);
     opacity: 0;
-    transition: opacity 0.3s ease;
+    transition: opacity 0.3s ease, transform 0.6s ease;
     pointer-events: none;
     z-index: 2;
   }
-  .card:hover .card-media .hover-video { opacity: 1; }
+  .card:hover .card-media .hover-video { opacity: 1; transform: scale(1.14); }
 
   .card-media .gradient-overlay {
     position: absolute;
