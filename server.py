@@ -130,6 +130,7 @@ class CharacterManager:
                 "id": c["id"],
                 "name": c.get("name", c["id"]),
                 "name_en": c.get("name_en", ""),
+                "role": c.get("role", ""),
                 "icon": f"/characters/{c['id']}/{c.get('icon', 'portrait.jpg')}",
                 "theme_color": c.get("theme_color", "#8A6D3B"),
             }

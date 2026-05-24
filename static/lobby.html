@@ -4,79 +4,206 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>數字人平台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@300;500;700&family=Noto+Sans+TC:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
+
   body {
-    font-family: -apple-system, "Noto Sans TC", sans-serif;
-    background: #0a0a0f;
-    color: #e0d5c0;
+    font-family: "Noto Sans TC", -apple-system, sans-serif;
+    background: #08080f;
+    color: #d4c8b0;
     min-height: 100vh;
     display: flex;
     flex-direction: column;
     align-items: center;
+    overflow-x: hidden;
   }
+
+  /* ── Background ambient glow ── */
+  body::before {
+    content: '';
+    position: fixed;
+    top: -30%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(138,109,59,0.08) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── Header ── */
   .header {
-    padding: 40px 20px 20px;
+    position: relative;
+    z-index: 1;
+    padding: 50px 24px 10px;
     text-align: center;
   }
-  .header h1 { font-size: 28px; font-weight: 300; letter-spacing: 4px; }
-  .header p { font-size: 13px; color: #888; margin-top: 6px; }
+  .header h1 {
+    font-family: "Noto Serif TC", serif;
+    font-size: 32px;
+    font-weight: 500;
+    letter-spacing: 6px;
+    color: #c8b888;
+    text-shadow: 0 0 40px rgba(180,140,90,0.15);
+  }
+  .header .subtitle {
+    font-size: 13px;
+    font-weight: 300;
+    color: #6b6048;
+    margin-top: 10px;
+    letter-spacing: 2px;
+  }
+
+  /* ── Grid ── */
   .grid {
+    position: relative;
+    z-index: 1;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 20px;
-    padding: 20px;
-    max-width: 700px;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 22px;
+    padding: 28px 24px 60px;
+    max-width: 640px;
     width: 100%;
   }
+
+  /* ── Character Card ── */
   .card {
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 16px;
+    background: rgba(20,18,12,0.7);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 18px;
     overflow: hidden;
     cursor: pointer;
-    transition: transform 0.2s, border-color 0.2s;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1.2);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
   }
-  .card:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.2); }
-  .card-icon {
+  .card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(180,140,90,0.3);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.4), 0 0 20px rgba(138,109,59,0.1);
+  }
+  .card:active { transform: scale(0.97); }
+
+  .card-media {
+    position: relative;
     width: 100%;
-    aspect-ratio: 1;
-    object-fit: cover;
-    background: rgba(255,255,255,0.03);
+    aspect-ratio: 3/4;
+    overflow: hidden;
+    background: linear-gradient(135deg, rgba(30,25,15,0.8), rgba(10,10,15,0.9));
   }
-  .card-name {
-    padding: 14px 16px;
-    font-size: 16px;
-    font-weight: 500;
+  .card-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.6s ease;
+  }
+  .card:hover .card-media img { transform: scale(1.05); }
+
+  .card-media .gradient-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 50%;
+    background: linear-gradient(to top, rgba(8,8,15,0.9), transparent);
+    pointer-events: none;
+  }
+
+  .card-body {
+    padding: 15px 16px;
     text-align: center;
   }
+  .card-name {
+    font-family: "Noto Serif TC", serif;
+    font-size: 17px;
+    font-weight: 500;
+    color: #d4c8b0;
+    letter-spacing: 2px;
+  }
+  .card-role {
+    font-size: 11px;
+    font-weight: 300;
+    color: #8a7b5a;
+    margin-top: 4px;
+  }
+
+  /* ── Import Card ── */
   .card-import {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     min-height: 280px;
-    border: 2px dashed rgba(255,255,255,0.15);
-    border-radius: 16px;
+    background: rgba(20,18,12,0.4);
+    border: 2px dashed rgba(255,255,255,0.08);
+    border-radius: 18px;
     cursor: pointer;
-    color: #888;
-    transition: border-color 0.2s, color 0.2s;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(4px);
   }
-  .card-import:hover { border-color: rgba(255,255,255,0.3); color: #ccc; }
-  .card-import svg { width: 32px; height: 32px; margin-bottom: 10px; opacity: 0.5; }
-  .card-import span { font-size: 14px; }
+  .card-import:hover {
+    border-color: rgba(180,140,90,0.3);
+    background: rgba(30,25,15,0.5);
+  }
+  .card-import .icon-circle {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.04);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 14px;
+    transition: background 0.3s;
+  }
+  .card-import:hover .icon-circle { background: rgba(255,255,255,0.07); }
+  .card-import .icon-circle svg { width: 22px; height: 22px; stroke: #6b6048; }
+  .card-import span {
+    font-size: 13px;
+    color: #6b6048;
+    font-weight: 300;
+    letter-spacing: 1px;
+  }
+
+  /* ── States ── */
+  .loading, .empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 60px 20px;
+    color: #4a4030;
+    font-size: 14px;
+    font-weight: 300;
+  }
+
   #fileInput { display: none; }
-  .loading { padding: 60px 20px; color: #888; font-size: 14px; }
+
+  /* ── Footer ── */
+  .footer {
+    position: relative;
+    z-index: 1;
+    padding: 0 20px 30px;
+    font-size: 11px;
+    color: #3a3028;
+    letter-spacing: 1px;
+  }
 </style>
 </head>
 <body>
+
 <div class="header">
-  <h1>🏯 數字人平台</h1>
-  <p>選擇一位歷史人物開始對話</p>
+  <h1>數 字 人 殿 堂</h1>
+  <p class="subtitle">與歷史對話</p>
 </div>
+
 <div class="grid" id="grid">
-  <div class="loading">載入中...</div>
+  <div class="loading">靜候先賢降臨…</div>
 </div>
+
+<div class="footer">Digital Human Platform</div>
 <input type="file" id="fileInput" accept=".zip">
 
 <script>
@@ -89,13 +216,23 @@ async function loadCharacters() {
     const chars = await res.json();
     grid.innerHTML = '';
 
+    if (chars.length === 0) {
+      grid.innerHTML = '<div class="empty">尚無角色，請導入 .zip 檔案</div>';
+    }
+
     chars.forEach(ch => {
       const card = document.createElement('div');
       card.className = 'card';
       card.onclick = () => { location.href = `/?char=${encodeURIComponent(ch.id)}`; };
       card.innerHTML = `
-        <img class="card-icon" src="${ch.icon}" alt="${ch.name}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23333%22 width=%22100%22 height=%22100%22/><text y=%2255%22 x=%2250%22 text-anchor=%22middle%22 fill=%22%23888%22 font-size=%2220%22>${ch.name[0]}</text></svg>'">
-        <div class="card-name">${ch.name}</div>`;
+        <div class="card-media">
+          <img src="${ch.icon}" alt="${ch.name}" onerror="this.style.display='none'">
+          <div class="gradient-overlay"></div>
+        </div>
+        <div class="card-body">
+          <div class="card-name">${ch.name}</div>
+          <div class="card-role">${ch.name_en || '歷史人物'}</div>
+        </div>`;
       grid.appendChild(card);
     });
 
@@ -103,11 +240,15 @@ async function loadCharacters() {
     const imp = document.createElement('div');
     imp.className = 'card-import';
     imp.onclick = () => fileInput.click();
-    imp.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>導入角色 (.zip)</span>`;
+    imp.innerHTML = `
+      <div class="icon-circle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </div>
+      <span>導入角色</span>`;
     grid.appendChild(imp);
 
   } catch(e) {
-    grid.innerHTML = '<div class="loading">無法連接服務器</div>';
+    grid.innerHTML = '<div class="loading">無法連接伺服器</div>';
   }
 }
 
@@ -118,7 +259,7 @@ fileInput.onchange = async () => {
   form.append('file', file);
   try {
     const res = await fetch('/api/characters/import', { method: 'POST', body: form });
-    if (res.ok) { alert('導入成功！'); loadCharacters(); }
+    if (res.ok) { loadCharacters(); }
     else { const e = await res.json(); alert('導入失敗: ' + (e.detail || '未知錯誤')); }
   } catch(e) { alert('導入失敗: ' + e.message); }
   fileInput.value = '';
