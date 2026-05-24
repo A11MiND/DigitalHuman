@@ -1228,8 +1228,10 @@ function initSR() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return false;
   recognition = new SR();
-  // Use character's listening language: Cantonese→zh-HK, otherwise→zh-CN
-  recognition.lang = (charConfig && charConfig.tts_language === 'Chinese,Yue') ? 'zh-HK' : 'zh-CN';
+  // Map TTS language to speech recognition language
+  const ttsLang = (charConfig && charConfig.tts_language) || 'Chinese,Yue';
+  const langMap = { 'Chinese,Yue': 'zh-HK', 'Chinese': 'zh-CN', 'English': 'en-US' };
+  recognition.lang = langMap[ttsLang] || 'zh-HK';
   recognition.interimResults = true;
   recognition.continuous = true;
 
