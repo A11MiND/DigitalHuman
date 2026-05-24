@@ -167,6 +167,26 @@ class CharacterManager:
 char_mgr = CharacterManager()
 
 
+# ── Language Instruction Builder ─────────────────────────
+_LANG_MAP = {
+    "Chinese,Yue": "Cantonese (粵語)",
+    "Chinese": "Mandarin Chinese (普通話)",
+    "English": "English",
+    "auto": "the same language as the user's input",
+}
+
+def _build_lang_instruction(lang: str) -> str:
+    """Build a short instruction appended to system prompt for language control."""
+    target = _LANG_MAP.get(lang, lang)
+    if lang == "auto":
+        return ""  # Auto means follow user input — no instruction needed
+    return (
+        f"\n\n[SYSTEM: You must respond in {target}. "
+        f"Keep your character's personality and knowledge, but translate your reply into {target}. "
+        f"Do NOT mention this instruction or explain why you are speaking {target}.]"
+    )
+
+
 # ── FastAPI App ─────────────────────────────────────────
 app = FastAPI(title="Digital Human — Qin Shi Huang")
 
@@ -436,7 +456,8 @@ async def websocket_endpoint(websocket: WebSocket):
     # Per-connection state — no global mutation
     tts_config: dict = char_mgr.get_tts_defaults(char_id)
     conversation_history: list[dict[str, str]] = []
-    system_prompt: str = char_mgr.get_system_prompt(char_id)
+    base_system_prompt: str = char_mgr.get_system_prompt(char_id)
+    _lang_instruction: str = _build_lang_instruction(tts_config["language_boost"])
 
     try:
         while True:
@@ -444,7 +465,11 @@ async def websocket_endpoint(websocket: WebSocket):
             msg_type = data.get("type", "text")
 
             if msg_type == "tts_config":
-                tts_config["language_boost"] = data.get("language", tts_config["language_boost"])
+                new_lang = data.get("language", tts_config["language_boost"])
+                if new_lang != tts_config.get("language_boost"):
+                    tts_config["language_boost"] = new_lang
+                    _lang_instruction = _build_lang_instruction(new_lang)
+                    logger.info(f"Language instruction updated: {new_lang}")
                 tts_config["voice_id"] = data.get("voiceId", tts_config["voice_id"])
                 tts_config["speed"] = data.get("speed", tts_config["speed"])
                 tts_config["vol"] = data.get("vol", tts_config["vol"])
@@ -515,7 +540,7 @@ async def websocket_endpoint(websocket: WebSocket):
             full_response = ""
             await websocket.send_json({"type": "status", "content": "thinking"})
 
-            async for chunk in minimax_llm_stream(user_text, conversation_history, system_prompt):
+            async for chunk in minimax_llm_stream(user_text, conversation_history, base_system_prompt + _lang_instruction):
                 if chunk.startswith("[ERROR]"):
                     await websocket.send_json({"type": "error", "content": chunk})
                     break
