@@ -1450,7 +1450,10 @@ $('btnMenu').onclick = () => {
   $('ttsLang').value = ttsLanguage;
   filterVoiceGroups();
   $('ttsVoice').value = ttsVoiceId;
-  $('asrLang').value = recognition ? recognition.lang : 'zh-HK';
+  // ASR lang: use recognition if active, otherwise derive from character config
+  const asrDefault = (charConfig && charConfig.tts_language === 'English') ? 'en-US'
+    : (charConfig && charConfig.tts_language === 'Chinese') ? 'zh-CN' : 'zh-HK';
+  $('asrLang').value = recognition ? recognition.lang : asrDefault;
   // TTS 参数回填
   populateTtsControls();
   // 画面调整双栏
