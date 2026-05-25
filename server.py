@@ -296,10 +296,13 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
         if "voice_modify" in tts_config:
             cfg["voice_modify"].update(tts_config["voice_modify"])
 
+    logger.info(f"TTS start: voice={cfg['voice_id']} lang={cfg['language_boost']} text_len={len(text)}")
+
     url = "wss://api.minimaxi.com/ws/v1/t2a_v2"
     headers = {"Authorization": f"Bearer {MINIMAX_API_KEY}"}
 
     ws = None
+    audio_chunk_count = 0
     try:
         ws = await websockets.connect(url, additional_headers=headers)
 
@@ -349,6 +352,7 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
             task_start_payload["voice_modify"] = voice_modify_payload
 
         await ws.send(json.dumps(task_start_payload))
+        logger.info(f"TTS task_start sent: {json.dumps(task_start_payload, ensure_ascii=False)}")
 
         # Wait for task_started
         started_msg = await ws.recv()
@@ -356,6 +360,7 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
         if started_data.get("event") != "task_started":
             logger.error(f"TTS task start failed: {started_data}")
             return
+        logger.info(f"TTS task_started OK")
 
         # Send text
         await ws.send(json.dumps({
@@ -368,6 +373,8 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
             try:
                 msg = await asyncio.wait_for(ws.recv(), timeout=30.0)
                 data = json.loads(msg)
+                event_type = data.get("event", "?")
+                logger.info(f"TTS event: {event_type} is_final={data.get('is_final')} has_audio={'data' in data and 'audio' in data.get('data',{})}")
 
                 if data.get("event") == "task_finished":
                     break
@@ -376,6 +383,7 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
                     audio_hex = data["data"]["audio"]
                     if audio_hex:
                         audio_bytes = bytes.fromhex(audio_hex)
+                        audio_chunk_count += 1
                         yield audio_bytes
 
                 if data.get("is_final"):
@@ -388,6 +396,7 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
         # Finish
         await ws.send(json.dumps({"event": "task_finish"}))
 
+        logger.info(f"TTS done: voice={cfg['voice_id']} chunks={audio_chunk_count}")
     except Exception as e:
         logger.error(f"MiniMax TTS WebSocket error: {e}")
         raise

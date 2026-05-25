@@ -889,6 +889,72 @@ let charId = new URLSearchParams(location.search).get('char') || '';
 if (!charId) { location.replace('/lobby.html'); }
 let charConfig = null;
 
+// Global function to capture video first frame
+function captureVideoFrame(videoUrl, thumbEl) {
+  console.log('[Thumb] Capturing:', videoUrl, '→', thumbEl.id);
+  const video = document.createElement('video');
+  video.src = videoUrl;
+  video.muted = true;
+  video.preload = 'auto';
+  video.playsInline = true;
+  video.crossOrigin = 'anonymous';
+  
+  let seekTimeout = null;
+  
+  video.onloadedmetadata = () => {
+    console.log('[Thumb] Metadata loaded:', video.videoWidth, 'x', video.videoHeight);
+    video.currentTime = 0.001; // Seek to very beginning
+  };
+  
+  video.onloadeddata = () => {
+    console.log('[Thumb] Data loaded, seeking...');
+    // Ensure we seek after data is loaded
+    video.currentTime = 0.05;
+  };
+  
+  video.onseeked = () => {
+    console.log('[Thumb] Seeked to:', video.currentTime);
+    clearTimeout(seekTimeout);
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 720;
+      canvas.height = video.videoHeight || 1280;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      thumbEl.style.backgroundImage = `url(${dataUrl})`;
+      console.log('[Thumb] Captured frame for', thumbEl.id, '- size:', dataUrl.length, 'bytes');
+    } catch(e) {
+      console.warn('[Thumb] Canvas error:', e);
+      // Fallback to character icon
+      if (charConfig) thumbEl.style.backgroundImage = `url(${charConfig.icon})`;
+    }
+    video.src = '';
+    video.load();
+  };
+  
+  video.onerror = (e) => {
+    console.warn('[Thumb] Video load error:', videoUrl, e);
+    // Fallback to character icon
+    if (charConfig) thumbEl.style.backgroundImage = `url(${charConfig.icon})`;
+  };
+  
+  // Fallback timeout - if nothing happens in 3 seconds, use icon
+  seekTimeout = setTimeout(() => {
+    console.warn('[Thumb] Timeout capturing:', videoUrl);
+    if (charConfig) thumbEl.style.backgroundImage = `url(${charConfig.icon})`;
+  }, 3000);
+}
+
+// Refresh thumbnails when opening settings
+function refreshThumbnails() {
+  if (!charConfig) return;
+  const thumbIdle = $('thumbIdle');
+  const thumbTalk = $('thumbTalk');
+  if (thumbIdle) captureVideoFrame(charConfig.avatar_idle, thumbIdle);
+  if (thumbTalk) captureVideoFrame(charConfig.avatar_talk, thumbTalk);
+}
+
 async function loadCharacter(id) {
   try {
     const res = await fetch(`/api/characters/${id}`);
@@ -899,19 +965,9 @@ async function loadCharacter(id) {
     // Set video sources
     $('vidIdle').src = charConfig.avatar_idle;
     $('vidTalk').src = charConfig.avatar_talk;
-    // Update thumbnails (silent if _thumb.jpg missing)
-    const thumbIdle = $('thumbIdle');
-    const thumbTalk = $('thumbTalk');
-    async function _setThumb(el, url) {
-      try {
-        const r = await fetch(url, { method: 'HEAD' });
-        if (r.ok) { el.style.backgroundImage = `url(${url})`; return; }
-      } catch(e) {}
-      // Fallback: use character portrait
-      el.style.backgroundImage = `url(${charConfig.icon})`;
-    }
-    if (thumbIdle) _setThumb(thumbIdle, charConfig.avatar_idle.replace('.mp4','_thumb.jpg'));
-    if (thumbTalk) _setThumb(thumbTalk, charConfig.avatar_talk.replace('.mp4','_thumb.jpg'));
+    
+    // Initial thumbnails: capture real video first frame
+    refreshThumbnails();
     // Update placeholder
     inputText.placeholder = `問${charConfig.name}...`;
     // Update title
@@ -919,8 +975,10 @@ async function loadCharacter(id) {
     // Set initial TTS values from character
     ttsLanguage = charConfig.tts_language || 'Chinese,Yue';
     ttsVoiceId = charConfig.tts_voice_id || 'Cantonese_PlayfulMan';
-    // Update recognition lang
-    if (recognition) recognition.lang = charConfig.tts_language === 'Chinese,Yue' ? 'zh-HK' : 'zh-CN';
+    // Update recognition lang - use stored ASR language
+    const langMap = { 'Chinese,Yue': 'zh-HK', 'Chinese': 'zh-CN', 'English': 'en-US' };
+    asrLang = langMap[charConfig.tts_language] || 'zh-HK';
+    if (recognition) recognition.lang = asrLang;
 
     return true;
   } catch(e) {
@@ -937,10 +995,12 @@ let listening = false;
 let _resumeTimer = null;  // normal mode auto-resume timer
 let audioOn = true;
 let micOn = true;
+let asrLang = 'zh-HK';   // 聆听语言（保存用户选择）
 let callMode = false;       // 通话模式开关
 let callActive = false;     // 通话是否进行中
 let currentAudio = null;
 let audioUnlocked = false;
+let _audioEl = null;       // Pre-created &lt;audio&gt; element (activated during user gesture)
 let _audioCtx = null;     // Web Audio API context (mobile-safe)
 let _audioBufs = [];      // pending audio chunks for AudioContext mode
 let _audioSource = null;  // current playing source node
@@ -985,62 +1045,112 @@ function _msEnd() {
 }
 
 function _startStreamingAudio() {
-  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  if (currentAudio) { try { currentAudio.stop(); } catch(e) {}; currentAudio = null; _audioSource = null; }
   _msEnd();
   _ms = null; _msBuf = null; _msQueue = []; _msUpdating = false;
   _audioBufs = [];
 
-  // Lazy-init AudioContext for mobile-safe playback
-  if (!_audioCtx && window.AudioContext) {
-    _audioCtx = new AudioContext();
-  }
-
-  const mime = 'audio/mpeg';
-  if (!window.MediaSource || !MediaSource.isTypeSupported(mime)) {
-    console.log('[Audio] MediaSource 不支援，使用 AudioContext 模式');
-    window._audioBuffer = [];
-    return false;
-  }
-
-  _ms = new MediaSource();
-  const audio = new Audio();
-  audio.src = URL.createObjectURL(_ms);
-
-  _ms.addEventListener('sourceopen', () => {
-    try {
-      _msBuf = _ms.addSourceBuffer(mime);
-      _msBuf.mode = 'sequence';
-      _msBuf.addEventListener('updateend', () => {
-        _msUpdating = false;
-        _msFlush();
-      });
-      // Flush any chunks that arrived before sourceopen
-      _msFlush();
-    } catch (e) {
-      console.warn('[MS] sourceopen error:', e);
-    }
-  });
-
-  audio.play().catch(e => console.warn('[Audio] autoplay blocked:', e.message));
-  currentAudio = audio;
-  return true;
+  // Always use AudioContext buffer mode - most reliable across all platforms
+  // (MediaSource + audio.play() is blocked by mobile autoplay policies)
+  console.log('[Audio] using AudioContext buffer mode');
+  return false;
 }
 
-// Mobile-safe audio playback via AudioContext (avoids autoplay block)
-function _playBlobViaAudioContext(blob) {
-  if (!_audioCtx) return;
-  const url = URL.createObjectURL(blob);
-  if (_audioSource) { try { _audioSource.disconnect(); } catch(e) {}; _audioSource = null; }
-  if (_audioCtx.state === 'suspended') { _audioCtx.resume().catch(() => {}); }
+// ── AudioContext lifecycle ──────────────────────────────────────
+// Must be created/resumed during user gesture for mobile compliance
+function _ensureAudioContext() {
+  if (!window.AudioContext && !window.webkitAudioContext) return;
+  if (!_audioCtx) {
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    console.log('[Audio] AudioContext created, state:', _audioCtx.state);
+  }
+  if (_audioCtx.state === 'suspended') {
+    _audioCtx.resume().then(() => console.log('[Audio] AudioContext resumed')).catch(() => {});
+  }
+  // Also create and activate a persistent Audio element as fallback
+  if (!_audioEl) {
+    _audioEl = new Audio();
+    _audioEl.playsInline = true;
+    _audioEl.preload = 'auto';
+  }
+}
 
-  const audio = new Audio(url);
-  const source = _audioCtx.createMediaElementSource(audio);
-  source.connect(_audioCtx.destination);
-  _audioSource = source;
-  audio.onended = () => { currentAudio = null; URL.revokeObjectURL(url); switchVideo('idle'); };
-  audio.onerror = () => { currentAudio = null; URL.revokeObjectURL(url); switchVideo('idle'); };
-  audio.play().catch(e => console.warn('[Audio] mobile play:', e.message));
-  currentAudio = audio;
+// Activate audio element with a silent audio during user gesture
+// This "unlocks" the element for future playback on mobile
+async function _activateAudioEl() {
+  if (!_audioEl) return;
+  try {
+    // Create a tiny silent MP3 (shortest valid silent MP3 frame)
+    _audioEl.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA/+M4wAAAAAAAAAAAAEluZm8AAAAPAAAAAwAAABQAFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUF+/+MYxAAAAANIAAAAAExBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV/+MYxDsAAANIAAAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV';
+    await _audioEl.play();
+    _audioEl.pause();
+    _audioEl.currentTime = 0;
+    _audioEl.src = '';
+    console.log('[Audio] Audio element activated');
+  } catch(e) {
+    console.warn('[Audio] Audio element activation failed:', e.message);
+  }
+}
+
+// Mobile-safe audio playback via AudioContext.decodeAudioData (no autoplay block)
+async function _playBlobViaAudioContext(blob) {
+  // Always try to ensure AudioContext is alive
+  _ensureAudioContext();
+
+  // Try AudioContext path first (most reliable on mobile when context is running)
+  if (_audioCtx) {
+    if (_audioCtx.state === 'suspended') {
+      await _audioCtx.resume().catch(() => {});
+    }
+    if (_audioCtx.state === 'running') {
+      try {
+        const arrayBuffer = await blob.arrayBuffer();
+        const audioBuffer = await _audioCtx.decodeAudioData(arrayBuffer);
+        console.log('[Audio] decoded MP3, duration:', audioBuffer.duration.toFixed(1) + 's');
+
+        if (_audioSource) { try { _audioSource.stop(); _audioSource.disconnect(); } catch(e) {}; _audioSource = null; }
+
+        const source = _audioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(_audioCtx.destination);
+        source.onended = () => {
+          currentAudio = null;
+          _audioSource = null;
+          switchVideo('idle');
+          console.log('[Audio] playback ended');
+        };
+        source.start();
+        _audioSource = source;
+        currentAudio = source;
+        console.log('[Audio] playback started via AudioContext');
+        return;
+      } catch(e) {
+        console.warn('[Audio] AudioContext path failed, trying Audio element:', e.message);
+      }
+    } else {
+      console.warn('[Audio] AudioContext state is:', _audioCtx.state);
+    }
+  }
+
+  // Fallback: use pre-activated Audio element
+  if (_audioEl) {
+    const url = URL.createObjectURL(blob);
+    _audioEl.src = url;
+    _audioEl.onended = () => { currentAudio = null; switchVideo('idle'); URL.revokeObjectURL(url); };
+    _audioEl.onerror = () => { currentAudio = null; switchVideo('idle'); URL.revokeObjectURL(url); console.warn('[Audio] Audio element error'); };
+    _audioEl.play().then(() => {
+      currentAudio = _audioEl;
+      console.log('[Audio] playback started via Audio element');
+    }).catch(e => {
+      console.error('[Audio] Audio element play() blocked:', e.message);
+      currentAudio = null;
+      switchVideo('idle');
+    });
+    return;
+  }
+
+  console.error('[Audio] No playback method available');
+  switchVideo('idle');
 }
 
 // WebSocket
@@ -1089,19 +1199,13 @@ function handleMsg(msg) {
       else if (msg.content === 'done') {
         processing = false; updateStatus('在線');
         _msEnd();
-        // Fallback: if blob mode was used, play via AudioContext (mobile-safe)
-        if (window._audioBuffer && window._audioBuffer.length > 0) {
-          const blob = new Blob(window._audioBuffer, { type: 'audio/mpeg' });
-          _playBlobViaAudioContext(blob);
-        } else if (_audioBufs.length > 0) {
+        // Buffer mode: all audio chunks were collected in _audioBufs
+        if (_audioBufs.length > 0) {
           const blob = new Blob(_audioBufs, { type: 'audio/mpeg' });
           _playBlobViaAudioContext(blob);
-        } else if (!_ms) {
+        } else if (!currentAudio) {
           currentAudio = null;
           switchVideo('idle');
-        } else if (currentAudio) {
-          currentAudio.onended = () => { currentAudio = null; switchVideo('idle'); };
-          currentAudio.onerror = () => { currentAudio = null; switchVideo('idle'); };
         }
       }
       break;
@@ -1117,13 +1221,10 @@ function send(text) {
 
 function playAudio(data) {
   if (!audioOn) return;
-  if (_msBuf && _ms && _ms.readyState === 'open') {
-    _msFeed(new Uint8Array(data));
-  } else if (_audioCtx) {
-    // AudioContext mode (mobile-safe): buffer all chunks
+  // All audio goes through AudioContext buffer path (most reliable on mobile)
+  if (_audioCtx) {
     _audioBufs.push(data);
   } else {
-    // Legacy blob fallback
     if (!window._audioBuffer) window._audioBuffer = [];
     window._audioBuffer.push(data);
   }
@@ -1182,12 +1283,23 @@ function scrollBottom() {
   });
 }
 
-// Unlock audio on EVERY user interaction (mobile requires gesture-per-play)
+// Unlock audio + init AudioContext on first user interaction (mobile requires gesture)
 ['click', 'touchstart'].forEach(evt => {
   document.addEventListener(evt, () => {
     if (!audioUnlocked) {
-      const a = new Audio();
-      a.play().then(() => { a.pause(); audioUnlocked = true; }).catch(() => {});
+      _ensureAudioContext();
+      // Play silent buffer through AudioContext to unlock it
+      if (_audioCtx) {
+        const buf = _audioCtx.createBuffer(1, 1, 22050);
+        const src = _audioCtx.createBufferSource();
+        src.buffer = buf;
+        src.connect(_audioCtx.destination);
+        src.start();
+        src.onended = () => { src.disconnect(); };
+      }
+      // Also activate Audio element
+      _activateAudioEl();
+      audioUnlocked = true;
     }
   });
 });
@@ -1220,16 +1332,38 @@ function switchVideo(type) {
 
 function sendQuery(text) {
   if (processing || !text.trim()) return;
-  if (!wsOk) { ensureConnected(); updateStatus('連接中...', ''); return; }
+  if (!wsOk) {
+    ensureConnected();
+    updateStatus('連接中，請稍後再試...', '');
+    // Queue the message and retry when WebSocket opens
+    const retryMsg = () => {
+      if (wsOk && ws && ws.readyState === 1) {
+        ws.removeEventListener('open', retryMsg);
+        sendQuery(text);
+      }
+    };
+    ws.addEventListener('open', retryMsg);
+    // Timeout after 8 seconds
+    setTimeout(() => { ws.removeEventListener('open', retryMsg); updateStatus('在線'); }, 8000);
+    return;
+  }
   processing = true;
-  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  // Stop current audio if playing (AudioBufferSourceNode uses .stop(), Audio element uses .pause())
+  if (currentAudio) {
+    try { currentAudio.stop(); } catch(e) {}
+    try { currentAudio.pause(); } catch(e) {}
+    currentAudio = null; _audioSource = null;
+  }
+  if (_audioEl) { _audioEl.pause(); _audioEl.src = ''; }
+  // Ensure AudioContext is created/resumed during this user gesture (critical for mobile)
+  _ensureAudioContext();
+  _activateAudioEl();
   // 通话模式：按钮变黄（思考中）
   if (callActive) btnTalk.classList.add('busy');
   _msEnd(); _ms = null; _msBuf = null; _msQueue = []; _msUpdating = false;
   window._audioBuffer = [];
   _audioBufs = [];
-  // 移动端：提前 resume AudioContext 锁住用户手势
-  if (_audioCtx && _audioCtx.state === 'suspended') { _audioCtx.resume().catch(() => {}); }
+
 
   addBubble('user', text);
   history.push({ role: 'user', content: text });
@@ -1250,10 +1384,8 @@ function initSR() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return false;
   recognition = new SR();
-  // Map TTS language to speech recognition language
-  const ttsLang = (charConfig && charConfig.tts_language) || 'Chinese,Yue';
-  const langMap = { 'Chinese,Yue': 'zh-HK', 'Chinese': 'zh-CN', 'English': 'en-US' };
-  recognition.lang = langMap[ttsLang] || 'zh-HK';
+  // Use user's selected ASR language
+  recognition.lang = asrLang;
   recognition.interimResults = true;
   recognition.continuous = true;
 
@@ -1382,7 +1514,8 @@ btnMic.onclick = () => {
 btnVoice.onclick = () => {
   audioOn = !audioOn;
   btnVoice.classList.toggle('active', audioOn);
-  if (!audioOn && currentAudio) { currentAudio.pause(); currentAudio = null; }
+  if (!audioOn && currentAudio) { try { currentAudio.stop(); currentAudio.pause(); _audioSource?.disconnect(); } catch(e) {}; currentAudio = null; _audioSource = null; }
+  if (!audioOn && _audioEl) { _audioEl.pause(); _audioEl.src = ''; }
 };
 
 // 发送按钮
@@ -1429,8 +1562,46 @@ const TTS = {
   vmPitch: 0, vmIntensity: 0, vmTimbre: 0, soundEffect: '',
 };
 
+// ── 轻量 TTS 诊断（不弹面板，自动验证当前设置）──────────────────
+function _quickTtsDiag() {
+  if (!wsOk || !ws || ws.readyState !== 1) return;
+  const diagReq = {
+    type: 'diag_test',
+    language: ttsLanguage,
+    voiceId: ttsVoiceId,
+    ttsConfig: {
+      speed: TTS.speed, vol: TTS.vol, pitch: TTS.pitch,
+      emotion: TTS.emotion || null,
+      voice_modify: { pitch: TTS.vmPitch, intensity: TTS.vmIntensity, timbre: TTS.vmTimbre },
+      sound_effect: TTS.soundEffect || null,
+    },
+  };
+  const onResult = (msg) => {
+    try {
+      const d = JSON.parse(msg.data);
+      if (d.type !== 'diag_result') return;
+      ws.removeEventListener('message', onResult);
+      if (d.ok) {
+        console.log('[TTS diag] ✅', d.voiceId, d.ttsMs + 'ms');
+      } else {
+        console.warn('[TTS diag] ❌', d.error);
+        updateStatus('⚠️ TTS 異常', '');
+        setTimeout(() => { if (statusText && statusText.textContent.includes('TTS')) updateStatus('在線'); }, 3000);
+      }
+    } catch(e) {}
+  };
+  ws.addEventListener('message', onResult);
+  ws.send(JSON.stringify(diagReq));
+  // 5 秒超时
+  setTimeout(() => { ws.removeEventListener('message', onResult); }, 5000);
+}
+
 function syncTtsToServer() {
-  if (!wsOk || !ws || ws.readyState !== 1) { console.warn('[TTS] sync skipped: WS not ready'); return; }
+  if (!wsOk || !ws || ws.readyState !== 1) {
+    console.warn('[TTS] sync skipped: WS not ready');
+    ensureConnected();
+    return;
+  }
   const payload = {
     type: 'tts_config',
     language: ttsLanguage, voiceId: ttsVoiceId,
@@ -1450,11 +1621,12 @@ function syncTtsToServer() {
   if (!charId) return;  // redirected to lobby
   const ok = await loadCharacter(charId);
   if (!ok) { updateStatus('角色加載失敗', ''); return; }
-  // Don't auto-connect — WebSocket connects on first send/voice/diag
+  // Auto-connect WebSocket on page load so first message goes through immediately
+  connect();
   document.getElementById('vidIdle').play().catch(() => {});
   applyVideoPosition(_videoPos);
-  updateStatus('就緒');
-  console.log('[Init] 數字人已就緒（WS 懒连接）');
+  updateStatus('連接中...');
+  console.log('[Init] 數字人已就緒（WS 自動連接）');
 })();
 
 // ── 设置面板 ──
@@ -1470,16 +1642,15 @@ $('btnMenu').onclick = () => {
   toggleVoice.classList.toggle('on', audioOn);
   toggleCallMode.classList.toggle('on', callMode);
   $('ttsLang').value = ttsLanguage;
-  filterVoiceGroups();
+  // When opening settings, preserve the current voice selection if it exists in this language
+  filterVoiceGroups(true);
   $('ttsVoice').value = ttsVoiceId;
-  // ASR lang: use recognition if active, otherwise derive from character config
-  const asrDefault = (charConfig && charConfig.tts_language === 'English') ? 'en-US'
-    : (charConfig && charConfig.tts_language === 'Chinese') ? 'zh-CN' : 'zh-HK';
-  $('asrLang').value = recognition ? recognition.lang : asrDefault;
+  // 聆听语言：保持用户选择
+  $('asrLang').value = asrLang;
   // TTS 参数回填
   populateTtsControls();
   // 画面调整双栏
-$('idlePosX').value = _videoPos.idlePosX;
+  $('idlePosX').value = _videoPos.idlePosX;
   $('idlePosY').value = _videoPos.idlePosY;
   $('talkPosX').value = _videoPos.talkPosX;
   $('talkPosY').value = _videoPos.talkPosY;
@@ -1487,6 +1658,8 @@ $('idlePosX').value = _videoPos.idlePosX;
   $('talkScale').value = _videoPos.talkScale;
   thumbTransform('thumbIdle', $('idlePosX').value, $('idlePosY').value, $('idleScale').value);
   thumbTransform('thumbTalk', $('talkPosX').value, $('talkPosY').value, $('talkScale').value);
+  // Refresh video thumbnails on every settings open
+  refreshThumbnails();
   diagResults.style.display = 'none';
   htmlEl.style.overflow = 'hidden';
   settingsOverlay.classList.add('open');
@@ -1496,18 +1669,40 @@ $('btnSettingsClose').onclick = () => { settingsOverlay.classList.remove('open')
 $('btnRefresh').onclick = () => location.reload();
 
 // TTS 语言与音色
-function filterVoiceGroups() {
+function filterVoiceGroups(preserveVoiceId = false) {
   const opts = $('ttsVoice').querySelectorAll('optgroup');
+  const currentLang = $('ttsLang').value;
   let firstVisible = null;
+  let currentVoiceExists = false;
+  
   opts.forEach(g => {
-    if (g.dataset.lang === ttsLanguage) { g.style.display = ''; if (!firstVisible) firstVisible = g.querySelector('option'); }
-    else { g.style.display = 'none'; }
+    if (g.dataset.lang === currentLang) {
+      g.style.display = '';
+      if (!firstVisible) firstVisible = g.querySelector('option');
+      // Check if current voice exists in this group
+      const voiceOpts = g.querySelectorAll('option');
+      voiceOpts.forEach(opt => {
+        if (opt.value === ttsVoiceId) currentVoiceExists = true;
+      });
+    } else {
+      g.style.display = 'none';
+    }
   });
-  if (firstVisible) { ttsVoiceId = firstVisible.value; $('ttsVoice').value = ttsVoiceId; }
+  
+  // Only change voice if current one doesn't exist in this language group
+  // or if we're explicitly resetting (preserveVoiceId = false and voice doesn't exist)
+  if (!preserveVoiceId || !currentVoiceExists) {
+    if (firstVisible) {
+      ttsVoiceId = firstVisible.value;
+    }
+  }
+  $('ttsVoice').value = ttsVoiceId;
 }
+
 $('ttsLang').addEventListener('change', () => {
   ttsLanguage = $('ttsLang').value;
-  filterVoiceGroups();
+  // When language changes, switch to first voice of that language (don't preserve)
+  filterVoiceGroups(false);
   syncTtsToServer();
 });
 $('ttsVoice').addEventListener('change', () => {
@@ -1515,8 +1710,18 @@ $('ttsVoice').addEventListener('change', () => {
   syncTtsToServer();
 });
 $('asrLang').addEventListener('change', () => {
-  const lang = $('asrLang').value;
-  if (recognition) { recognition.lang = lang; if (listening) { stopListening(); setTimeout(() => { if (micOn) startListening(); }, 200); } }
+  const newLang = $('asrLang').value;
+  asrLang = newLang;
+  if (recognition) {
+    const wasListening = listening;
+    stopListening();
+    // Reinitialize recognition with new language
+    recognition = null;
+    initSR();
+    if (wasListening && micOn) {
+      setTimeout(() => { startListening(); }, 300);
+    }
+  }
 });
 
 // ── TTS 参数调试 ──
@@ -1627,7 +1832,8 @@ $('setVoice').onclick = () => {
   audioOn = !audioOn;
   toggleVoice.classList.toggle('on', audioOn);
   btnVoice.classList.toggle('active', audioOn);
-  if (!audioOn && currentAudio) { currentAudio.pause(); currentAudio = null; }
+  if (!audioOn && currentAudio) { try { currentAudio.stop(); currentAudio.pause(); _audioSource?.disconnect(); } catch(e) {}; currentAudio = null; _audioSource = null; }
+  if (!audioOn && _audioEl) { _audioEl.pause(); _audioEl.src = ''; }
 };
 
 // 实验功能：通话模式
