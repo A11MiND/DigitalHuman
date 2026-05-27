@@ -159,6 +159,7 @@
     font-size: 15px;
     line-height: 1.55;
     animation: bubbleIn 0.35s cubic-bezier(0.22, 0.61, 0.36, 1);
+    cursor: default;
   }
   .bubble.user {
     align-self: flex-end;
@@ -189,6 +190,16 @@
   @keyframes bubbleIn {
     from { opacity: 0; transform: translateY(12px) scale(0.96); }
     to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bubble { animation: none; }
+    .bubble.fading { animation: none; opacity: 0; }
+    .card { transition: none; }
+    .card:hover { transform: none; }
+    .ctrl-btn { transition: none; }
+    .btn-icon { transition: none; animation: none; }
+    .status-dot { animation: none; }
   }
 
   /* ── 三阶段渐隐动画 ── */
@@ -262,7 +273,8 @@
   }
   .input-bar input:focus {
     border-color: rgba(201,168,76,0.5);
-    box-shadow: 0 0 0 3px rgba(201,168,76,0.1);
+    box-shadow: 0 0 0 3px rgba(201,168,76,0.15);
+    outline: none;
   }
   .input-bar input::placeholder { color: rgba(100,80,60,0.35); }
 
@@ -378,7 +390,14 @@
     padding: 14px 0;
     border-bottom: 1px solid rgba(0,0,0,0.06);
     cursor: pointer;
+    transition: background 0.2s;
+    border-radius: 8px;
+    padding-left: 8px;
+    padding-right: 8px;
+    margin: 0 -8px;
   }
+  .settings-row:hover { background: rgba(0,0,0,0.02); }
+  .settings-row:focus-visible { outline: 2px solid #8a6d3b; outline-offset: -2px; border-radius: 8px; }
   .settings-row:last-child { border-bottom: none; }
   .settings-row .label-text {
     display: flex;
@@ -1253,10 +1272,13 @@ function appendLLM(delta) {
 
 let typingEl = null;
 
+function getRoleLabel() { return charConfig ? charConfig.name : 'AI'; }
+
 function addBubble(role, text) {
+  const roleLabel = role === 'user' ? '你' : getRoleLabel();
   const div = document.createElement('div');
   div.className = `bubble ${role}`;
-  div.innerHTML = `<div class="label">${role === 'user' ? '你' : '秦始皇'}</div><div class="text">${escapeHtml(text)}</div>`;
+  div.innerHTML = `<div class="label">${roleLabel}</div><div class="text">${escapeHtml(text)}</div>`;
   $('messagesInner').appendChild(div);
   scrollBottom();
   return div;

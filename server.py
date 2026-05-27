@@ -44,7 +44,11 @@ DEFAULT_TTS_CONFIG = {
     "sound_effect": None,
 }
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-5s | %(message)s",
+    datefmt="%H:%M:%S",
+)
 logger = logging.getLogger("digital-human")
 
 # ── System Prompt (Qin Shi Huang persona) ───────────────
@@ -111,6 +115,7 @@ class CharacterManager:
         if not self.base_dir.is_dir():
             logger.warning(f"Character dir not found: {self.base_dir}")
             return
+        loaded = []
         for d in sorted(self.base_dir.iterdir()):
             if d.is_dir() and not d.name.startswith("."):
                 cfg = d / "character.json"
@@ -119,9 +124,11 @@ class CharacterManager:
                         ch = json.loads(cfg.read_text(encoding="utf-8"))
                         ch["_dir"] = str(d)
                         self._chars[ch["id"]] = ch
-                        logger.info(f"Character loaded: {ch['id']} ({ch.get('name', '?')})")
+                        loaded.append(ch["id"])
                     except (json.JSONDecodeError, KeyError) as err:
                         logger.error(f"Failed to load character {cfg}: {err}")
+        if loaded:
+            logger.info(f"Loaded {len(loaded)} character(s): {', '.join(loaded)}")
 
     def list_all(self) -> list[dict]:
         """Return summary list for lobby display."""
@@ -296,7 +303,7 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
         if "voice_modify" in tts_config:
             cfg["voice_modify"].update(tts_config["voice_modify"])
 
-    logger.info(f"TTS start: voice={cfg['voice_id']} lang={cfg['language_boost']} text_len={len(text)}")
+    logger.debug(f"TTS start: voice={cfg['voice_id']} lang={cfg['language_boost']} text_len={len(text)}")
 
     url = "wss://api.minimaxi.com/ws/v1/t2a_v2"
     headers = {"Authorization": f"Bearer {MINIMAX_API_KEY}"}
@@ -352,7 +359,7 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
             task_start_payload["voice_modify"] = voice_modify_payload
 
         await ws.send(json.dumps(task_start_payload))
-        logger.info(f"TTS task_start sent: {json.dumps(task_start_payload, ensure_ascii=False)}")
+        logger.debug(f"TTS task_start sent")
 
         # Wait for task_started
         started_msg = await ws.recv()
@@ -360,7 +367,6 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
         if started_data.get("event") != "task_started":
             logger.error(f"TTS task start failed: {started_data}")
             return
-        logger.info(f"TTS task_started OK")
 
         # Send text
         await ws.send(json.dumps({
@@ -374,7 +380,6 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
                 msg = await asyncio.wait_for(ws.recv(), timeout=30.0)
                 data = json.loads(msg)
                 event_type = data.get("event", "?")
-                logger.info(f"TTS event: {event_type} is_final={data.get('is_final')} has_audio={'data' in data and 'audio' in data.get('data',{})}")
 
                 if data.get("event") == "task_finished":
                     break
@@ -396,9 +401,9 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
         # Finish
         await ws.send(json.dumps({"event": "task_finish"}))
 
-        logger.info(f"TTS done: voice={cfg['voice_id']} chunks={audio_chunk_count}")
+        logger.info(f"TTS finished: voice={cfg['voice_id']} chunks={audio_chunk_count}")
     except Exception as e:
-        logger.error(f"MiniMax TTS WebSocket error: {e}")
+        logger.error(f"TTS WebSocket failed: voice={cfg['voice_id']} error={e}", exc_info=True)
         raise
     finally:
         if ws is not None:
@@ -412,12 +417,21 @@ async def ask_endpoint(req: AskRequest):
     if not MINIMAX_API_KEY:
         raise HTTPException(status_code=500, detail="MINIMAX_API_KEY not configured")
 
-    logger.info(f"Ask: {req.query[:100]}...")
+    t0 = time.time()
+    logger.info(f"POST /ask: {req.query[:80]}...")
 
     async def stream_response():
+        n = 0
+        first_at = None
         async for chunk in minimax_llm_stream(req.query, req.history):
+            if first_at is None:
+                first_at = time.time()
+            n += 1
             yield f"data: {json.dumps({'content': chunk})}\n\n"
         yield "data: [DONE]\n\n"
+        ttft = int(((first_at or t0) - t0) * 1000)
+        total = int((time.time() - t0) * 1000)
+        logger.info(f"POST /ask done: {n} chunks, ttft={ttft}ms, total={total}ms")
 
     return StreamingResponse(
         stream_response(),
@@ -437,12 +451,15 @@ async def tts_endpoint(req: TTSRequest):
     if not text:
         raise HTTPException(status_code=400, detail="No text provided")
 
+    t0 = time.time()
+
     async def stream_audio():
         chunk_count = 0
         async for chunk in minimax_tts_streaming(text):
             chunk_count += 1
             yield chunk
-        logger.info(f"TTS streamed {chunk_count} chunks")
+        total_ms = int((time.time() - t0) * 1000)
+        logger.info(f"POST /tts done: {chunk_count} chunks, {total_ms}ms")
 
     return StreamingResponse(
         stream_audio(),
@@ -460,7 +477,10 @@ async def websocket_endpoint(websocket: WebSocket):
     """WebSocket full-duplex real-time dialogue with streaming TTS."""
     char_id = websocket.query_params.get("char", "qin-shihuang")
     await websocket.accept()
-    logger.info(f"WebSocket client connected (char={char_id})")
+    import uuid
+    ws_start = time.time()
+    req_id = uuid.uuid4().hex[:8]
+    logger.info(f"[{req_id}] WS connected  char={char_id}")
 
     # Per-connection state — no global mutation
     tts_config: dict = char_mgr.get_tts_defaults(char_id)
@@ -544,12 +564,17 @@ async def websocket_endpoint(websocket: WebSocket):
             if not user_text:
                 continue
 
-            logger.info(f"WS received: {user_text[:50]}...")
+            t_turn = time.time()
+            turn_num = len(conversation_history) // 2 + 1
+            logger.info(f"[{req_id}][turn-{turn_num}] {user_text[:60]}...")
 
             full_response = ""
             await websocket.send_json({"type": "status", "content": "thinking"})
 
+            ttft = None
             async for chunk in minimax_llm_stream(user_text, conversation_history, base_system_prompt + _lang_instruction):
+                if ttft is None:
+                    ttft = int((time.time() - t_turn) * 1000)
                 if chunk.startswith("[ERROR]"):
                     await websocket.send_json({"type": "error", "content": chunk})
                     break
@@ -562,19 +587,30 @@ async def websocket_endpoint(websocket: WebSocket):
                 if len(conversation_history) > 50:
                     conversation_history = conversation_history[-50:]
 
+                llm_total = int((time.time() - t_turn) * 1000)
+                logger.info(f"[{req_id}] LLM done: {len(full_response)}chars, ttft={ttft}ms, total={llm_total}ms")
+
+                t_tts = time.time()
                 await websocket.send_json({"type": "status", "content": "tts"})
+                tts_chunks = 0
                 try:
                     async for audio_chunk in minimax_tts_streaming(full_response, tts_config):
+                        tts_chunks += 1
                         await websocket.send_bytes(audio_chunk)
                 except Exception as tts_err:
-                    logger.error(f"TTS streaming failed: {tts_err}")
+                    logger.error(f"[{req_id}] TTS streaming failed: {tts_err}", exc_info=True)
                     await websocket.send_json({"type": "error", "content": f"TTS failed: {tts_err}"})
+                tts_ms = int((time.time() - t_tts) * 1000)
+                logger.info(f"[{req_id}] TTS done: {tts_chunks} chunks, {tts_ms}ms")
                 await websocket.send_json({"type": "status", "content": "done"})
 
     except WebSocketDisconnect:
-        logger.info("WebSocket client disconnected")
+        elapsed = int(time.time() - ws_start)
+        turns = len(conversation_history) // 2
+        logger.info(f"[{req_id}] WS disconnected after {elapsed}s  turns={turns}")
     except Exception as e:
-        logger.error(f"WebSocket error: {e}")
+        elapsed = int(time.time() - ws_start)
+        logger.error(f"[{req_id}] WS error after {elapsed}s: {e}", exc_info=True)
         try:
             await websocket.send_json({"type": "error", "content": str(e)})
         except Exception:
@@ -665,7 +701,7 @@ async def import_character(file: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Import character failed: {e}")
+        logger.error(f"Import character failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -725,16 +761,18 @@ if __name__ == "__main__":
 
     port = int(os.getenv("PORT", "8080"))
 
-    print("=" * 60)
-    print("  🏯 数字人平台 — Digital Human Platform")
-    print("=" * 60)
-    print(f"  本地访问:     http://localhost:{port}")
-    print(f"  局域网访问:   http://{local_ip}:{port}")
+    B = "\033[1m"; G = "\033[32m"; Y = "\033[33m"; R = "\033[31m"; C = "\033[36m"; D = "\033[0m"
+    print(f"{Y}{'═' * 50}{D}")
+    print(f"  {B}🏯 数字人平台 — Digital Human Platform{D}")
+    print(f"{Y}{'═' * 50}{D}")
+    print(f"  {C}本地访问:{D}     http://localhost:{port}")
+    print(f"  {C}局域网访问:{D}   http://{local_ip}:{port}")
     chars = char_mgr.list_all()
-    print(f"  已加载角色:   {len(chars)} 个 ({', '.join(c['id'] for c in chars)})")
-    print(f"  TTS 模型:     {TTS_MODEL}")
-    print(f"  MiniMax:      {'✅ 已配置' if MINIMAX_API_KEY else '❌ 未配置'}")
-    print("=" * 60)
+    print(f"  {C}已加载角色:{D}   {len(chars)} 个 ({', '.join(c['id'] for c in chars)})")
+    print(f"  {C}TTS 模型:{D}     {TTS_MODEL}")
+    mm_status = f"{G}✅ 已配置{D}" if MINIMAX_API_KEY else f"{R}❌ 未配置{D}"
+    print(f"  {C}MiniMax:{D}      {mm_status}")
+    print(f"{Y}{'═' * 50}{D}")
 
     uvicorn.run(
         "server:app",
