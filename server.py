@@ -742,6 +742,85 @@ async def health():
     }
 
 
+# ── Log Viewer ────────────────────────────────────────
+@app.get("/api/logs")
+async def api_logs(lines: int = 30):
+    """Return recent service logs (journalctl)."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["journalctl", "-u", "digitalhuman.service", "--no-pager", "-n", str(lines), "-o", "short-iso"],
+            capture_output=True, text=True, timeout=5
+        )
+        return {"logs": result.stdout.strip(), "stderr": result.stderr.strip()}
+    except Exception as e:
+        return {"logs": f"Error reading logs: {e}", "stderr": ""}
+
+
+@app.get("/logs")
+async def log_viewer():
+    """Simple auto-refreshing log viewer page."""
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse("""<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DigitalHuman Logs</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0a0a12; color:#c8d6e5; font:13px/1.5 'SF Mono', 'Fira Code', monospace; padding:16px; min-height:100vh; }
+  .bar { position:sticky; top:0; background:rgba(10,10,18,.9); padding:8px 0; border-bottom:1px solid rgba(255,255,255,.06); margin-bottom:12px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .bar a { color:#6b8ab0; text-decoration:none; font-size:11px; }
+  .bar a:hover { color:#a0c4e8; }
+  .bar select, .bar button { background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); color:#a0b8d0; padding:4px 10px; border-radius:4px; font:inherit; cursor:pointer; }
+  .bar button:hover { background:rgba(255,255,255,.1); }
+  pre { white-space:pre-wrap; word-break:break-all; }
+  .e { color:#ff6b6b; } .w { color:#ffd93d; } .i { color:#48dbfb; } .m { color:#888; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <b>DigitalHuman Logs</b>
+  <label>行数: <select id="lines" onchange="fetchLogs()">
+    <option>20</option><option selected>30</option><option>50</option><option>100</option>
+  </select></label>
+  <button onclick="fetchLogs()">重新整理</button>
+  <label><input type="checkbox" id="auto" checked onchange="toggleAuto()"> 自動更新 (5s)</label>
+  <span style="font-size:11px;color:#555;" id="ts"></span>
+  <a href="/lobby.html">← 返回</a>
+</div>
+<pre id="out">載入中...</pre>
+<script>
+let timer = null;
+function highlight(line) {
+  if (/ERROR|CRITICAL|FATAL/.test(line)) return '<span class="e">'+line+'</span>';
+  if (/WARNING/.test(line)) return '<span class="w">'+line+'</span>';
+  if (/INFO/.test(line)) return '<span class="i">'+line+'</span>';
+  return '<span class="m">'+line+'</span>';
+}
+async function fetchLogs() {
+  const n = document.getElementById('lines').value;
+  try {
+    const r = await fetch('/api/logs?lines='+n);
+    const d = await r.json();
+    document.getElementById('out').innerHTML = d.logs.split('\\n').map(highlight).join('\\n') || '(no logs)';
+    document.getElementById('ts').textContent = new Date().toLocaleTimeString();
+  } catch(e) {
+    document.getElementById('out').textContent = '無法載入 (後端未啟用 journalctl)';
+  }
+}
+function toggleAuto() {
+  if (document.getElementById('auto').checked) { timer = setInterval(fetchLogs, 5000); }
+  else { clearInterval(timer); }
+}
+fetchLogs();
+toggleAuto();
+</script>
+</body>
+</html>""")
+
+
 # ── Static Files ───────────────────────────────────────
 # Mount characters/ for avatar resources (videos, icons)
 app.mount("/characters", StaticFiles(directory="characters"), name="characters")
