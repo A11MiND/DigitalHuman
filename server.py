@@ -16,6 +16,7 @@ import shutil
 import zipfile
 import io
 import tempfile
+import uuid
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -359,7 +360,7 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
             task_start_payload["voice_modify"] = voice_modify_payload
 
         await ws.send(json.dumps(task_start_payload))
-        logger.debug(f"TTS task_start sent")
+        logger.info(f"TTS task_start sent: voice={cfg.get('voice_id')} lang={cfg.get('language_boost')}")
 
         # Wait for task_started
         started_msg = await ws.recv()
@@ -379,7 +380,6 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
             try:
                 msg = await asyncio.wait_for(ws.recv(), timeout=30.0)
                 data = json.loads(msg)
-                event_type = data.get("event", "?")
 
                 if data.get("event") == "task_finished":
                     break
@@ -477,7 +477,6 @@ async def websocket_endpoint(websocket: WebSocket):
     """WebSocket full-duplex real-time dialogue with streaming TTS."""
     char_id = websocket.query_params.get("char", "qin-shihuang")
     await websocket.accept()
-    import uuid
     ws_start = time.time()
     req_id = uuid.uuid4().hex[:8]
     logger.info(f"[{req_id}] WS connected  char={char_id}")
@@ -588,7 +587,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     conversation_history = conversation_history[-50:]
 
                 llm_total = int((time.time() - t_turn) * 1000)
-                logger.info(f"[{req_id}] LLM done: {len(full_response)}chars, ttft={ttft}ms, total={llm_total}ms")
+                logger.info(f"[{req_id}] LLM done: {len(full_response)}chars, ttft={ttft or 0}ms, total={llm_total}ms")
 
                 t_tts = time.time()
                 await websocket.send_json({"type": "status", "content": "tts"})
@@ -681,14 +680,16 @@ async def import_character(file: UploadFile = File(...)):
             # Extract to temp directory first, validate, then move
             dest = Path("characters") / char_id
             if dest.exists():
-                # If overwriting, remove old
-                shutil.rmtree(dest)
+                if dest.is_dir():
+                    await asyncio.to_thread(shutil.rmtree, dest)
+                else:
+                    raise HTTPException(status_code=400, detail=f"'{char_id}' exists but is not a directory")
 
             with tempfile.TemporaryDirectory() as tmp:
                 zf.extractall(tmp)
                 src = Path(tmp) / char_id
                 if src.is_dir():
-                    shutil.copytree(src, dest)
+                    await asyncio.to_thread(shutil.copytree, src, dest)
                 else:
                     raise HTTPException(status_code=400, detail="Invalid zip structure")
 

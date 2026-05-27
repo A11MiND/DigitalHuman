@@ -1165,6 +1165,7 @@ async function _playBlobViaAudioContext(blob) {
       console.error('[Audio] Audio element play() blocked:', e.message);
       currentAudio = null;
       switchVideo('idle');
+      URL.revokeObjectURL(url);
     });
     return;
   }
@@ -1240,14 +1241,8 @@ function send(text) {
 }
 
 function playAudio(data) {
-  if (!audioOn) return;
-  // All audio goes through AudioContext buffer path (most reliable on mobile)
-  if (_audioCtx) {
-    _audioBufs.push(data);
-  } else {
-    if (!window._audioBuffer) window._audioBuffer = [];
-    window._audioBuffer.push(data);
-  }
+  if (!audioOn || !_audioCtx) return;
+  _audioBufs.push(data);
 }
 
 function appendLLM(delta) {
@@ -1374,7 +1369,6 @@ function sendQuery(text) {
   // Stop current audio if playing (AudioBufferSourceNode uses .stop(), Audio element uses .pause())
   if (currentAudio) {
     try { currentAudio.stop(); } catch(e) {}
-    try { currentAudio.pause(); } catch(e) {}
     currentAudio = null; _audioSource = null;
   }
   if (_audioEl) { _audioEl.pause(); _audioEl.src = ''; }
@@ -1537,7 +1531,7 @@ btnMic.onclick = () => {
 btnVoice.onclick = () => {
   audioOn = !audioOn;
   btnVoice.classList.toggle('active', audioOn);
-  if (!audioOn && currentAudio) { try { currentAudio.stop(); currentAudio.pause(); _audioSource?.disconnect(); } catch(e) {}; currentAudio = null; _audioSource = null; }
+  if (!audioOn && currentAudio) { try { currentAudio.stop(); _audioSource?.disconnect(); } catch(e) {}; currentAudio = null; _audioSource = null; }
   if (!audioOn && _audioEl) { _audioEl.pause(); _audioEl.src = ''; }
 };
 
@@ -1714,7 +1708,7 @@ function filterVoiceGroups(preserveVoiceId = false) {
   
   // Only change voice if current one doesn't exist in this language group
   // or if we're explicitly resetting (preserveVoiceId = false and voice doesn't exist)
-  if (!preserveVoiceId || !currentVoiceExists) {
+  if (!preserveVoiceId && !currentVoiceExists) {
     if (firstVisible) {
       ttsVoiceId = firstVisible.value;
     }
@@ -1855,7 +1849,7 @@ $('setVoice').onclick = () => {
   audioOn = !audioOn;
   toggleVoice.classList.toggle('on', audioOn);
   btnVoice.classList.toggle('active', audioOn);
-  if (!audioOn && currentAudio) { try { currentAudio.stop(); currentAudio.pause(); _audioSource?.disconnect(); } catch(e) {}; currentAudio = null; _audioSource = null; }
+  if (!audioOn && currentAudio) { try { currentAudio.stop(); _audioSource?.disconnect(); } catch(e) {}; currentAudio = null; _audioSource = null; }
   if (!audioOn && _audioEl) { _audioEl.pause(); _audioEl.src = ''; }
 };
 
