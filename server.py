@@ -160,8 +160,8 @@ class CharacterManager:
         """Return TTS defaults from character config, falling back to system defaults."""
         ch = self._chars.get(char_id)
         if not ch:
-            return dict(DEFAULT_TTS_CONFIG)
-        cfg = dict(DEFAULT_TTS_CONFIG)
+            return deepcopy(DEFAULT_TTS_CONFIG)
+        cfg = deepcopy(DEFAULT_TTS_CONFIG)
         cfg["voice_id"] = ch.get("tts_voice_id", cfg["voice_id"])
         cfg["language_boost"] = ch.get("tts_language", cfg["language_boost"])
         cfg["speed"] = ch.get("tts_speed", cfg["speed"])
