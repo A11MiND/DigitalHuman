@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>秦始皇數字人</title>
+<title>數字人殿堂</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏛️</text></svg>">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -990,7 +991,7 @@ async function loadCharacter(id) {
     // Update placeholder
     inputText.placeholder = `問${charConfig.name}...`;
     // Update title
-    document.title = `${charConfig.name} — 數字人`;
+    document.title = `${charConfig.name} — 數字人殿堂`;
     // Set initial TTS values from character
     ttsLanguage = charConfig.tts_language || 'Chinese,Yue';
     ttsVoiceId = charConfig.tts_voice_id || 'Cantonese_PlayfulMan';
