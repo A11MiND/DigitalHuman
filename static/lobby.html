@@ -64,17 +64,17 @@
     position: relative;
     z-index: 1;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 22px;
-    padding: 28px 24px 60px;
-    max-width: 640px;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 26px;
+    padding: 32px 24px 60px;
+    max-width: 780px;
     width: 100%;
   }
 
   /* ── Character Card ── */
   .card {
-    background: rgba(20,18,12,0.7);
-    border: 1px solid rgba(255,255,255,0.06);
+    background: linear-gradient(145deg, rgba(30,26,18,0.9), rgba(18,16,12,0.95));
+    border: 1px solid rgba(180,140,90,0.2);
     border-radius: 18px;
     overflow: hidden;
     cursor: pointer;
@@ -82,6 +82,7 @@
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     -webkit-tap-highlight-color: transparent;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3), 0 0 12px rgba(138,109,59,0.06);
   }
   .card:focus-visible {
     outline: 2px solid rgba(180,140,90,0.5);
@@ -89,9 +90,9 @@
     border-radius: 20px;
   }
   .card:hover {
-    transform: translateY(-4px);
-    border-color: rgba(180,140,90,0.3);
-    box-shadow: 0 12px 40px rgba(0,0,0,0.4), 0 0 20px rgba(138,109,59,0.1);
+    transform: translateY(-6px);
+    border-color: rgba(180,140,90,0.5);
+    box-shadow: 0 16px 48px rgba(0,0,0,0.5), 0 0 28px rgba(138,109,59,0.15);
   }
   .card:active { transform: scale(0.97); }
 
@@ -137,21 +138,23 @@
   }
 
   .card-body {
-    padding: 15px 16px;
+    padding: 18px 16px;
     text-align: center;
   }
   .card-name {
     font-family: "Noto Serif TC", serif;
-    font-size: 17px;
+    font-size: 18px;
     font-weight: 500;
-    color: #d4c8b0;
+    color: #e8dcc8;
     letter-spacing: 2px;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.3);
   }
   .card-role {
-    font-size: 11px;
-    font-weight: 300;
-    color: #8a7b5a;
-    margin-top: 4px;
+    font-size: 12px;
+    font-weight: 400;
+    color: #a09070;
+    margin-top: 5px;
+    letter-spacing: 1px;
   }
 
   /* ── Import Card ── */
@@ -160,14 +163,20 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-height: 280px;
-    background: rgba(20,18,12,0.4);
-    border: 2px dashed rgba(255,255,255,0.08);
+    min-height: 320px;
+    background: rgba(25,22,15,0.6);
+    border: 2px dashed rgba(180,140,90,0.2);
     border-radius: 18px;
-    cursor: not-allowed;
-    opacity: 0.4;
-    pointer-events: none;
+    cursor: pointer;
     backdrop-filter: blur(4px);
+    transition: all 0.25s ease;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  }
+  .card-import:hover {
+    border-color: rgba(180,140,90,0.5);
+    background: rgba(35,30,20,0.8);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 28px rgba(0,0,0,0.3), 0 0 16px rgba(138,109,59,0.1);
   }
   .card-import .icon-circle {
     width: 52px;
@@ -240,6 +249,164 @@
     color: #3a3028;
     letter-spacing: 1px;
   }
+
+  /* ── Creation Wizard ── */
+  .wizard-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: rgba(6,6,12,0.88);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+  }
+  .wizard-overlay.open { display: flex; }
+  .wizard {
+    width: min(760px, 100%);
+    max-height: 92vh;
+    overflow: auto;
+    background: rgba(18,17,15,0.96);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.45);
+  }
+  .wizard-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: rgba(18,17,15,0.98);
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    padding: 18px 20px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .wizard-title {
+    font-family: "Noto Serif TC", serif;
+    color: #d4c8b0;
+    font-size: 20px;
+    letter-spacing: 2px;
+  }
+  .wizard-close {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.04);
+    color: #d4c8b0;
+    cursor: pointer;
+    font-size: 22px;
+    line-height: 1;
+  }
+  .wizard-body { padding: 20px; }
+  .wizard-steps {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 6px;
+    margin-bottom: 20px;
+  }
+  .step-dot {
+    height: 5px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.08);
+  }
+  .step-dot.on { background: #a8874f; }
+  .wizard-panel { display: none; }
+  .wizard-panel.active { display: block; }
+  .field { margin-bottom: 14px; }
+  .field label {
+    display: block;
+    font-size: 12px;
+    color: #8a7b5a;
+    margin-bottom: 7px;
+    letter-spacing: 1px;
+  }
+  .field input, .field textarea, .field select {
+    width: 100%;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.05);
+    border-radius: 10px;
+    color: #e7decc;
+    padding: 11px 12px;
+    font: 14px/1.5 "Noto Sans TC", -apple-system, sans-serif;
+    outline: none;
+  }
+  .field textarea { min-height: 110px; resize: vertical; }
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .wizard-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 18px;
+  }
+  .wiz-btn {
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.06);
+    color: #d4c8b0;
+    border-radius: 10px;
+    padding: 10px 16px;
+    cursor: pointer;
+    min-width: 96px;
+  }
+  .wiz-btn.primary {
+    background: rgba(168,135,79,0.75);
+    border-color: rgba(168,135,79,0.45);
+    color: #fff;
+  }
+  .wiz-btn:disabled { opacity: 0.45; cursor: wait; }
+  .status-line {
+    min-height: 20px;
+    margin-top: 10px;
+    color: #8a7b5a;
+    font-size: 12px;
+  }
+  .status-line.error { color: #d87070; }
+  .image-choice-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .image-choice {
+    border: 2px solid transparent;
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(255,255,255,0.04);
+    cursor: pointer;
+  }
+  .image-choice.selected { border-color: #a8874f; }
+  .image-choice img {
+    width: 100%;
+    aspect-ratio: 3/4;
+    display: block;
+    object-fit: cover;
+  }
+  .preview-video-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .preview-video-grid video {
+    width: 100%;
+    aspect-ratio: 3/4;
+    object-fit: cover;
+    background: #000;
+    border-radius: 12px;
+  }
+  @media (max-width: 620px) {
+    .two-col, .preview-video-grid { grid-template-columns: 1fr; }
+    .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 18px; padding: 24px 16px 50px; }
+    .card-import { min-height: 260px; }
+  }
 </style>
 </head>
 <body>
@@ -255,10 +422,178 @@
 
 <div class="footer">內部測試版本 v 0.9.27</div>
 <input type="file" id="fileInput" accept=".zip">
+<input type="file" id="knowledgeInput" accept=".txt,.pdf,.docx" style="display:none">
+
+<div class="wizard-overlay" id="wizardOverlay">
+  <div class="wizard">
+    <div class="wizard-head">
+      <div>
+        <div class="wizard-title">創建新角色</div>
+        <div class="status-line" id="wizardSubtitle">API Key 只保存在本次頁面會話</div>
+      </div>
+      <button class="wizard-close" id="wizardClose" title="關閉">×</button>
+    </div>
+    <div class="wizard-body">
+      <div class="wizard-steps" id="wizardSteps"></div>
+
+      <section class="wizard-panel active" data-step="0">
+        <div class="field">
+          <label>MiniMax API Key</label>
+          <input id="wizApiKey" type="password" placeholder="sk-...">
+        </div>
+        <button class="wiz-btn primary" id="btnTestKey">測試 MiniMax Key</button>
+        <div class="status-line" id="keyStatus"></div>
+      </section>
+
+      <section class="wizard-panel" data-step="1">
+        <div class="two-col">
+          <div class="field"><label>角色名稱</label><input id="wizName" placeholder="例如：李白"></div>
+          <div class="field"><label>英文/副標題</label><input id="wizNameEn" placeholder="Poet Immortal"></div>
+        </div>
+        <div class="field"><label>角色定位</label><input id="wizRole" placeholder="唐代詩人 / 科幻導師 / 品牌顧問"></div>
+        <div class="field"><label>背景設定</label><textarea id="wizBackground" placeholder="輸入角色身份、經歷、性格、禁忌和目標受眾"></textarea></div>
+        <div class="field"><label>說話設定</label><textarea id="wizSpeaking" placeholder="輸入語氣、稱呼、回覆長度、是否古風/粵語/英文等"></textarea></div>
+        <button class="wiz-btn primary" id="btnBuildPrompt">潤色角色 Prompt</button>
+        <div class="status-line" id="promptStatus"></div>
+        <div class="field" style="margin-top:14px;">
+          <label>角色 Prompt（會參考秦始皇與 Elizabeth 的現有格式，可直接編輯）</label>
+          <textarea id="wizSystemPrompt" placeholder="點擊潤色後會自動填入"></textarea>
+        </div>
+      </section>
+
+      <section class="wizard-panel" data-step="2">
+        <div class="field">
+          <label>Web Search 關鍵詞（留空時根據前面角色內容生成）</label>
+          <input id="wizSearchQuery" placeholder="例如：李白 生平 詩風 盛唐">
+        </div>
+        <div class="field">
+          <label>知識庫文本（最多 1000 字）</label>
+          <textarea id="wizKnowledge" maxlength="1000" placeholder="可直接粘貼，也可以上傳 txt/pdf/docx 後自動提取，或點擊 Web Search 生成"></textarea>
+        </div>
+        <button class="wiz-btn" id="btnKnowledgeUpload">上傳知識庫文件</button>
+        <button class="wiz-btn primary" id="btnKnowledgeSearch">Web Search 生成知識庫</button>
+        <div class="status-line" id="knowledgeCount">0 / 1000</div>
+        <div class="status-line" id="knowledgeStatus"></div>
+      </section>
+
+      <section class="wizard-panel" data-step="3">
+        <div class="field">
+          <label>形象描述 / 圖像 Prompt</label>
+          <textarea id="wizImagePrompt" placeholder="描述角色外觀、服裝、鏡頭、光線、背景。建議 3:4 半身像，背景乾淨。"></textarea>
+        </div>
+        <button class="wiz-btn" id="btnBuildImagePrompt">根據角色內容生成圖像 Prompt</button>
+        <button class="wiz-btn primary" id="btnGenerateImages">生成 4 張候選圖</button>
+        <div class="status-line" id="imageStatus"></div>
+      </section>
+
+      <section class="wizard-panel" data-step="4">
+        <div class="image-choice-grid" id="imageChoices"></div>
+        <button class="wiz-btn primary" id="btnGenerateVideos">生成 idle/talk 視頻</button>
+        <div class="status-line" id="videoStatus"></div>
+      </section>
+
+      <section class="wizard-panel" data-step="5">
+        <div class="preview-video-grid" id="videoPreview"></div>
+        <div class="field" style="margin-top:14px;">
+          <label>最終 System Prompt</label>
+          <textarea id="wizFinalPrompt"></textarea>
+        </div>
+        <div class="two-col" style="margin-top:14px;">
+          <div class="field">
+            <label>TTS 語音</label>
+            <select id="wizTtsVoice">
+              <optgroup label="粵語男聲" data-lang="Chinese,Yue">
+                <option value="Cantonese_PlayfulMan" selected>活潑男聲</option>
+                <option value="Cantonese_ProfessionalHost（M)">專業男主持</option>
+              </optgroup>
+              <optgroup label="粵語女聲" data-lang="Chinese,Yue">
+                <option value="Cantonese_GentleLady">溫柔女聲</option>
+                <option value="Cantonese_ProfessionalHost（F)">專業女主持</option>
+                <option value="Cantonese_CuteGirl">可愛女孩</option>
+                <option value="Cantonese_KindWoman">善良女聲</option>
+              </optgroup>
+              <optgroup label="普通話男聲" data-lang="Chinese">
+                <option value="Chinese (Mandarin)_Gentleman">溫潤男聲</option>
+                <option value="Chinese (Mandarin)_Male_Announcer">播報男聲</option>
+              </optgroup>
+              <optgroup label="普通話女聲" data-lang="Chinese">
+                <option value="Chinese (Mandarin)_Sweet_Lady">甜美女聲</option>
+                <option value="Chinese (Mandarin)_Warm_Bestie">溫暖閨蜜</option>
+              </optgroup>
+              <optgroup label="English Female" data-lang="English">
+                <option value="English_Graceful_Lady">Graceful Lady</option>
+                <option value="English_Insightful_Speaker">Insightful Speaker</option>
+                <option value="English_radiant_girl">Radiant Girl</option>
+              </optgroup>
+              <optgroup label="English Male" data-lang="English">
+                <option value="English_Persuasive_Man">Persuasive Man</option>
+                <option value="English_Lucky_Robot">Lucky Robot</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="field">
+            <label>TTS 語言</label>
+            <select id="wizTtsLanguage">
+              <option value="Chinese,Yue">粵語</option>
+              <option value="Chinese">普通話</option>
+              <option value="English">English</option>
+            </select>
+          </div>
+        </div>
+        <button class="wiz-btn primary" id="btnFinalize">完成並加入大廳</button>
+        <div class="status-line" id="finalStatus"></div>
+      </section>
+
+      <div class="wizard-actions">
+        <button class="wiz-btn" id="wizPrev">上一步</button>
+        <button class="wiz-btn primary" id="wizNext">下一步</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script>
 const grid = document.getElementById('grid');
 const fileInput = document.getElementById('fileInput');
+const knowledgeInput = document.getElementById('knowledgeInput');
+
+// ── Auth State ──
+let userCode = '';
+let userName = '';
+try { userCode = localStorage.getItem('dh_user_code') || ''; } catch(_) {}
+try { userName = localStorage.getItem('dh_user_name') || ''; } catch(_) {}
+
+async function verifyCode(code) {
+  const res = await fetch('/api/auth/verify', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({code}),
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.username;
+}
+
+function promptLogin() {
+  const code = prompt('請輸入邀請碼：\n（沒有邀請碼也能體驗對話，但不能創建角色）');
+  if (!code) return;
+  verifyCode(code).then(username => {
+    if (!username) { alert('邀請碼無效'); return; }
+    userCode = code;
+    userName = username;
+    localStorage.setItem('dh_user_code', code);
+    localStorage.setItem('dh_user_name', username);
+    loadCharacters();
+  });
+}
+
+function logout() {
+  userCode = '';
+  userName = '';
+  localStorage.removeItem('dh_user_code');
+  localStorage.removeItem('dh_user_name');
+  loadCharacters();
+}
 
 // Video preview memory management: only one playing at a time
 let _hoverCard = null;
@@ -306,33 +641,463 @@ async function loadCharacters() {
       card.onclick = () => { location.href = `/?char=${encodeURIComponent(ch.id)}`; };
       card.addEventListener('mouseenter', () => _hoverIn(card, ch.avatar_idle));
       card.addEventListener('mouseleave', () => _hoverOut());
-      card.innerHTML = `
-        <div class="card-media">
-          <img src="${ch.icon}" alt="${ch.name}" onerror="this.style.display='none'">
-          <div class="gradient-overlay"></div>
-        </div>
-        <div class="card-body">
-          <div class="card-name">${ch.name}</div>
-          <div class="card-role">${ch.name_en || '歷史人物'}</div>
-        </div>`;
+
+      const media = document.createElement('div');
+      media.className = 'card-media';
+      const img = document.createElement('img');
+      img.src = ch.icon;
+      img.alt = ch.name;
+      img.onerror = () => { img.style.display = 'none'; };
+      media.appendChild(img);
+      const overlay = document.createElement('div');
+      overlay.className = 'gradient-overlay';
+      media.appendChild(overlay);
+      card.appendChild(media);
+
+      const body = document.createElement('div');
+      body.className = 'card-body';
+      const nameEl = document.createElement('div');
+      nameEl.className = 'card-name';
+      nameEl.textContent = ch.name;
+      body.appendChild(nameEl);
+      const roleEl = document.createElement('div');
+      roleEl.className = 'card-role';
+      roleEl.textContent = ch.name_en || '歷史人物';
+      body.appendChild(roleEl);
+      card.appendChild(body);
+
       grid.appendChild(card);
     });
 
-    // Import card
+    // Create card — always visible, prompts for code if needed
     const imp = document.createElement('div');
     imp.className = 'card-import';
+    imp.onclick = async () => {
+      if (userCode) {
+        openWizard();
+      } else {
+        const code = prompt('請輸入邀請碼：');
+        if (!code) return;
+        const username = await verifyCode(code);
+        if (!username) { alert('邀請碼無效'); return; }
+        userCode = code;
+        userName = username;
+        localStorage.setItem('dh_user_code', code);
+        localStorage.setItem('dh_user_name', username);
+        loadCharacters();
+        openWizard();
+      }
+    };
     imp.innerHTML = `
       <div class="icon-circle">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </div>
-      <span>導入角色</span>
-      <div class="card-dev-tag">（開發中，暫未開放）</div>`;
+      <span>創建角色</span>
+      <div class="card-dev-tag">AI 生成流水線</div>`;
     grid.appendChild(imp);
+
+    // Show logged-in user tag
+    if (userName) {
+      const userTag = document.createElement('div');
+      userTag.className = 'card-import';
+      userTag.style.cssText = 'min-height:auto;padding:16px;cursor:default;opacity:0.6;';
+      userTag.onclick = () => { if (confirm('登出？')) logout(); };
+      userTag.innerHTML = `
+        <span style="font-size:12px;color:#a09070;">👤 ${userName}</span>
+        <div class="card-dev-tag">點擊登出</div>`;
+      grid.appendChild(userTag);
+    }
 
   } catch(e) {
     grid.innerHTML = '<div class="loading">無法連接伺服器</div>';
   }
 }
+
+// ── Creation Wizard ───────────────────────────────────
+const wizardOverlay = document.getElementById('wizardOverlay');
+const wizardPanels = [...document.querySelectorAll('.wizard-panel')];
+const wizardSteps = document.getElementById('wizardSteps');
+let wizardStep = 0;
+let sessionMiniMaxKey = '';
+let keyValidated = false;
+let createState = {
+  promptJobId: '',
+  systemPrompt: '',
+  images: [],
+  selectedImageId: '',
+  videos: null,
+};
+
+for (let i = 0; i < wizardPanels.length; i++) {
+  const dot = document.createElement('div');
+  dot.className = 'step-dot';
+  wizardSteps.appendChild(dot);
+}
+
+function $(id) { return document.getElementById(id); }
+
+function setStatus(id, text, isError = false) {
+  const el = $(id);
+  if (!el) return;
+  el.textContent = text || '';
+  el.classList.toggle('error', !!isError);
+}
+
+function setBusy(btn, busy, text) {
+  if (!btn) return;
+  if (busy) {
+    btn.dataset.oldText = btn.textContent;
+    btn.textContent = text || '處理中...';
+    btn.disabled = true;
+  } else {
+    btn.textContent = btn.dataset.oldText || btn.textContent;
+    btn.disabled = false;
+  }
+}
+
+function clampKnowledgeInput() {
+  const el = $('wizKnowledge');
+  if (!el) return;
+  if (el.value.length > 1000) el.value = el.value.slice(0, 1000);
+  $('knowledgeCount').textContent = `${el.value.length} / 1000`;
+}
+
+function headersJson() {
+  const h = {
+    'Content-Type': 'application/json',
+    'X-MiniMax-API-Key': sessionMiniMaxKey,
+  };
+  if (userCode) h['X-User-Code'] = userCode;
+  return h;
+}
+
+function openWizard() {
+  wizardOverlay.classList.add('open');
+  showWizardStep(0);
+}
+
+function closeWizard() {
+  wizardOverlay.classList.remove('open');
+}
+
+function showWizardStep(step) {
+  wizardStep = Math.max(0, Math.min(step, wizardPanels.length - 1));
+  wizardPanels.forEach((panel, idx) => panel.classList.toggle('active', idx === wizardStep));
+  [...wizardSteps.children].forEach((dot, idx) => dot.classList.toggle('on', idx <= wizardStep));
+  $('wizPrev').style.visibility = wizardStep === 0 ? 'hidden' : 'visible';
+  $('wizNext').style.visibility = wizardStep === wizardPanels.length - 1 ? 'hidden' : 'visible';
+}
+
+function requireKey() {
+  sessionMiniMaxKey = $('wizApiKey').value.trim();
+  if (!sessionMiniMaxKey) {
+    setStatus('wizardSubtitle', '請先填寫 MiniMax API Key（只保存於本頁面會話）', true);
+    showWizardStep(0);
+    return false;
+  }
+  if (!keyValidated) {
+    setStatus('keyStatus', '請先測試 MiniMax Key，確認可用後再下一步', true);
+    setStatus('wizardSubtitle', 'MiniMax Key 尚未測試通過', true);
+    showWizardStep(0);
+    return false;
+  }
+  setStatus('wizardSubtitle', 'API Key 已在本頁面會話中就緒，刷新後會丟失');
+  return true;
+}
+
+function baseCharacterPayload() {
+  return {
+    name: $('wizName').value.trim(),
+    name_en: $('wizNameEn').value.trim(),
+    role: $('wizRole').value.trim(),
+    background: $('wizBackground').value.trim(),
+    speaking_style: $('wizSpeaking').value.trim(),
+    knowledge_text: $('wizKnowledge').value.trim().slice(0, 1000),
+    language: 'Chinese,Yue',
+  };
+}
+
+async function ensurePrompt(force = false) {
+  if (!force && createState.systemPrompt) return createState.systemPrompt;
+  if (!requireKey()) throw new Error('missing_api_key');
+  const payload = baseCharacterPayload();
+  if (!payload.name || !payload.background || !payload.speaking_style) {
+    throw new Error('請先填寫角色名稱、背景設定和說話設定');
+  }
+  const res = await fetch('/api/create/prompt', {
+    method: 'POST',
+    headers: headersJson(),
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || 'Prompt 生成失敗');
+  createState.promptJobId = data.job_id;
+  createState.systemPrompt = data.system_prompt;
+  $('wizSystemPrompt').value = data.system_prompt;
+  $('wizFinalPrompt').value = data.system_prompt;
+  return data.system_prompt;
+}
+
+$('wizardClose').onclick = closeWizard;
+wizardOverlay.addEventListener('click', e => { if (e.target === wizardOverlay) closeWizard(); });
+$('wizPrev').onclick = () => showWizardStep(wizardStep - 1);
+$('wizNext').onclick = async () => {
+  if (wizardStep === 0 && !requireKey()) return;
+  if (wizardStep === 1 && $('wizSystemPrompt').value.trim()) {
+    createState.systemPrompt = $('wizSystemPrompt').value.trim();
+    $('wizFinalPrompt').value = createState.systemPrompt;
+  }
+  showWizardStep(wizardStep + 1);
+};
+
+$('wizApiKey').addEventListener('input', () => {
+  keyValidated = false;
+  setStatus('keyStatus', 'Key 已變更，請重新測試');
+  setStatus('wizardSubtitle', 'API Key 只保存在本次頁面會話');
+});
+
+$('btnTestKey').onclick = async () => {
+  const btn = $('btnTestKey');
+  sessionMiniMaxKey = $('wizApiKey').value.trim();
+  if (!sessionMiniMaxKey) {
+    setStatus('keyStatus', '請先填寫 MiniMax API Key', true);
+    return;
+  }
+  setBusy(btn, true, '測試中...');
+  setStatus('keyStatus', '正在用 MiniMax 做一次輕量文本測試...');
+  try {
+    const res = await fetch('/api/create/test-key', { method: 'POST', headers: headersJson() });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'MiniMax Key 測試失敗');
+    keyValidated = true;
+    setStatus('keyStatus', `測試通過，延遲 ${data.latency_ms}ms`);
+    setStatus('wizardSubtitle', 'API Key 已測試通過，刷新後會丟失');
+  } catch (e) {
+    keyValidated = false;
+    setStatus('keyStatus', e.message, true);
+    setStatus('wizardSubtitle', 'MiniMax Key 測試未通過', true);
+  } finally {
+    setBusy(btn, false);
+  }
+};
+
+$('btnBuildPrompt').onclick = async () => {
+  const btn = $('btnBuildPrompt');
+  setBusy(btn, true, '潤色中...');
+  setStatus('promptStatus', '正在調用 MiniMax 優化角色提示詞...');
+  try {
+    await ensurePrompt(true);
+    setStatus('promptStatus', '角色 Prompt 已生成，可在最後一步微調。');
+  } catch (e) {
+    setStatus('promptStatus', e.message, true);
+  } finally {
+    setBusy(btn, false);
+  }
+};
+
+$('btnKnowledgeUpload').onclick = () => knowledgeInput.click();
+knowledgeInput.onchange = async () => {
+  const file = knowledgeInput.files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append('file', file);
+  setStatus('knowledgeStatus', '正在提取文件文本...');
+  try {
+    const h = {};
+    if (userCode) h['X-User-Code'] = userCode;
+    const res = await fetch('/api/create/knowledge', { method: 'POST', body: form, headers: h });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '知識庫提取失敗');
+    $('wizKnowledge').value = data.text;
+    clampKnowledgeInput();
+    setStatus('knowledgeStatus', `已提取 ${data.chars} 字${data.truncated ? '（已截斷）' : ''}`);
+  } catch (e) {
+    setStatus('knowledgeStatus', e.message, true);
+  } finally {
+    knowledgeInput.value = '';
+  }
+};
+
+$('wizKnowledge').addEventListener('input', clampKnowledgeInput);
+clampKnowledgeInput();
+
+$('btnKnowledgeSearch').onclick = async () => {
+  const btn = $('btnKnowledgeSearch');
+  if (!requireKey()) return;
+  setBusy(btn, true, '搜索中...');
+  setStatus('knowledgeStatus', '正在 Web Search 並整理為 1000 字以內知識庫...');
+  try {
+    const payload = baseCharacterPayload();
+    payload.query = $('wizSearchQuery').value.trim();
+    const res = await fetch('/api/create/knowledge/search', {
+      method: 'POST',
+      headers: headersJson(),
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'Web Search 生成失敗');
+    $('wizKnowledge').value = data.text || '';
+    clampKnowledgeInput();
+    setStatus('knowledgeStatus', `已根據「${data.query}」生成知識庫，來源 ${data.sources?.length || 0} 條`);
+  } catch (e) {
+    setStatus('knowledgeStatus', e.message, true);
+  } finally {
+    setBusy(btn, false);
+  }
+};
+
+$('btnBuildImagePrompt').onclick = async () => {
+  const btn = $('btnBuildImagePrompt');
+  if (!requireKey()) return;
+  setBusy(btn, true, '生成中...');
+  setStatus('imageStatus', '正在根據角色內容生成圖像 Prompt...');
+  try {
+    const payload = baseCharacterPayload();
+    payload.system_prompt = $('wizSystemPrompt').value.trim() || createState.systemPrompt || '';
+    const res = await fetch('/api/create/image-prompt', {
+      method: 'POST',
+      headers: headersJson(),
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || '圖像 Prompt 生成失敗');
+    $('wizImagePrompt').value = data.prompt || '';
+    setStatus('imageStatus', '圖像 Prompt 已生成並填入，可直接生成候選圖。');
+  } catch (e) {
+    setStatus('imageStatus', e.message, true);
+  } finally {
+    setBusy(btn, false);
+  }
+};
+
+$('btnGenerateImages').onclick = async () => {
+  const btn = $('btnGenerateImages');
+  if (!requireKey()) return;
+  setBusy(btn, true, '生成中...');
+  setStatus('imageStatus', '正在準備 Prompt 並生成候選圖...');
+  try {
+    if ($('wizSystemPrompt').value.trim()) {
+      createState.systemPrompt = $('wizSystemPrompt').value.trim();
+      $('wizFinalPrompt').value = createState.systemPrompt;
+    } else {
+      await ensurePrompt(true);
+    }
+    const imagePrompt = $('wizImagePrompt').value.trim();
+    if (!imagePrompt) throw new Error('請先填寫形象描述');
+    const res = await fetch('/api/create/images', {
+      method: 'POST',
+      headers: headersJson(),
+      body: JSON.stringify({
+        prompt: imagePrompt,
+        reference_description: `${$('wizName').value.trim()} ${$('wizRole').value.trim()}`.trim(),
+        count: 4,
+        job_id: createState.promptJobId,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || '圖片生成失敗');
+    createState.promptJobId = data.job_id;
+    createState.images = data.images || [];
+    renderImageChoices();
+    setStatus('imageStatus', `已生成 ${createState.images.length} 張候選圖，請選一張。`);
+    showWizardStep(4);
+  } catch (e) {
+    setStatus('imageStatus', e.message, true);
+  } finally {
+    setBusy(btn, false);
+  }
+};
+
+function renderImageChoices() {
+  const box = $('imageChoices');
+  box.innerHTML = '';
+  createState.images.forEach(img => {
+    const item = document.createElement('div');
+    item.className = 'image-choice' + (img.id === createState.selectedImageId ? ' selected' : '');
+    item.innerHTML = `<img src="${img.url}" alt="候選角色圖">`;
+    item.onclick = () => {
+      createState.selectedImageId = img.id;
+      renderImageChoices();
+    };
+    box.appendChild(item);
+  });
+  if (!createState.selectedImageId && createState.images[0]) {
+    createState.selectedImageId = createState.images[0].id;
+    renderImageChoices();
+  }
+}
+
+$('btnGenerateVideos').onclick = async () => {
+  const btn = $('btnGenerateVideos');
+  if (!requireKey()) return;
+  if (!createState.selectedImageId) {
+    setStatus('videoStatus', '請先選擇一張候選圖', true);
+    return;
+  }
+  setBusy(btn, true, '視頻生成中...');
+  setStatus('videoStatus', '正在生成 idle/talk 視頻，這一步可能需要數分鐘...');
+  try {
+    const res = await fetch('/api/create/videos', {
+      method: 'POST',
+      headers: headersJson(),
+      body: JSON.stringify({
+        job_id: createState.promptJobId,
+        image_id: createState.selectedImageId,
+        character_name: $('wizName').value.trim(),
+        image_prompt: $('wizImagePrompt').value.trim(),
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || '視頻生成失敗');
+    createState.videos = data.videos;
+    $('videoPreview').innerHTML = `
+      <video src="${data.videos.idle}" autoplay muted loop playsinline></video>
+      <video src="${data.videos.talk}" autoplay muted loop playsinline></video>`;
+    setStatus('videoStatus', '視頻已生成並完成去音軌/壓縮。');
+    showWizardStep(5);
+  } catch (e) {
+    setStatus('videoStatus', e.message, true);
+  } finally {
+    setBusy(btn, false);
+  }
+};
+
+$('btnFinalize').onclick = async () => {
+  const btn = $('btnFinalize');
+  if (!createState.videos) {
+    setStatus('finalStatus', '請先完成視頻生成', true);
+    return;
+  }
+  setBusy(btn, true, '寫入中...');
+  setStatus('finalStatus', '正在寫入角色目錄...');
+  try {
+    const name = $('wizName').value.trim();
+    const res = await fetch('/api/create/finalize', {
+      method: 'POST',
+      headers: headersJson(),
+      body: JSON.stringify({
+        job_id: createState.promptJobId,
+        character_id: name,
+        name,
+        name_en: $('wizNameEn').value.trim(),
+        role: $('wizRole').value.trim(),
+        system_prompt: $('wizFinalPrompt').value.trim() || createState.systemPrompt,
+        tts_voice_id: $('wizTtsVoice').value.trim() || 'Cantonese_PlayfulMan',
+        tts_language: $('wizTtsLanguage').value.trim() || 'Chinese,Yue',
+        theme_color: '#8A6D3B',
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || '角色寫入失敗');
+    setStatus('finalStatus', '角色已加入大廳，正在刷新...');
+    closeWizard();
+    await loadCharacters();
+  } catch (e) {
+    setStatus('finalStatus', e.message, true);
+  } finally {
+    setBusy(btn, false);
+  }
+};
 
 fileInput.onchange = async () => {
   const file = fileInput.files[0];
@@ -340,12 +1105,21 @@ fileInput.onchange = async () => {
   const form = new FormData();
   form.append('file', file);
   try {
-    const res = await fetch('/api/characters/import', { method: 'POST', body: form });
+    const h = {};
+    if (userCode) h['X-User-Code'] = userCode;
+    const res = await fetch('/api/characters/import', { method: 'POST', body: form, headers: h });
     if (res.ok) { loadCharacters(); }
     else { const e = await res.json(); alert('導入失敗: ' + (e.detail || '未知錯誤')); }
   } catch(e) { alert('導入失敗: ' + e.message); }
   fileInput.value = '';
 };
+
+// Voice-language sync: auto-switch language when voice changes
+$('wizTtsVoice').addEventListener('change', function() {
+  const opt = this.options[this.selectedIndex];
+  const lang = opt.closest('optgroup')?.dataset.lang;
+  if (lang) $('wizTtsLanguage').value = lang;
+});
 
 loadCharacters();
 </script>

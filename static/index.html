@@ -1960,14 +1960,14 @@ $('btnExport').onclick = () => {
   if (history.length === 0) { alert('暫無對話記錄'); return; }
   const exportData = {
     exportTime: new Date().toISOString(),
-    character: '秦始皇嬴政',
+    character: charConfig ? charConfig.name : charId,
     messages: history,
   };
   const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `qinshihuang-chat-${new Date().toISOString().slice(0,10)}.json`;
+  a.download = `${charId || 'character'}-chat-${new Date().toISOString().slice(0,10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
 };

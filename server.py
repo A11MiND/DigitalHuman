@@ -4,11 +4,17 @@ FastAPI + MiniMax LLM + MiniMax TTS (Streaming) + WebSocket 全双工对话
 """
 import os
 import asyncio
+import base64
 import json
 import logging
+import re
+import subprocess
 import time
 from copy import deepcopy
+from html.parser import HTMLParser
 from pathlib import Path
+from typing import Annotated
+from urllib.parse import quote_plus, urlparse, parse_qs, unquote
 
 import httpx
 import websockets
@@ -17,7 +23,7 @@ import zipfile
 import io
 import tempfile
 import uuid
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -26,8 +32,25 @@ from pydantic import BaseModel
 # ── Config ──────────────────────────────────────────────
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "")
 MINIMAX_LLM_BASE = "https://api.minimaxi.com/v1"
+MINIMAX_IMAGE_BASE = "https://api.minimaxi.com/v1"
+MINIMAX_VIDEO_BASE = "https://api.minimaxi.com/v1"
 TTS_MODEL = "speech-2.8-hd"
 TTS_TEXT_MAX = 5000  # TTS max chars before truncation
+GENERATED_DIR = Path(".generated")
+CREATE_JOBS_DIR = GENERATED_DIR / "jobs"
+MAX_KNOWLEDGE_FILE_BYTES = 10 * 1024 * 1024
+MAX_KNOWLEDGE_CHARS = 1000
+
+# ── User Codes ──────────────────────────────────────────
+# Format: "username:code,username:code"
+_raw_codes = os.getenv("USER_CODES", "")
+USER_CODES: dict[str, str] = {}
+for pair in _raw_codes.split(","):
+    pair = pair.strip()
+    if ":" in pair:
+        name, code = pair.split(":", 1)
+        USER_CODES[code.strip()] = name.strip()
+
 
 # 默认 TTS 配置（可被 WebSocket tts_config 覆盖）
 DEFAULT_TTS_CONFIG = {
@@ -142,6 +165,7 @@ class CharacterManager:
                 "icon": f"/characters/{c['id']}/{c.get('icon', 'portrait.jpg')}",
                 "avatar_idle": f"/characters/{c['id']}/{c.get('avatar_idle', 'idle.mp4')}",
                 "theme_color": c.get("theme_color", "#8A6D3B"),
+                "created_by": c.get("created_by", ""),
             }
             for c in self._chars.values()
         ]
@@ -212,6 +236,470 @@ class AskRequest(BaseModel):
 
 class TTSRequest(BaseModel):
     text: str
+
+class CreatePromptRequest(BaseModel):
+    name: str
+    name_en: str = ""
+    role: str = ""
+    background: str
+    speaking_style: str
+    knowledge_text: str = ""
+    language: str = "Chinese,Yue"
+
+class GenerateKnowledgeRequest(BaseModel):
+    name: str
+    name_en: str = ""
+    role: str = ""
+    background: str = ""
+    speaking_style: str = ""
+    query: str = ""
+
+class GenerateImagePromptRequest(BaseModel):
+    name: str
+    name_en: str = ""
+    role: str = ""
+    background: str = ""
+    speaking_style: str = ""
+    system_prompt: str = ""
+
+class CreateImagesRequest(BaseModel):
+    prompt: str
+    reference_description: str = ""
+    count: int = 4
+    job_id: str = ""  # optional: reuse existing prompt job instead of creating a new one
+
+class CreateVideosRequest(BaseModel):
+    job_id: str
+    image_id: str
+    character_name: str
+    image_prompt: str = ""
+
+class FinalizeCharacterRequest(BaseModel):
+    job_id: str
+    character_id: str
+    name: str
+    name_en: str = ""
+    role: str = ""
+    system_prompt: str
+    tts_voice_id: str = DEFAULT_TTS_CONFIG["voice_id"]
+    tts_language: str = DEFAULT_TTS_CONFIG["language_boost"]
+    theme_color: str = "#8A6D3B"
+
+
+ApiKeyHeader = Annotated[str | None, Header(alias="X-MiniMax-API-Key")]
+UserCodeHeader = Annotated[str | None, Header(alias="X-User-Code")]
+
+
+def _verify_user_code(code: str | None) -> str | None:
+    """Return username if code is valid, None otherwise."""
+    if not code or not USER_CODES:
+        return None
+    return USER_CODES.get(code.strip())
+
+
+def _require_user_code(code: str | None) -> str:
+    """Raise 401 if code is invalid or missing."""
+    if not USER_CODES:
+        raise HTTPException(status_code=503, detail="Invite code system not configured")
+    username = _verify_user_code(code)
+    if not username:
+        raise HTTPException(status_code=401, detail="Invalid invite code")
+    return username
+
+
+def _effective_minimax_key(api_key: str | None = None) -> str:
+    """Request header key first, env key as fallback. Never log the value."""
+    return (api_key or "").strip() or MINIMAX_API_KEY
+
+
+def _require_minimax_key(api_key: str | None = None) -> str:
+    key = _effective_minimax_key(api_key)
+    if not key:
+        raise HTTPException(status_code=400, detail="MiniMax API Key required for character creation")
+    return key
+
+
+def _safe_character_id(raw: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", raw.strip().lower()).strip("-")
+    if not slug:
+        slug = f"character-{uuid.uuid4().hex[:8]}"
+    return slug[:64]
+
+
+def _safe_job_id(raw: str) -> str:
+    if not re.fullmatch(r"[a-f0-9]{32}", raw or ""):
+        raise HTTPException(status_code=400, detail="Invalid job_id")
+    return raw
+
+
+def _job_dir(job_id: str) -> Path:
+    return CREATE_JOBS_DIR / _safe_job_id(job_id)
+
+
+def _load_job(job_id: str) -> dict:
+    meta = _job_dir(job_id) / "job.json"
+    if not meta.is_file():
+        raise HTTPException(status_code=404, detail="Creation job not found")
+    return json.loads(meta.read_text(encoding="utf-8"))
+
+
+def _save_job(job_id: str, data: dict) -> None:
+    d = _job_dir(job_id)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "job.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+async def _download_file(url: str, dest: Path, api_key: str | None = None) -> None:
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    async with httpx.AsyncClient(timeout=180.0, follow_redirects=True) as client:
+        res = await client.get(url, headers=headers)
+        if res.status_code >= 400:
+            raise HTTPException(status_code=502, detail=f"Failed to download generated asset: {res.status_code}")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(res.content)
+
+
+def _extract_text_from_txt(raw: bytes) -> str:
+    for enc in ("utf-8", "utf-8-sig", "gb18030", "big5", "latin-1"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="ignore")
+
+
+def _extract_docx_text(path: Path) -> str:
+    try:
+        import docx
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="python-docx is not installed") from exc
+    doc = docx.Document(str(path))
+    return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+
+
+def _extract_pdf_text(path: Path) -> str:
+    try:
+        import PyPDF2
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="PyPDF2 is not installed") from exc
+    text_parts = []
+    with path.open("rb") as fh:
+        reader = PyPDF2.PdfReader(fh)
+        for page in reader.pages[:80]:
+            text_parts.append(page.extract_text() or "")
+    return "\n".join(text_parts)
+
+
+def _ffmpeg_process_video(src: Path, dest: Path, duration: int) -> None:
+    if not shutil.which("ffmpeg"):
+        raise HTTPException(status_code=500, detail="ffmpeg is required to process generated videos")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "ffmpeg", "-y", "-i", str(src), "-t", str(duration), "-an",
+        "-vf", "scale=720:-2,fps=24,format=yuv420p",
+        "-movflags", "+faststart",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
+        str(dest),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=240)
+    if result.returncode != 0 or not dest.is_file() or dest.stat().st_size == 0:
+        logger.error("ffmpeg video processing failed: %s", result.stderr[-1200:])
+        raise HTTPException(status_code=500, detail="Generated video post-processing failed")
+
+
+def _copy_or_make_portrait(src: Path, dest: Path) -> None:
+    if src.is_file():
+        shutil.copy2(src, dest)
+        return
+    raise HTTPException(status_code=500, detail="Selected portrait image missing")
+
+
+def _existing_prompt_examples() -> str:
+    examples = []
+    for char_id in ("qin-shihuang", "elizabeth-i"):
+        ch = char_mgr.get(char_id)
+        if ch and ch.get("system_prompt"):
+            examples.append(f"### {ch.get('name', char_id)}\n{ch['system_prompt'][:3500]}")
+    return "\n\n".join(examples)
+
+
+def _extract_minimax_text(data: dict) -> str:
+    choices = data.get("choices") or []
+    if choices:
+        first = choices[0] or {}
+        msg = first.get("message") or {}
+        return (
+            msg.get("content")
+            or msg.get("reasoning_content")
+            or first.get("text")
+            or first.get("delta", {}).get("content")
+            or ""
+        ).strip()
+    return (data.get("reply") or data.get("text") or data.get("content") or "").strip()
+
+
+def _clamp_knowledge(text: str) -> str:
+    return re.sub(r"\n{3,}", "\n\n", text.strip())[:MAX_KNOWLEDGE_CHARS]
+
+
+class _DuckResultParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.results: list[dict] = []
+        self._in_link = False
+        self._href = ""
+        self._text: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        attrs_d = dict(attrs)
+        href = attrs_d.get("href", "")
+        cls = attrs_d.get("class", "")
+        if tag == "a" and href and ("result-link" in cls or "/l/?" in href):
+            self._in_link = True
+            self._href = href
+            self._text = []
+
+    def handle_data(self, data):
+        if self._in_link:
+            self._text.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "a" and self._in_link:
+            title = " ".join(" ".join(self._text).split())
+            url = self._href
+            if "/l/?" in url:
+                qs = parse_qs(urlparse(url).query)
+                if qs.get("uddg"):
+                    url = unquote(qs["uddg"][0])
+            if title and url:
+                self.results.append({"title": title, "url": url})
+            self._in_link = False
+
+
+async def _search_web(query: str) -> list[dict]:
+    if not query.strip():
+        return []
+    url = f"https://duckduckgo.com/html/?q={quote_plus(query)}"
+    async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+        res = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+    if res.status_code >= 400:
+        raise HTTPException(status_code=502, detail=f"Web search failed: {res.status_code}")
+    parser = _DuckResultParser()
+    parser.feed(res.text)
+    dedup = []
+    seen = set()
+    for item in parser.results:
+        key = item["url"]
+        if key not in seen:
+            seen.add(key)
+            dedup.append(item)
+        if len(dedup) >= 6:
+            break
+    return dedup
+
+
+class MiniMaxProvider:
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        self.headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+    async def improve_prompt(self, req: CreatePromptRequest) -> str:
+        examples = _existing_prompt_examples()
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "你是数字人角色提示词设计师。请把用户给出的角色背景、说话设定和知识库内容整理成"
+                    "可直接作为 system_prompt 使用的角色提示词。要求结构清晰、事实约束明确、可用于中小学生互动，"
+                    "保留角色身份，不编造知识库外的具体事实。每次回答建议 3-5 句，并包含 MiniMax TTS 语气标签使用规则。"
+                    "输出格式要参考下面已有角色样例的章节结构、身份/性格/知识/说话风格/重要规则组织方式。\n\n"
+                    f"{examples}"
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"角色名：{req.name}\n英文/副标题：{req.name_en}\n角色定位：{req.role}\n"
+                    f"回复语言：{req.language}\n\n背景设定：\n{req.background}\n\n说话设定：\n{req.speaking_style}\n\n"
+                    f"知识库摘录（最多1000字）：\n{req.knowledge_text[:MAX_KNOWLEDGE_CHARS]}"
+                ),
+            },
+        ]
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            res = await client.post(
+                f"{MINIMAX_LLM_BASE}/text/chatcompletion_v2",
+                headers=self.headers,
+                json={
+                    "model": "MiniMax-M2.7-highspeed",
+                    "messages": messages,
+                    "stream": False,
+                    "temperature": 0.4,
+                    "max_tokens": 1800,
+                },
+            )
+        if res.status_code >= 400:
+            logger.error("MiniMax prompt API failed: %s", res.status_code)
+            raise HTTPException(status_code=502, detail=f"MiniMax prompt API failed: {res.status_code}")
+        data = res.json()
+        content = _extract_minimax_text(data)
+        if not content:
+            raise HTTPException(status_code=502, detail="MiniMax prompt API returned empty content")
+        return content
+
+    async def simple_text(self, system: str, user: str, max_tokens: int = 800, temperature: float = 0.3) -> str:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            res = await client.post(
+                f"{MINIMAX_LLM_BASE}/text/chatcompletion_v2",
+                headers=self.headers,
+                json={
+                    "model": "MiniMax-M2.7-highspeed",
+                    "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                    "stream": False,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                },
+            )
+        if res.status_code >= 400:
+            logger.error("MiniMax text API failed: %s", res.status_code)
+            raise HTTPException(status_code=502, detail=f"MiniMax text API failed: {res.status_code}")
+        text = _extract_minimax_text(res.json())
+        if not text:
+            raise HTTPException(status_code=502, detail="MiniMax text API returned empty content")
+        return text
+
+    async def generate_images(self, prompt: str, count: int, job_id: str) -> list[dict]:
+        count = max(1, min(count, 5))
+        job = _load_job(job_id)
+        out_dir = _job_dir(job_id) / "images"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "model": "image-01",
+            "prompt": prompt,
+            "aspect_ratio": "3:4",
+            "n": count,
+            "response_format": "url",
+            "prompt_optimizer": True,
+        }
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            res = await client.post(f"{MINIMAX_IMAGE_BASE}/image_generation", headers=self.headers, json=payload)
+        if res.status_code >= 400:
+            logger.error("MiniMax image API failed: %s", res.status_code)
+            raise HTTPException(status_code=502, detail=f"MiniMax image API failed: {res.status_code}")
+        data = res.json()
+        base_resp = data.get("base_resp") or {}
+        if base_resp.get("status_code") and base_resp["status_code"] != 0:
+            raise HTTPException(status_code=502, detail=f"MiniMax image API error: {base_resp.get('status_msg', 'unknown')}")
+        urls = []
+        if isinstance(data.get("data"), dict):
+            urls.extend(data["data"].get("image_urls") or data["data"].get("images") or [])
+        urls.extend(data.get("image_urls") or data.get("images") or [])
+        normalized = []
+        for item in urls:
+            if isinstance(item, str):
+                normalized.append(item)
+            elif isinstance(item, dict):
+                normalized.append(item.get("url") or item.get("image_url") or item.get("base64"))
+        urls = [u for u in normalized if u]
+        if not urls:
+            raise HTTPException(status_code=502, detail="MiniMax image API returned no images")
+
+        images = []
+        for idx, url in enumerate(urls[:count], start=1):
+            image_id = f"img-{idx}"
+            local = out_dir / f"{image_id}.jpg"
+            if url.startswith("data:") or len(url) > 500 and not url.startswith("http"):
+                b64 = url.split(",", 1)[-1]
+                local.write_bytes(base64.b64decode(b64))
+                source_url = ""
+            else:
+                await _download_file(url, local)
+                source_url = url
+            item = {
+                "id": image_id,
+                "url": f"/generated/jobs/{job_id}/images/{local.name}",
+                "source_url": source_url,
+            }
+            images.append(item)
+        job["images"] = images
+        job["image_prompt"] = prompt
+        _save_job(job_id, job)
+        return images
+
+    async def generate_video(self, prompt: str, first_frame_url: str, download_path: Path, duration: int) -> dict:
+        if not first_frame_url:
+            raise HTTPException(status_code=400, detail="MiniMax video requires a generated image URL as first frame")
+        payload = {
+            "model": "MiniMax-Hailuo-2.3-Fast",
+            "prompt": prompt,
+            "first_frame_image": first_frame_url,
+            "duration": 6 if duration <= 6 else 10,
+            "resolution": "768P",
+        }
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            res = await client.post(f"{MINIMAX_VIDEO_BASE}/video_generation", headers=self.headers, json=payload)
+        if res.status_code >= 400:
+            logger.error("MiniMax video API failed: %s", res.status_code)
+            raise HTTPException(status_code=502, detail=f"MiniMax video API failed: {res.status_code}")
+        data = res.json()
+        logger.info("MiniMax video_generation response: %s", json.dumps(data, ensure_ascii=False)[:800])
+
+        # Check for API-level errors (e.g. usage limits)
+        base_resp = data.get("base_resp") or {}
+        if base_resp.get("status_code") and base_resp["status_code"] != 0:
+            err_msg = base_resp.get("status_msg", "unknown error")
+            raise HTTPException(status_code=502, detail=f"MiniMax video API error: {err_msg}")
+
+        task_id = (
+            data.get("task_id") or data.get("taskId")
+            or data.get("data", {}).get("task_id") or data.get("data", {}).get("taskId")
+        )
+        direct_url = data.get("video_url") or data.get("data", {}).get("video_url")
+        if direct_url:
+            await _download_file(direct_url, download_path, self.api_key)
+            return {"task_id": task_id, "url": direct_url}
+        if not task_id:
+            raise HTTPException(status_code=502, detail="MiniMax video API returned no task id")
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            for _ in range(90):
+                await asyncio.sleep(5)
+                try:
+                    q = await client.get(
+                        f"{MINIMAX_VIDEO_BASE}/query/video_generation",
+                        headers=self.headers,
+                        params={"task_id": task_id},
+                    )
+                    if q.status_code >= 400:
+                        continue
+                    qd = q.json()
+                except Exception as e:
+                    logger.warning("Video poll request failed, retrying: %s", e)
+                    continue
+                status = str(qd.get("status") or qd.get("data", {}).get("status") or "").lower()
+                file_id = qd.get("file_id") or qd.get("data", {}).get("file_id")
+                video_url = qd.get("video_url") or qd.get("data", {}).get("video_url")
+                if video_url:
+                    await _download_file(video_url, download_path, self.api_key)
+                    return {"task_id": task_id, "url": video_url}
+                if file_id:
+                    try:
+                        dl = await client.get(
+                            f"{MINIMAX_VIDEO_BASE}/files/retrieve",
+                            headers=self.headers,
+                            params={"file_id": file_id},
+                        )
+                        if dl.status_code < 400:
+                            dd = dl.json()
+                            video_url = dd.get("file", {}).get("download_url") or dd.get("download_url")
+                            if video_url:
+                                await _download_file(video_url, download_path, self.api_key)
+                                return {"task_id": task_id, "file_id": file_id}
+                    except Exception as e:
+                        logger.warning("Video file retrieve failed, retrying: %s", e)
+                if status in {"failed", "fail", "error"}:
+                    raise HTTPException(status_code=502, detail="MiniMax video generation failed")
+        raise HTTPException(status_code=504, detail="MiniMax video generation timed out")
+
 
 
 # ── MiniMax LLM ──────────────────────────────────────────
@@ -616,6 +1104,260 @@ async def websocket_endpoint(websocket: WebSocket):
             pass
 
 
+# ── Character Creation Pipeline API ─────────────────────
+@app.post("/api/create/test-key")
+async def create_test_key(x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None):
+    _require_user_code(x_user_code)
+    api_key = _require_minimax_key(x_minimax_api_key)
+    provider = MiniMaxProvider(api_key)
+    t0 = time.time()
+    text = await provider.simple_text(
+        "You are a health check endpoint. Reply with exactly OK.",
+        "Check this API key.",
+        max_tokens=64,
+        temperature=0.1,
+    )
+    return {"ok": True, "latency_ms": int((time.time() - t0) * 1000), "sample": text[:20]}
+
+
+@app.post("/api/create/knowledge")
+async def create_extract_knowledge(file: UploadFile = File(...), x_user_code: UserCodeHeader = None):
+    """Extract plain text from txt/pdf/docx for the prompt builder."""
+    _require_user_code(x_user_code)
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Missing filename")
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in {".txt", ".pdf", ".docx"}:
+        raise HTTPException(status_code=400, detail="Only .txt, .pdf, and .docx knowledge files are supported")
+
+    raw = await file.read()
+    if len(raw) > MAX_KNOWLEDGE_FILE_BYTES:
+        raise HTTPException(status_code=413, detail="Knowledge file is too large; max 10MB")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / f"knowledge{suffix}"
+        p.write_bytes(raw)
+        if suffix == ".txt":
+            text = _extract_text_from_txt(raw)
+        elif suffix == ".docx":
+            text = _extract_docx_text(p)
+        else:
+            text = _extract_pdf_text(p)
+
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    truncated = len(text) > MAX_KNOWLEDGE_CHARS
+    text = _clamp_knowledge(text)
+    return {
+        "ok": True,
+        "filename": file.filename,
+        "chars": len(text),
+        "truncated": truncated,
+        "text": text,
+        "preview": text[:1000],
+    }
+
+
+@app.post("/api/create/knowledge/search")
+async def create_search_knowledge(req: GenerateKnowledgeRequest, x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None):
+    _require_user_code(x_user_code)
+    api_key = _require_minimax_key(x_minimax_api_key)
+    query = req.query.strip() or " ".join(x for x in [req.name, req.name_en, req.role, req.background[:120]] if x).strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Search query or role context is required")
+    results = await _search_web(query)
+    if not results:
+        raise HTTPException(status_code=502, detail="Web search returned no usable results")
+
+    provider = MiniMaxProvider(api_key)
+    result_text = "\n".join(f"- {r['title']} ({r['url']})" for r in results)
+    text = await provider.simple_text(
+        "你是数字人角色知识库整理员。根据搜索结果和角色设定，输出不超过1000字的事实型知识库文本。"
+        "内容要直接可放入角色上下文，不要写搜索过程，不要编造搜索结果之外的具体事实。",
+        (
+            f"角色名：{req.name}\n英文/副标题：{req.name_en}\n角色定位：{req.role}\n"
+            f"背景：{req.background}\n说话设定：{req.speaking_style}\n搜索词：{query}\n\n搜索结果：\n{result_text}"
+        ),
+        max_tokens=700,
+        temperature=0.2,
+    )
+    return {"ok": True, "query": query, "text": _clamp_knowledge(text), "sources": results}
+
+
+@app.post("/api/create/image-prompt")
+async def create_image_prompt(req: GenerateImagePromptRequest, x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None):
+    _require_user_code(x_user_code)
+    api_key = _require_minimax_key(x_minimax_api_key)
+    provider = MiniMaxProvider(api_key)
+    prompt = await provider.simple_text(
+        "你是数字人角色视觉提示词设计师。输出一段可直接用于图像生成的中文 prompt。"
+        "要求 3:4 半身肖像、正面或微侧脸、背景干净、电影级暖色调打光、适合作为后续视频 first frame。"
+        "不要输出解释，只输出 prompt 本身。",
+        (
+            f"角色名：{req.name}\n英文/副标题：{req.name_en}\n角色定位：{req.role}\n"
+            f"背景：{req.background}\n说话设定：{req.speaking_style}\nSystem Prompt 摘要：{req.system_prompt[:1200]}"
+        ),
+        max_tokens=450,
+        temperature=0.5,
+    )
+    return {"ok": True, "prompt": prompt.strip()}
+
+
+@app.post("/api/create/prompt")
+async def create_prompt(req: CreatePromptRequest, x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None):
+    _require_user_code(x_user_code)
+    api_key = _require_minimax_key(x_minimax_api_key)
+    if not req.name.strip() or not req.background.strip() or not req.speaking_style.strip():
+        raise HTTPException(status_code=400, detail="Name, background, and speaking style are required")
+
+    provider = MiniMaxProvider(api_key)
+    prompt = await provider.improve_prompt(req)
+    job_id = uuid.uuid4().hex
+    _save_job(job_id, {
+        "id": job_id,
+        "created_at": time.time(),
+        "name": req.name.strip(),
+        "name_en": req.name_en.strip(),
+        "role": req.role.strip(),
+        "system_prompt": prompt,
+        "knowledge_chars": len(req.knowledge_text or ""),
+        "status": "prompt_ready",
+    })
+    return {"ok": True, "job_id": job_id, "system_prompt": prompt}
+
+
+@app.post("/api/create/images")
+async def create_images(req: CreateImagesRequest, x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None):
+    _require_user_code(x_user_code)
+    api_key = _require_minimax_key(x_minimax_api_key)
+    if not req.prompt.strip():
+        raise HTTPException(status_code=400, detail="Image prompt is required")
+    provider = MiniMaxProvider(api_key)
+
+    # Reuse existing prompt job if provided, otherwise create a new one
+    if req.job_id:
+        job_id = req.job_id
+        job = _load_job(job_id)
+        job["status"] = "image_generation_started"
+        _save_job(job_id, job)
+    else:
+        job_id = uuid.uuid4().hex
+        _save_job(job_id, {"id": job_id, "created_at": time.time(), "status": "image_generation_started"})
+
+    try:
+        full_prompt = req.prompt.strip()
+        if req.reference_description.strip():
+            full_prompt += "\n\nReference / user description: " + req.reference_description.strip()
+        images = await provider.generate_images(full_prompt, req.count, job_id)
+    except Exception:
+        if not req.job_id:
+            shutil.rmtree(_job_dir(job_id), ignore_errors=True)
+        raise
+    return {"ok": True, "job_id": job_id, "images": images}
+
+
+@app.post("/api/create/videos")
+async def create_videos(req: CreateVideosRequest, x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None):
+    _require_user_code(x_user_code)
+    api_key = _require_minimax_key(x_minimax_api_key)
+    job = _load_job(req.job_id)
+    images = job.get("images") or []
+    selected = next((img for img in images if img.get("id") == req.image_id), None)
+    if not selected:
+        raise HTTPException(status_code=400, detail="Selected image not found in creation job")
+
+    provider = MiniMaxProvider(api_key)
+
+    first_frame_url = selected.get("source_url", "")
+    raw_dir = _job_dir(req.job_id) / "videos"
+    idle_raw = raw_dir / "idle_raw.mp4"
+    talk_raw = raw_dir / "talk_raw.mp4"
+    idle_final = raw_dir / "idle.mp4"
+    talk_final = raw_dir / "talk.mp4"
+
+    base_identity = req.image_prompt.strip() or req.character_name.strip()
+    idle_prompt = (
+        f"{base_identity} 人物轻微呼吸，胸膛缓缓起伏，眼睛每隔3-4秒缓慢闭合再睁开，"
+        "头部有极其轻微的随呼吸摆动。背景保持完全静止。画面保持电影级暖色调打光，"
+        "无缝循环，画面无抖动"
+    )
+    talk_prompt = (
+        f"{base_identity} 人物正在说话，嘴巴自然微微张合，节奏如同从容对话，下颌和面部肌肉有轻微联动。"
+        "偶尔眨眼。头部有自然的说话伴随微动。身体和手臂保持静止，仅面部动画。背景保持完全静止。"
+        "画面保持电影级暖色调打光，无缝循环，画面无抖动，无字幕"
+    )
+
+    job["status"] = "video_generation_started"
+    job["selected_image"] = selected
+    _save_job(req.job_id, job)
+
+    await provider.generate_video(idle_prompt, first_frame_url, idle_raw, 5)
+    _ffmpeg_process_video(idle_raw, idle_final, 5)
+    await provider.generate_video(talk_prompt, first_frame_url, talk_raw, 8)
+    _ffmpeg_process_video(talk_raw, talk_final, 8)
+
+    job["status"] = "videos_ready"
+    job["videos"] = {
+        "idle": f"/generated/jobs/{req.job_id}/videos/idle.mp4",
+        "talk": f"/generated/jobs/{req.job_id}/videos/talk.mp4",
+    }
+    _save_job(req.job_id, job)
+    return {"ok": True, "job_id": req.job_id, "videos": job["videos"]}
+
+
+@app.post("/api/create/finalize")
+async def create_finalize(req: FinalizeCharacterRequest, x_user_code: UserCodeHeader = None):
+    username = _require_user_code(x_user_code)
+    job = _load_job(req.job_id)
+    if job.get("status") != "videos_ready":
+        raise HTTPException(status_code=400, detail="Videos must be generated before finalizing the character")
+
+    char_id = _safe_character_id(req.character_id or req.name)
+    dest = Path("characters") / char_id
+    if dest.exists():
+        raise HTTPException(status_code=409, detail=f"Character '{char_id}' already exists")
+
+    job_path = _job_dir(req.job_id)
+    selected = job.get("selected_image") or {}
+    selected_name = Path(selected.get("url", "")).name
+    portrait_src = job_path / "images" / selected_name
+    idle_src = job_path / "videos" / "idle.mp4"
+    talk_src = job_path / "videos" / "talk.mp4"
+    if not idle_src.is_file() or not talk_src.is_file():
+        raise HTTPException(status_code=500, detail="Generated video files are missing")
+
+    tmp_dest = dest.with_name(f".{dest.name}.tmp-{uuid.uuid4().hex[:8]}")
+    try:
+        tmp_dest.mkdir(parents=True, exist_ok=False)
+        _copy_or_make_portrait(portrait_src, tmp_dest / "portrait.jpg")
+        shutil.copy2(idle_src, tmp_dest / "idle.mp4")
+        shutil.copy2(talk_src, tmp_dest / "talk.mp4")
+        cfg = {
+            "id": char_id,
+            "name": req.name.strip(),
+            "name_en": req.name_en.strip(),
+            "role": req.role.strip(),
+            "icon": "portrait.jpg",
+            "avatar_idle": "idle.mp4",
+            "avatar_talk": "talk.mp4",
+            "theme_color": req.theme_color or "#8A6D3B",
+            "tts_voice_id": req.tts_voice_id or DEFAULT_TTS_CONFIG["voice_id"],
+            "tts_language": req.tts_language or DEFAULT_TTS_CONFIG["language_boost"],
+            "created_by": username,
+            "tts_speed": 1.0,
+            "tts_vol": 1.0,
+            "tts_pitch": 0,
+            "system_prompt": req.system_prompt,
+        }
+        (tmp_dest / "character.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp_dest.rename(dest)
+    except Exception:
+        shutil.rmtree(tmp_dest, ignore_errors=True)
+        raise
+
+    char_mgr.reload()
+    return {"ok": True, "id": char_id, "name": req.name, "url": f"/?char={char_id}"}
+
+
 # ── Character API ───────────────────────────────────────
 @app.get("/api/characters")
 async def list_characters():
@@ -644,10 +1386,11 @@ async def get_character(char_id: str):
 
 
 @app.post("/api/characters/import")
-async def import_character(file: UploadFile = File(...)):
+async def import_character(file: UploadFile = File(...), x_user_code: UserCodeHeader = None):
     """Import a character from a .zip file.
     Expected structure: char_id/character.json + resource files.
     """
+    username = _require_user_code(x_user_code)
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="Only .zip files accepted")
 
@@ -676,17 +1419,28 @@ async def import_character(file: UploadFile = File(...)):
                 raise HTTPException(status_code=400, detail="character.json missing 'id' field")
             if not cfg_data.get("name"):
                 raise HTTPException(status_code=400, detail="character.json missing 'name' field")
+            if cfg_data["id"] != char_id:
+                raise HTTPException(status_code=400, detail="character.json id must match the zip folder name")
+            for name in zf.namelist():
+                target = (Path(tempfile.gettempdir()) / name).resolve()
+                expected = Path(tempfile.gettempdir()).resolve()
+                if not str(target).startswith(str(expected)) or name.startswith("/") or ".." in Path(name).parts:
+                    raise HTTPException(status_code=400, detail="Unsafe path found in zip")
 
             # Extract to temp directory first, validate, then move
             dest = Path("characters") / char_id
             if dest.exists():
-                if dest.is_dir():
-                    await asyncio.to_thread(shutil.rmtree, dest)
-                else:
-                    raise HTTPException(status_code=400, detail=f"'{char_id}' exists but is not a directory")
+                raise HTTPException(status_code=409, detail=f"Character '{char_id}' already exists")
 
             with tempfile.TemporaryDirectory() as tmp:
-                zf.extractall(tmp)
+                for member in zf.namelist():
+                    if member.endswith("/"):
+                        continue
+                    target = (Path(tmp) / member).resolve()
+                    if not str(target).startswith(str(Path(tmp).resolve())):
+                        raise HTTPException(status_code=400, detail="Unsafe path found in zip")
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(zf.read(member))
                 src = Path(tmp) / char_id
                 if src.is_dir():
                     await asyncio.to_thread(shutil.copytree, src, dest)
@@ -739,6 +1493,28 @@ async def health():
         "characters_loaded": len(chars),
         "characters": [c["id"] for c in chars],
         "minimax_configured": bool(MINIMAX_API_KEY),
+    }
+
+
+# ── Auth API ──────────────────────────────────────────
+@app.post("/api/auth/verify")
+async def auth_verify(body: dict):
+    """Verify an invite code. Returns username if valid."""
+    code = (body.get("code") or "").strip()
+    username = _verify_user_code(code)
+    if not username:
+        raise HTTPException(status_code=401, detail="Invalid invite code")
+    return {"ok": True, "username": username}
+
+
+@app.get("/api/auth/me")
+async def auth_me(x_user_code: UserCodeHeader = None):
+    """Check current auth status from header."""
+    username = _verify_user_code(x_user_code)
+    return {
+        "authenticated": bool(username),
+        "username": username or "",
+        "codes_configured": bool(USER_CODES),
     }
 
 
@@ -822,8 +1598,11 @@ toggleAuto();
 
 
 # ── Static Files ───────────────────────────────────────
+GENERATED_DIR.mkdir(parents=True, exist_ok=True)
 # Mount characters/ for avatar resources (videos, icons)
 app.mount("/characters", StaticFiles(directory="characters"), name="characters")
+# Mount generated previews for the creation wizard
+app.mount("/generated", StaticFiles(directory=str(GENERATED_DIR)), name="generated")
 # Mount the SPA (must be last)
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
