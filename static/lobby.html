@@ -830,7 +830,7 @@ async function ensurePrompt(force = false) {
     body: JSON.stringify(payload),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.detail || 'Prompt 生成失敗');
+  if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || 'Prompt 生成失敗'));
   createState.promptJobId = data.job_id;
   createState.systemPrompt = data.system_prompt;
   $('wizSystemPrompt').value = data.system_prompt;
@@ -868,7 +868,7 @@ $('btnTestKey').onclick = async () => {
   try {
     const res = await fetch('/api/create/test-key', { method: 'POST', headers: headersJson() });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || 'MiniMax Key 測試失敗');
+    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || 'MiniMax Key 測試失敗'));
     keyValidated = true;
     setStatus('keyStatus', `測試通過，延遲 ${data.latency_ms}ms`);
     setStatus('wizardSubtitle', 'API Key 已測試通過，刷新後會丟失');
@@ -907,7 +907,7 @@ knowledgeInput.onchange = async () => {
     if (userCode) h['X-User-Code'] = userCode;
     const res = await fetch('/api/create/knowledge', { method: 'POST', body: form, headers: h });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || '知識庫提取失敗');
+    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || '知識庫提取失敗'));
     $('wizKnowledge').value = data.text;
     clampKnowledgeInput();
     setStatus('knowledgeStatus', `已提取 ${data.chars} 字${data.truncated ? '（已截斷）' : ''}`);
@@ -935,7 +935,7 @@ $('btnKnowledgeSearch').onclick = async () => {
       body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || 'Web Search 生成失敗');
+    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || 'Web Search 生成失敗'));
     $('wizKnowledge').value = data.text || '';
     clampKnowledgeInput();
     setStatus('knowledgeStatus', `已根據「${data.query}」生成知識庫，來源 ${data.sources?.length || 0} 條`);
@@ -960,7 +960,7 @@ $('btnBuildImagePrompt').onclick = async () => {
       body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || '圖像 Prompt 生成失敗');
+    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || '圖像 Prompt 生成失敗'));
     $('wizImagePrompt').value = data.prompt || '';
     setStatus('imageStatus', '圖像 Prompt 已生成並填入，可直接生成候選圖。');
   } catch (e) {
@@ -995,7 +995,7 @@ $('btnGenerateImages').onclick = async () => {
       }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || '圖片生成失敗');
+    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || '圖片生成失敗'));
     createState.promptJobId = data.job_id;
     createState.images = data.images || [];
     renderImageChoices();
@@ -1048,7 +1048,7 @@ $('btnGenerateVideos').onclick = async () => {
       }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || '視頻生成失敗');
+    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || '視頻生成失敗'));
     createState.videos = data.videos;
     $('videoPreview').innerHTML = `
       <video src="${data.videos.idle}" autoplay muted loop playsinline></video>
@@ -1088,7 +1088,7 @@ $('btnFinalize').onclick = async () => {
       }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || '角色寫入失敗');
+    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || '角色寫入失敗'));
     setStatus('finalStatus', '角色已加入大廳，正在刷新...');
     closeWizard();
     await loadCharacters();
