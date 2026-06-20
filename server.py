@@ -39,7 +39,7 @@ TTS_TEXT_MAX = 5000  # TTS max chars before truncation
 GENERATED_DIR = Path(".generated")
 CREATE_JOBS_DIR = GENERATED_DIR / "jobs"
 MAX_KNOWLEDGE_FILE_BYTES = 10 * 1024 * 1024
-MAX_KNOWLEDGE_CHARS = 1000
+MAX_KNOWLEDGE_CHARS = 6000
 
 # ── User Codes ──────────────────────────────────────────
 # Format: "username:code,username:code"
@@ -175,11 +175,23 @@ class CharacterManager:
         return self._chars.get(char_id)
 
     def get_system_prompt(self, char_id: str) -> str:
-        """Return system prompt for a character, with fallback."""
+        """Return system prompt for a character, with optional knowledge injection."""
         ch = self._chars.get(char_id)
-        if ch and ch.get("system_prompt"):
-            return ch["system_prompt"]
-        return SYSTEM_PROMPT
+        prompt = ch["system_prompt"] if ch and ch.get("system_prompt") else SYSTEM_PROMPT
+
+        # Inject knowledge file if configured — no RAG, full context
+        knowledge_file = (ch or {}).get("knowledge_file")
+        if knowledge_file:
+            kpath = Path(ch["_dir"]) / knowledge_file
+            if kpath.is_file():
+                try:
+                    knowledge = kpath.read_text(encoding="utf-8").strip()
+                    if knowledge:
+                        prompt += f"\n\n## 参考资料（回答时必须基于以下内容，不要编造）\n{knowledge}"
+                except Exception as e:
+                    logger.warning(f"Failed to load knowledge file {kpath}: {e}")
+
+        return prompt
 
     def get_tts_defaults(self, char_id: str) -> dict:
         """Return TTS defaults from character config, falling back to system defaults."""
@@ -521,7 +533,7 @@ class MiniMaxProvider:
                 "content": (
                     f"角色名：{req.name}\n英文/副标题：{req.name_en}\n角色定位：{req.role}\n"
                     f"回复语言：{req.language}\n\n背景设定：\n{req.background}\n\n说话设定：\n{req.speaking_style}\n\n"
-                    f"知识库摘录（最多1000字）：\n{req.knowledge_text[:MAX_KNOWLEDGE_CHARS]}"
+                    f"知识库摘录（最多6000字）：\n{req.knowledge_text[:MAX_KNOWLEDGE_CHARS]}"
                 ),
             },
         ]
@@ -1171,13 +1183,13 @@ async def create_search_knowledge(req: GenerateKnowledgeRequest, x_minimax_api_k
     provider = MiniMaxProvider(api_key)
     result_text = "\n".join(f"- {r['title']} ({r['url']})" for r in results)
     text = await provider.simple_text(
-        "你是数字人角色知识库整理员。根据搜索结果和角色设定，输出不超过1000字的事实型知识库文本。"
+        "你是数字人角色知识库整理员。根据搜索结果和角色设定，输出不超过6000字的事实型知识库文本。"
         "内容要直接可放入角色上下文，不要写搜索过程，不要编造搜索结果之外的具体事实。",
         (
             f"角色名：{req.name}\n英文/副标题：{req.name_en}\n角色定位：{req.role}\n"
             f"背景：{req.background}\n说话设定：{req.speaking_style}\n搜索词：{query}\n\n搜索结果：\n{result_text}"
         ),
-        max_tokens=700,
+        max_tokens=10000,
         temperature=0.2,
     )
     return {"ok": True, "query": query, "text": _clamp_knowledge(text), "sources": results}
