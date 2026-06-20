@@ -467,12 +467,12 @@
           <input id="wizSearchQuery" placeholder="例如：李白 生平 詩風 盛唐">
         </div>
         <div class="field">
-          <label>知識庫文本（最多 1000 字）</label>
-          <textarea id="wizKnowledge" maxlength="1000" placeholder="可直接粘貼，也可以上傳 txt/pdf/docx 後自動提取，或點擊 Web Search 生成"></textarea>
+          <label>知識庫文本（最多 6000 字）</label>
+          <textarea id="wizKnowledge" maxlength="6000" placeholder="可直接粘貼，也可以上傳 txt/pdf/docx 後自動提取，或點擊 Web Search 生成"></textarea>
         </div>
         <button class="wiz-btn" id="btnKnowledgeUpload">上傳知識庫文件</button>
         <button class="wiz-btn primary" id="btnKnowledgeSearch">Web Search 生成知識庫</button>
-        <div class="status-line" id="knowledgeCount">0 / 1000</div>
+        <div class="status-line" id="knowledgeCount">0 / 6000</div>
         <div class="status-line" id="knowledgeStatus"></div>
       </section>
 
@@ -758,8 +758,8 @@ function setBusy(btn, busy, text) {
 function clampKnowledgeInput() {
   const el = $('wizKnowledge');
   if (!el) return;
-  if (el.value.length > 1000) el.value = el.value.slice(0, 1000);
-  $('knowledgeCount').textContent = `${el.value.length} / 1000`;
+  if (el.value.length > 6000) el.value = el.value.slice(0, 6000);
+  $('knowledgeCount').textContent = `${el.value.length} / 6000`;
 }
 
 function headersJson() {
@@ -812,7 +812,7 @@ function baseCharacterPayload() {
     role: $('wizRole').value.trim(),
     background: $('wizBackground').value.trim(),
     speaking_style: $('wizSpeaking').value.trim(),
-    knowledge_text: $('wizKnowledge').value.trim().slice(0, 1000),
+    knowledge_text: $('wizKnowledge').value.trim().slice(0, 6000),
     language: 'Chinese,Yue',
   };
 }
@@ -925,7 +925,7 @@ $('btnKnowledgeSearch').onclick = async () => {
   const btn = $('btnKnowledgeSearch');
   if (!requireKey()) return;
   setBusy(btn, true, '搜索中...');
-  setStatus('knowledgeStatus', '正在 Web Search 並整理為 1000 字以內知識庫...');
+  setStatus('knowledgeStatus', '正在 Web Search 並整理為 6000 字以內知識庫...');
   try {
     const payload = baseCharacterPayload();
     payload.query = $('wizSearchQuery').value.trim();
