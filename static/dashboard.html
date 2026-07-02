@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>数字人数据看板</title>
+  <script src="https://unpkg.com/echarts@5/dist/echarts.min.js"></script>
+  <style>
+    :root {
+      --bg: #f7f7f8;
+      --card: #ffffff;
+      --text: #353740;
+      --text2: #6e6e80;
+      --text3: #8e8ea0;
+      --border: #e5e5e6;
+      --accent: #10a37f;
+      --accent-dark: #0d9168;
+      --accent-light: #e6f7f2;
+      --shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+      --radius: 8px;
+      --radius-sm: 6px;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Topbar ── */
+    .topbar {
+      background: var(--card); border-bottom: 1px solid var(--border);
+      padding: 0 24px; height: 56px; display: flex; align-items: center;
+      justify-content: space-between; position: sticky; top: 0; z-index: 100;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 10px; }
+    .logo-mark { width: 28px; height: 28px; border-radius: 6px; background: var(--accent); display: flex; align-items: center; justify-content: center; }
+    .logo-mark svg { width: 16px; height: 16px; fill: white; }
+    .topbar h1 { font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: -.2px; }
+    .topbar-right { display: flex; align-items: center; gap: 12px; }
+    .topbar-time { font-size: 12px; color: var(--text3); font-variant-numeric: tabular-nums; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 14px; border-radius: var(--radius-sm);
+      font-size: 13px; font-weight: 500; font-family: inherit;
+      border: none; cursor: pointer; transition: all .15s;
+      line-height: 1; white-space: nowrap;
+    }
+    .btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { background: var(--accent-dark); }
+    .btn-ghost {
+      background: transparent; color: var(--text2); border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { border-color: var(--text3); color: var(--text); }
+    .btn-ghost.active { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
+
+    /* ── Container ── */
+    .container { max-width: 1360px; margin: 0 auto; padding: 20px 24px; }
+
+    /* ── Filter Bar ── */
+    .fbar {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      background: var(--card); padding: 10px 16px; border-radius: var(--radius);
+      box-shadow: var(--shadow); border: 1px solid var(--border); margin-bottom: 20px;
+    }
+    .fbar-label { font-size: 12px; color: var(--text2); font-weight: 500; margin-right: 4px; }
+    .fbar input[type="date"] {
+      padding: 5px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      font-size: 13px; background: var(--card); color: var(--text); outline: none;
+      font-family: inherit; font-variant-numeric: tabular-nums;
+    }
+    .fbar input[type="date"]:focus { border-color: var(--accent); }
+    .fbar input[type="date"]:disabled { opacity: .5; cursor: not-allowed; }
+    .fbar .sep { color: var(--border); font-size: 16px; user-select: none; padding: 0 2px; }
+
+    /* ── Stats ── */
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .stat {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px 20px; box-shadow: var(--shadow);
+    }
+    .stat-hd { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+    .stat-hd svg { width: 14px; height: 14px; fill: var(--text3); flex-shrink: 0; }
+    .stat-lbl { font-size: 11px; color: var(--text3); font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+    .stat-val { font-size: 28px; font-weight: 700; color: var(--text); line-height: 1.15; }
+    .stat-val.accent { color: var(--accent); }
+    .stat-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+    .stat-sub.danger { color: #e53e3e; }
+
+    /* ── Chart Grid ── */
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+    .box {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow);
+    }
+    .box.full { grid-column: 1 / -1; }
+    .box-hd { display: flex; align-items: center; gap: 6px; margin-bottom: 16px; }
+    .box-hd svg { width: 16px; height: 16px; fill: var(--text3); flex-shrink: 0; }
+    .box-hd span { font-size: 14px; font-weight: 600; color: var(--text); }
+    .cht { height: 280px; }
+
+    /* ── Table ── */
+    .tbl { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 8px 12px; font-size: 11px; color: var(--text3); font-weight: 600; text-transform: uppercase; letter-spacing: .4px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    td { padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--text); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #fafafb; }
+
+    .tag {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 1px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap;
+    }
+    .tag svg { width: 10px; height: 10px; }
+    .tag-1 { background: var(--accent-light); color: #0d9168; }
+    .tag-2 { background: #f0f0ff; color: #5a5aff; }
+    .tag-3 { background: #fff4e6; color: #cc7a00; }
+    .tag-4 { background: #fce8f0; color: #cc3366; }
+
+    .empty { text-align: center; padding: 60px 0; color: var(--text3); font-size: 14px; }
+
+    @media (max-width: 768px) {
+      .grid { grid-template-columns: 1fr; }
+      .container { padding: 12px; }
+      .topbar { padding: 0 12px; }
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      .stat-val { font-size: 22px; }
+      .fbar { flex-direction: column; align-items: stretch; }
+      .fbar input[type="date"] { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="logo-mark">
+        <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+      </div>
+      <h1>数字人数据看板</h1>
+    </div>
+    <div class="topbar-right">
+      <span class="topbar-time" id="updTime">-</span>
+      <button class="btn btn-primary" onclick="refreshAll()">
+        <svg viewBox="0 0 24 24"><path d="M17.65 6.35A7.96 7.96 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+        刷新
+      </button>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- Filter -->
+    <div class="fbar">
+      <span class="fbar-label">时间范围</span>
+      <button class="btn btn-ghost active" data-range="today">今日</button>
+      <button class="btn btn-ghost" data-range="week">本周</button>
+      <button class="btn btn-ghost" data-range="month">本月</button>
+      <button class="btn btn-ghost" data-range="all">全部</button>
+      <button class="btn btn-ghost" data-range="custom">自定义</button>
+      <span class="sep">|</span>
+      <span class="fbar-label">从</span>
+      <input type="date" id="startDate">
+      <span class="fbar-label">至</span>
+      <input type="date" id="endDate">
+    </div>
+
+    <!-- Stats -->
+    <div class="stats" id="statsRow">
+      <div class="stat">
+        <div class="stat-hd"><svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg></div>
+        <div class="stat-lbl">对话次数</div>
+        <div class="stat-val accent" id="sTotal">-</div>
+        <div class="stat-sub">统计期内</div>
+      </div>
+      <div class="stat">
+        <div class="stat-hd"><svg viewBox="0 0 24 24"><path d="M8 12h2v2H8v-2zm12-2h-8v6h-2v-6H4V6h16v4z"/></svg></div>
+        <div class="stat-lbl">连接数</div>
+        <div class="stat-val" id="sConn">-</div>
+        <div class="stat-sub">统计期内</div>
+      </div>
+      <div class="stat">
+        <div class="stat-hd"><svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>
+        <div class="stat-lbl">活跃角色</div>
+        <div class="stat-val" id="sChars">-</div>
+        <div class="stat-sub">已加载</div>
+      </div>
+      <div class="stat">
+        <div class="stat-hd"><svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></svg></div>
+        <div class="stat-lbl">平均响应</div>
+        <div class="stat-val" id="sLatency">-</div>
+        <div class="stat-sub">LLM &#43; TTS</div>
+      </div>
+      <div class="stat">
+        <div class="stat-hd"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg></div>
+        <div class="stat-lbl">异常</div>
+        <div class="stat-val" id="sErrors">-</div>
+        <div class="stat-sub danger">统计期内</div>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="grid">
+      <div class="box">
+        <div class="box-hd"><svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg><span>角色热度</span></div>
+        <div class="cht" id="charCht"></div>
+      </div>
+      <div class="box">
+        <div class="box-hd"><svg viewBox="0 0 24 24"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg><span>每日趋势</span></div>
+        <div class="cht" id="dailyCht"></div>
+      </div>
+    </div>
+    <div class="grid">
+      <div class="box">
+        <div class="box-hd"><svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></svg><span>时段分布</span></div>
+        <div class="cht" id="hourCht"></div>
+      </div>
+      <div class="box">
+        <div class="box-hd"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg><span>响应延迟</span></div>
+        <div class="cht" id="lateCht"></div>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div class="box full">
+      <div class="box-hd"><svg viewBox="0 0 24 24"><path d="M21 6h-2v2h-2V6h-2V4h2V2h2v2h2v2zm-10 3c1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3 1.34 3 3 3zm0 1c-2.33 0-7 1.17-7 3.5V15h14v-1.5c0-2.33-4.67-3.5-7-3.5z"/></svg><span>对话记录</span></div>
+      <div class="tbl" id="convTable"><div class="empty">加载中...</div></div>
+    </div>
+  </div>
+
+  <script>
+    const CHAR_MAP = {
+      'maryknoll-teacher': { name: '小瑪老師', cls: 'tag-1' },
+      'qin-shihuang':      { name: '秦始皇',     cls: 'tag-2' },
+      'elizabeth-i':       { name: 'Elizabeth I', cls: 'tag-3' },
+      'character-49fd372d':{ name: '李白',       cls: 'tag-4' }
+    };
+    const COLORS = ['#10a37f','#5a5aff','#cc7a00','#cc3366','#8b5cf6','#06b6d4'];
+    const ICON_USER = '<svg viewBox="0 0 24 24" style="width:10px;height:10px;fill:currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
+    const ICON_BOT = '<svg viewBox="0 0 24 24" style="width:10px;height:10px;fill:currentColor"><path d="M21 10.5h-1.5V9h-1v1.5H17v1h1.5V13h1v-1.5H21v-1zm-9-3h4v1h-4v-1zm0 2h5v1h-5v-1zm0 2h4v1h-4v-1zM9 5h2v14H9V5zM5 7h2v10H5V7z"/></svg>';
+
+    const now = new Date();
+    const today = fmtDate(now);
+    const weekAgo = fmtDate(new Date(now - 7*864e5));
+    const monthAgo = fmtDate(new Date(now.getFullYear(), now.getMonth(), 1));
+
+    let rangeType = 'today';
+    let cCht, dCht, hCht, lCht;
+
+    document.getElementById('startDate').value = today;
+    document.getElementById('endDate').value = today;
+
+    function fmtDate(d) {
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+
+    // Presets
+    document.querySelectorAll('.btn-ghost[data-range]').forEach(b => {
+      b.addEventListener('click', () => {
+        document.querySelectorAll('.btn-ghost[data-range]').forEach(p => p.classList.remove('active'));
+        b.classList.add('active');
+        rangeType = b.dataset.range;
+        const s = document.getElementById('startDate'), e = document.getElementById('endDate');
+        if (rangeType === 'today')  { s.value=today; e.value=today; }
+        else if (rangeType === 'week')  { s.value=weekAgo; e.value=today; }
+        else if (rangeType === 'month') { s.value=monthAgo; e.value=today; }
+        else if (rangeType === 'all')   { s.value='2026-01-01'; e.value=today; }
+        s.disabled = e.disabled = rangeType !== 'custom';
+        refreshAll();
+      });
+    });
+    document.getElementById('startDate').disabled = true;
+    document.getElementById('endDate').disabled = true;
+
+    // Date inputs
+    document.getElementById('startDate').addEventListener('change', refreshAll);
+    document.getElementById('endDate').addEventListener('change', refreshAll);
+
+    function initCht(el) { return echarts.init(el); }
+
+    async function fetchLogs(from, to) {
+      try {
+        const r = await fetch('/api/logs?lines=8000');
+        const d = await r.json();
+        return filterLogs(d.logs || '', from, to);
+      } catch { return ''; }
+    }
+
+    function filterLogs(raw, from, to) {
+      return raw.split('\n').filter(l => {
+        const m = l.match(/(\d{4}-\d{2}-\d{2})/);
+        return m && m[1] >= from && m[1] <= to;
+      }).join('\n');
+    }
+
+    function parseLogs(text) {
+      const lines = text.split('\n');
+      const hourly = Array(24).fill(0);
+      const daily = {}; const charCount = {};
+      let conn=0, turns=0, errors=0; const lats=[];
+
+      for (const l of lines) {
+        if (l.includes('WS connected')) {
+          conn++; const m=l.match(/char=(\S+)/); if(m) charCount[m[1]]=(charCount[m[1]]||0)+1;
+          const hm=l.match(/(\d{2}):(\d{2}):/); if(hm) hourly[+hm[1]]++;
+        }
+        if (l.includes('WS disconnected')) {
+          const dm=l.match(/(\d{4}-\d{2}-\d{2})/); if(dm) daily[dm[1]]=(daily[dm[1]]||0)+1;
+        }
+        if (l.includes('LLM done')) { turns++; const tm=l.match(/total=(\d+)ms/); if(tm) lats.push(+tm[1]); }
+        if (l.includes('ERROR')) errors++;
+      }
+      return {hourly,daily,charCount,conn,turns,errors,lats};
+    }
+
+    async function fetchStats() {
+      try { const r=await fetch('/api/conversations/stats'); return await r.json(); } catch { return null; }
+    }
+    async function fetchConvs(limit=30) {
+      try { const r=await fetch(`/api/conversations?limit=${limit}`); return await r.json(); } catch { return null; }
+    }
+
+    function renderStats(stats, parsed) {
+      document.getElementById('sTotal').textContent = (stats?.total||parsed.turns||0).toLocaleString();
+      document.getElementById('sConn').textContent = parsed.conn;
+      document.getElementById('sChars').textContent = Object.keys(parsed.charCount).length+'个';
+      document.getElementById('sLatency').textContent = parsed.lats.length ? (parsed.lats.reduce((a,b)=>a+b,0)/parsed.lats.length/1000).toFixed(1)+'s' : '-';
+      document.getElementById('sErrors').textContent = parsed.errors;
+    }
+
+    function renderCharCht(p) {
+      if(!cCht) cCht=initCht(document.getElementById('charCht'));
+      const sorted=Object.entries(p.charCount).sort((a,b)=>b[1]-a[1]);
+      const names=sorted.map(s=>CHAR_MAP[s[0]]?.name||s[0]).reverse();
+      const vals=sorted.map(s=>s[1]).reverse();
+      const clrs=sorted.map(s=>{const i=['maryknoll-teacher','qin-shihuang','elizabeth-i','character-49fd372d'].indexOf(s[0]);return COLORS[i>=0?i:4];}).reverse();
+      cCht.setOption({
+        tooltip:{trigger:'axis',axisPointer:{type:'shadow'}},
+        grid:{left:20,right:40,bottom:20,top:10,containLabel:true},
+        xAxis:{type:'value',axisLine:{show:false},axisTick:{show:false},splitLine:{lineStyle:{color:'#f0f0f0'}}},
+        yAxis:{type:'category',data:names,axisLine:{show:false},axisTick:{show:false}},
+        series:[{type:'bar',data:vals,barWidth:24,borderRadius:[0,4,4,0],
+          itemStyle:{color:p=>clrs[p.dataIndex]},
+          label:{show:true,position:'right',fontWeight:600,fontSize:12,color:'#353740'}}]
+      },true);
+    }
+
+    function renderDailyCht(p) {
+      if(!dCht) dCht=initCht(document.getElementById('dailyCht'));
+      const e=Object.entries(p.daily).sort((a,b)=>a[0].localeCompare(b[0]));
+      dCht.setOption({
+        tooltip:{trigger:'axis'},grid:{left:30,right:20,bottom:20,top:10,containLabel:true},
+        xAxis:{type:'category',data:e.map(x=>x[0].slice(5)),axisLine:{show:false},axisLabel:{fontSize:11}},
+        yAxis:{type:'value',splitLine:{lineStyle:{color:'#f0f0f0'}},axisLine:{show:false},axisTick:{show:false}},
+        series:[{type:'line',data:e.map(x=>x[1]),smooth:true,symbol:'circle',symbolSize:5,
+          lineStyle:{width:2,color:'#10a37f'},
+          areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,
+            colorStops:[{offset:0,color:'rgba(16,163,127,.2)'},{offset:1,color:'rgba(16,163,127,0)'}]}},
+          itemStyle:{color:'#10a37f'}}]
+      },true);
+    }
+
+    function renderHourCht(p) {
+      if(!hCht) hCht=initCht(document.getElementById('hourCht'));
+      const m=Math.max(...p.hourly,1);
+      hCht.setOption({
+        tooltip:{trigger:'axis'},grid:{left:30,right:20,bottom:20,top:10,containLabel:true},
+        xAxis:{type:'category',data:Array.from({length:24},(_,i)=>`${i}时`),axisLabel:{interval:3,fontSize:10},axisLine:{show:false}},
+        yAxis:{type:'value',splitLine:{lineStyle:{color:'#f0f0f0'}},axisLine:{show:false},axisTick:{show:false}},
+        series:[{type:'bar',data:p.hourly,barWidth:16,borderRadius:[3,3,0,0],
+          itemStyle:{color:p=>`rgba(16,163,127,${.3+p.value/m*.7})`}}]
+      },true);
+    }
+
+    function renderLateCht(p) {
+      if(!lCht) lCht=initCht(document.getElementById('lateCht'));
+      if(!p.lats.length){lCht.setOption({title:{text:'暂无数据',left:'center',top:'center',textStyle:{color:'#8e8ea0',fontSize:13}}});return;}
+      const mt=Math.max(...p.lats),st=mt/15||1,bk=Array(15).fill(0);
+      p.lats.forEach(t=>{bk[Math.min(Math.floor(t/st),14)]++;});
+      lCht.setOption({
+        tooltip:{trigger:'axis'},grid:{left:30,right:20,bottom:35,top:10,containLabel:true},
+        xAxis:{type:'category',data:bk.map((_,i)=>`${Math.round(i*st/1000)}-${Math.round((i+1)*st/1000)}s`),axisLabel:{rotate:30,fontSize:9},axisLine:{show:false}},
+        yAxis:{type:'value',splitLine:{lineStyle:{color:'#f0f0f0'}},axisLine:{show:false},axisTick:{show:false}},
+        series:[{type:'line',data:bk,smooth:true,symbol:'none',
+          lineStyle:{width:2,color:'#5a5aff'},
+          areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,
+            colorStops:[{offset:0,color:'rgba(90,90,255,.15)'},{offset:1,color:'rgba(90,90,255,0)'}]}}}]
+      },true);
+    }
+
+    function renderConvs(data) {
+      const el=document.getElementById('convTable');
+      if(!data?.conversations?.length){el.innerHTML='<div class="empty">暂无对话记录</div>';return;}
+      el.innerHTML=`<table><thead><tr><th>角色</th><th>时间</th><th>用户</th><th>回复</th><th>耗时</th></tr></thead><tbody>${
+        data.conversations.slice(0,25).map(c=>{
+          const ch=CHAR_MAP[c.char_id]||{name:c.char_id,cls:'tag-1'};
+          const t=(c.time||'').slice(5,19),m=(c.user_msg||'').slice(0,55),r=(c.assistant_msg||'').replace(/\n/g,' ').slice(0,50);
+          return `<tr><td><span class="tag ${ch.cls}">${ICON_USER}${ch.name}</span></td><td style="color:#8e8ea0;font-size:12px">${t}</td><td>${m}${m.length>=55?'..':''}</td><td style="color:#6e6e80">${r}${r.length>=50?'..':''}</td><td style="font-size:12px;color:#8e8ea0">${c.llm_ms||'-'}ms</td></tr>`;
+        }).join('')
+      }</tbody></table>`;
+    }
+
+    async function refreshAll() {
+      const s=document.getElementById('startDate').value||today;
+      const e=document.getElementById('endDate').value||today;
+      document.getElementById('updTime').textContent='刷新中...';
+      try {
+        const[statsRes,convRes,raw]=await Promise.all([
+          fetchStats(),fetchConvs(30),
+          fetch('/api/logs?lines=8000').then(r=>r.json()).then(d=>d.logs||'')
+        ]);
+        const parsed=parseLogs(filterLogs(raw,s,e));
+        renderStats(statsRes,parsed);renderCharCht(parsed);renderDailyCht(parsed);
+        renderHourCht(parsed);renderLateCht(parsed);renderConvs(convRes);
+        document.getElementById('updTime').textContent=new Date().toLocaleTimeString('zh-CN',{hour12:false});
+      } catch(e) { document.getElementById('updTime').textContent='❌ '+e.message; }
+    }
+
+    refreshAll();
+  </script>
+</body>
+</html>

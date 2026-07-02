@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>数字人数据看板</title>
+  <script src="https://unpkg.com/echarts@5/dist/echarts.min.js"></script>
+  <style>
+    :root {
+      --bg: #f7f7f8;
+      --card: #ffffff;
+      --text: #353740;
+      --text2: #6e6e80;
+      --text3: #8e8ea0;
+      --border: #e5e5e6;
+      --accent: #10a37f;
+      --accent-dark: #0d9168;
+      --accent-light: #e6f7f2;
+      --blue: #5a5aff;
+      --orange: #cc7a00;
+      --red: #e53e3e;
+      --shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+      --radius: 8px;
+      --radius-sm: 6px;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    .topbar {
+      background: var(--card); border-bottom: 1px solid var(--border);
+      padding: 0 24px; height: 56px; display: flex; align-items: center;
+      justify-content: space-between; position: sticky; top: 0; z-index: 100;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 10px; }
+    .logo-mark { width: 28px; height: 28px; border-radius: 6px; background: var(--accent); display: flex; align-items: center; justify-content: center; }
+    .logo-mark svg { width: 16px; height: 16px; fill: white; }
+    .topbar h1 { font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: -.2px; }
+    .topbar-right { display: flex; align-items: center; gap: 12px; }
+    .topbar-time { font-size: 12px; color: var(--text3); font-variant-numeric: tabular-nums; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 14px; border-radius: var(--radius-sm);
+      font-size: 13px; font-weight: 500; font-family: inherit;
+      border: none; cursor: pointer; transition: all .15s;
+      line-height: 1; white-space: nowrap;
+    }
+    .btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { background: var(--accent-dark); }
+    .btn-ghost { background: transparent; color: var(--text2); border: 1px solid var(--border); }
+    .btn-ghost:hover { border-color: var(--text3); color: var(--text); }
+    .btn-ghost.active { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
+    .container { max-width: 1360px; margin: 0 auto; padding: 20px 24px; }
+    .fbar {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      background: var(--card); padding: 10px 16px; border-radius: var(--radius);
+      box-shadow: var(--shadow); border: 1px solid var(--border); margin-bottom: 20px;
+    }
+    .fbar-label { font-size: 12px; color: var(--text2); font-weight: 500; margin-right: 4px; }
+    .fbar input[type="date"], .fbar input[type="password"], .fbar select, .search {
+      padding: 5px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      font-size: 13px; background: var(--card); color: var(--text); outline: none;
+      font-family: inherit; font-variant-numeric: tabular-nums; height: 32px;
+    }
+    .fbar input:focus, .fbar select:focus, .search:focus { border-color: var(--accent); }
+    .fbar input[type="date"]:disabled { opacity: .5; cursor: not-allowed; }
+    .fbar .sep { color: var(--border); font-size: 16px; user-select: none; padding: 0 2px; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .stat {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px 20px; box-shadow: var(--shadow);
+    }
+    .stat-hd { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+    .stat-hd svg { width: 14px; height: 14px; fill: var(--text3); flex-shrink: 0; }
+    .stat-lbl { font-size: 11px; color: var(--text3); font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+    .stat-val { font-size: 28px; font-weight: 700; color: var(--text); line-height: 1.15; }
+    .stat-val.accent { color: var(--accent); }
+    .stat-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+    .stat-sub.danger { color: var(--red); }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+    .box {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow);
+    }
+    .box.full { grid-column: 1 / -1; }
+    .box-hd { display: flex; align-items: center; gap: 6px; margin-bottom: 16px; }
+    .box-hd svg { width: 16px; height: 16px; fill: var(--text3); flex-shrink: 0; }
+    .box-hd span { font-size: 14px; font-weight: 600; color: var(--text); }
+    .box-tools { margin-left:auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .cht { height: 280px; }
+    .ops-grid { display:grid; grid-template-columns: 1.05fr .95fr; gap: 12px; margin-bottom:12px; }
+    .status-list { display:grid; gap:10px; }
+    .status-card {
+      display:grid; grid-template-columns: 1fr auto; gap:14px; align-items:center;
+      padding:14px 16px; border:1px solid var(--border); border-radius:var(--radius-sm);
+      background:#fff;
+    }
+    .status-title { font-size:14px; font-weight:700; color:var(--text); letter-spacing:0; }
+    .status-meta { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; font-size:12px; color:var(--text3); }
+    .status-meta span { display:inline-flex; align-items:center; gap:4px; }
+    .status-meta b { color:var(--text2); font-weight:600; }
+    .pill { display:inline-flex; align-items:center; gap:5px; border-radius:5px; padding:2px 8px; font-size:11px; font-weight:700; }
+    .pill svg { width:10px; height:10px; fill:currentColor; }
+    .pill.ok { color:#0d9168; background:var(--accent-light); }
+    .pill.warn { color:#cc7a00; background:#fff4e6; }
+    .pill.bad { color:#cc3366; background:#fce8f0; }
+    .meter { margin: 12px 0; }
+    .meter-row { display:flex; justify-content:space-between; font-size:12px; color:var(--text2); margin-bottom:6px; }
+    .meter-bar { height:8px; background:#f0f0f0; border-radius:99px; overflow:hidden; }
+    .meter-bar i { display:block; height:100%; width:0; background:var(--accent); border-radius:99px; }
+    .meter-bar.warn i { background:var(--orange); }
+    .meter-bar.bad i { background:var(--red); }
+    .meter-sub { font-size:11px; color:var(--text3); margin-top:5px; }
+    .diag { border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px; margin-bottom:10px; background:#fff; }
+    .diag-top { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+    .diag h3 { font-size:13px; margin:0; }
+    .diag p { color:var(--text2); font-size:12px; line-height:1.5; margin:8px 0 0; }
+    .diag dl { display:grid; grid-template-columns:72px 1fr; gap:5px; margin-top:10px; font-size:12px; }
+    .diag dt { color:var(--text3); font-weight:600; }
+    .diag dd { color:var(--text); }
+    .diag-strip { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-bottom:12px; }
+    .diag-card { border:1px solid var(--border); border-radius:var(--radius-sm); background:#fff; padding:12px 14px; }
+    .diag-card b { display:block; font-size:13px; color:var(--text); margin-bottom:4px; }
+    .diag-card span { display:block; font-size:12px; color:var(--text2); line-height:1.45; }
+    .tbl { overflow-x: auto; }
+    .table-note { font-size:12px; color:var(--text3); margin-left:auto; font-weight:400; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 10px 12px; font-size: 12px; color: var(--text3); font-weight: 600; border-bottom: 1px solid var(--border); white-space: nowrap; background:#fafafb; }
+    td { padding: 11px 12px; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #fafafb; }
+    .tag {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 1px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap;
+    }
+    .tag svg { width: 10px; height: 10px; }
+    .tag-1 { background: var(--accent-light); color: #0d9168; }
+    .tag-2 { background: #f0f0ff; color: #5a5aff; }
+    .tag-3 { background: #fff4e6; color: #cc7a00; }
+    .tag-4 { background: #fce8f0; color: #cc3366; }
+    .msg { max-width: 520px; line-height:1.55; color:var(--text); }
+    .msg-muted { color:var(--text2); }
+    .question-cell { max-width:360px; min-width:220px; }
+    .answer-cell { max-width:520px; min-width:280px; }
+    .cell-title { color:var(--text); font-weight:500; line-height:1.5; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+    .cell-sub { color:var(--text3); font-size:12px; margin-top:4px; font-variant-numeric:tabular-nums; }
+    .time-cell { min-width:116px; color:var(--text2); font-variant-numeric:tabular-nums; }
+    .cost { color:var(--text2); font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .logs {
+      height: 410px; overflow:auto; border-radius: var(--radius-sm); padding: 0;
+      background:#fff; color:#262626; font:12px/1.55 "SF Mono", Menlo, Consolas, monospace;
+      white-space:pre-wrap; word-break:break-all; border:1px solid var(--border);
+    }
+    .log-line { display:block; padding:4px 12px; border-bottom:1px solid #f3f3f4; color:#262626; }
+    .log-line:nth-child(odd) { background:#fcfcfd; }
+    .log-error { color:#cf1322; background:#fff1f0!important; }
+    .log-warn { color:#ad6800; background:#fffbe6!important; }
+    .log-info { color:#262626; }
+    .log-muted { color:#6e6e80; }
+    .log-time { color:#8e8ea0; }
+    .chat { display:grid; gap:10px; }
+    .chips { display:flex; gap:6px; flex-wrap:wrap; }
+    .chip { border:1px solid var(--border); background:white; color:var(--text2); border-radius:999px; padding:5px 10px; font-size:12px; cursor:pointer; }
+    .chat-row { display:flex; gap:8px; }
+    .chat-row input { flex:1; }
+    .chat-out { min-height:96px; border:1px solid var(--border); background:#fafafb; border-radius:var(--radius-sm); padding:11px; color:var(--text2); font-size:13px; line-height:1.55; white-space:pre-wrap; }
+    .chat-fab {
+      position:fixed; right:26px; bottom:26px; z-index:120;
+      height:48px; padding:0 18px; border:0; border-radius:24px; background:var(--accent);
+      color:#fff; box-shadow:0 8px 24px rgba(16,163,127,.28); font-size:14px; font-weight:700;
+      display:inline-flex; align-items:center; gap:8px; cursor:pointer;
+    }
+    .chat-fab svg { width:18px; height:18px; fill:currentColor; }
+    .chat-panel {
+      position:fixed; right:26px; bottom:86px; z-index:120; width:380px; max-width:calc(100vw - 32px);
+      background:#fff; border:1px solid var(--border); border-radius:10px; box-shadow:0 12px 36px rgba(0,0,0,.14);
+      padding:14px; display:none;
+    }
+    .chat-panel.open { display:block; }
+    .chat-panel-hd { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+    .chat-panel-hd b { font-size:14px; color:var(--text); }
+    .icon-btn { width:28px; height:28px; border:1px solid var(--border); background:#fff; border-radius:6px; color:var(--text2); cursor:pointer; }
+    .empty { text-align: center; padding: 40px 0; color: var(--text3); font-size: 14px; }
+    .muted { color: var(--text3); }
+    @media (max-width: 900px) {
+      .grid, .ops-grid { grid-template-columns: 1fr; }
+      .diag-strip { grid-template-columns:1fr; }
+      .container { padding: 12px; }
+      .topbar { padding: 0 12px; height:auto; min-height:56px; flex-wrap:wrap; gap:8px; padding-top:10px; padding-bottom:10px; }
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      .stat-val { font-size: 22px; }
+      .fbar { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
+      .fbar-label { grid-column: 1 / -1; }
+      .fbar .sep { display:none; }
+      .fbar .btn { justify-content:center; }
+      .fbar input[type="date"], .fbar input[type="password"], .fbar select { width: 100%; }
+      .fbar input[type="date"], .fbar input[type="password"], .fbar select, .fbar #saveCode { grid-column: 1 / -1; }
+      .chat-row { flex-direction:column; }
+      .logs { height: 300px; }
+      .chat-fab { right:16px; bottom:16px; }
+      .chat-panel { right:16px; bottom:74px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="logo-mark">
+        <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+      </div>
+      <h1 data-i18n="appTitle">数字人数据看板</h1>
+    </div>
+    <div class="topbar-right">
+      <span class="topbar-time" id="updTime">-</span>
+      <button class="btn btn-ghost" id="langToggle" title="中文 / English" aria-label="中文 / English">
+        <svg viewBox="0 0 24 24"><path d="M12.9 15.7c1.4-1.5 2.5-3.1 3.1-4.9h2V8.9h-5V7h-2v1.9H6v1.9h8c-.5 1.2-1.3 2.4-2.3 3.5-.7-.8-1.3-1.6-1.8-2.5H7.8c.6 1.3 1.4 2.6 2.5 3.8l-2.2 2.1L9.5 19l2.2-2.1 1.4 1.2.8-1.8-1-.6zM19 19l-1-2.5h-3.9L13.1 19H11l3.8-9h2.4l3.8 9h-2zm-4.2-4.2h2.5L16 11.5l-1.2 3.3z"/></svg>
+        <span id="langLabel">EN</span>
+      </button>
+      <button class="btn btn-primary" onclick="refreshAll()">
+        <svg viewBox="0 0 24 24"><path d="M17.65 6.35A7.96 7.96 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+        <span data-i18n="refresh">刷新</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="fbar">
+      <span class="fbar-label" data-i18n="timeRange">时间范围</span>
+      <button class="btn btn-ghost active" data-range="today" data-i18n="today">今日</button>
+      <button class="btn btn-ghost" data-range="week" data-i18n="week">本周</button>
+      <button class="btn btn-ghost" data-range="month" data-i18n="month">本月</button>
+      <button class="btn btn-ghost" data-range="all" data-i18n="all">全部</button>
+      <button class="btn btn-ghost" data-range="custom" data-i18n="custom">自定义</button>
+      <span class="sep">|</span>
+      <span class="fbar-label" data-i18n="from">从</span><input type="date" id="startDate">
+      <span class="fbar-label" data-i18n="to">至</span><input type="date" id="endDate">
+      <span class="sep">|</span>
+      <span class="fbar-label" data-i18n="opsCode">运维码</span>
+      <input type="password" id="opsCode" placeholder="可选，用于资源/诊断" data-i18n-placeholder="opsCodePlaceholder">
+      <button class="btn btn-ghost" id="saveCode" data-i18n="save">保存</button>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="stat-hd"><svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3z"/></svg></div><div class="stat-lbl" data-i18n="conversations">对话次数</div><div class="stat-val accent" id="sTotal">-</div><div class="stat-sub" data-i18n="period">统计期内</div></div>
+      <div class="stat"><div class="stat-hd"><svg viewBox="0 0 24 24"><path d="M8 12h2v2H8v-2zm12-2h-8v6h-2v-6H4V6h16v4z"/></svg></div><div class="stat-lbl" data-i18n="connections">连接数</div><div class="stat-val" id="sConn">-</div><div class="stat-sub" data-i18n="period">统计期内</div></div>
+      <div class="stat"><div class="stat-hd"><svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z"/></svg></div><div class="stat-lbl" data-i18n="activeChars">活跃角色</div><div class="stat-val" id="sChars">-</div><div class="stat-sub" data-i18n="loaded">已加载</div></div>
+      <div class="stat"><div class="stat-hd"><svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2z"/></svg></div><div class="stat-lbl" data-i18n="avgResponse">平均响应</div><div class="stat-val" id="sLatency">-</div><div class="stat-sub">LLM + TTS</div></div>
+      <div class="stat"><div class="stat-hd"><svg viewBox="0 0 24 24"><path d="M12 2L1 21h22L12 2zm1 16h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg></div><div class="stat-lbl" data-i18n="errors">异常</div><div class="stat-val" id="sErrors">-</div><div class="stat-sub danger" data-i18n="period">统计期内</div></div>
+    </div>
+
+    <div class="grid">
+      <div class="box"><div class="box-hd"><svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg><span data-i18n="charHeat">角色热度</span></div><div class="cht" id="charCht"></div></div>
+      <div class="box"><div class="box-hd"><svg viewBox="0 0 24 24"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg><span data-i18n="dailyTrend">每日趋势</span></div><div class="cht" id="dailyCht"></div></div>
+    </div>
+    <div class="grid">
+      <div class="box"><div class="box-hd"><svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2z"/></svg><span data-i18n="hourDist">时段分布</span></div><div class="cht" id="hourCht"></div></div>
+      <div class="box"><div class="box-hd"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg><span data-i18n="latency">响应延迟</span></div><div class="cht" id="lateCht"></div></div>
+    </div>
+
+    <div class="ops-grid">
+      <div class="box"><div class="box-hd"><svg viewBox="0 0 24 24"><path d="M12 2l4 7h-8l4-7zm0 20l-4-7h8l-4 7z"/></svg><span data-i18n="serviceStatus">服务状态总览</span></div><div id="svcBox"><div class="empty" data-i18n="waitingOps">等待运维码或数据...</div></div></div>
+      <div class="box"><div class="box-hd"><svg viewBox="0 0 24 24"><path d="M3 3h18v4H3V3zm0 7h18v4H3v-4zm0 7h18v4H3v-4z"/></svg><span data-i18n="resources">系统资源监控</span></div><div id="resBox"><div class="empty" data-i18n="waitingOps">等待运维码或数据...</div></div></div>
+    </div>
+
+    <div class="grid" style="margin-top:12px">
+      <div class="box full"><div class="box-hd"><svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg><span data-i18n="diagnostics">异常诊断面板</span></div><div id="diagBox"><div class="empty" data-i18n="waitingOps">等待运维码或数据...</div></div></div>
+    </div>
+
+    <div class="box full" style="margin-bottom:12px">
+      <div class="box-hd">
+        <svg viewBox="0 0 24 24"><path d="M4 4h16v2H4V4zm0 4h16v2H4V8zm0 4h10v2H4v-2zm0 4h16v2H4v-2z"/></svg><span data-i18n="liveLogs">实时日志</span><small class="table-note" data-i18n="logsNote">每 5 秒更新，自动保持在底部</small>
+        <div class="box-tools"><input id="logSearch" class="search" placeholder="搜索 ERROR / TTS / WS / 角色ID" data-i18n-placeholder="logSearch"><select id="logLevel" class="search"><option value="all" data-i18n="all">全部</option><option value="error">ERROR</option><option value="warning">WARNING</option><option value="info">INFO</option></select><button class="btn btn-ghost" id="exportLogs" data-i18n="exportLogs">导出日志</button><button class="btn btn-ghost" id="clearLog" data-i18n="clear">清除</button></div>
+      </div>
+      <pre class="logs" id="logsBox">加载中...</pre>
+    </div>
+
+    <div class="box full">
+      <div class="box-hd"><svg viewBox="0 0 24 24"><path d="M21 6h-2v2h-2V6h-2V4h2V2h2v2h2v2zm-10 3c1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3 1.34 3 3 3z"/></svg><span data-i18n="conversationRecords">对话记录</span><small class="table-note" data-i18n="conversationNote">来自 SQLite 对话数据库，按筛选时间展示最近记录</small><div class="box-tools"><button class="btn btn-ghost" id="exportConvs" data-i18n="exportConvs">导出聊天记录</button></div></div>
+      <div class="tbl" id="convTable"><div class="empty">加载中...</div></div>
+    </div>
+  </div>
+
+  <section class="chat-panel" id="chatPanel" aria-label="运维助手">
+    <div class="chat-panel-hd">
+      <b data-i18n="opsAssistant">运维助手</b>
+      <button class="icon-btn" id="chatClose" aria-label="关闭" data-i18n-aria="close">×</button>
+    </div>
+    <div class="chat">
+      <div class="chips"><button class="chip" data-q="today" data-i18n="chipToday">今天有多少对话？</button><button class="chip" data-q="errors" data-i18n="chipErrors">最近有没有异常？</button><button class="chip" data-q="mary" data-i18n="chipMary">小瑪老師配置在哪？</button><button class="chip" data-q="restart" data-i18n="chipRestart">帮我重启服务</button></div>
+      <div class="chat-row"><input class="search" id="askInput" placeholder="输入运维问题" data-i18n-placeholder="askPlaceholder"><button class="btn btn-primary" id="askBtn" data-i18n="ask">询问</button></div>
+      <div class="chat-out" id="chatOut" data-i18n="chatReady">只读助手已准备好。写操作会只给命令和确认提示，不会直接执行。</div>
+    </div>
+  </section>
+  <button class="chat-fab" id="chatFab" aria-label="打开运维助手">
+    <svg viewBox="0 0 24 24"><path d="M4 4h16v12H7.5L4 19.5V4zm2 2v8h12V6H6z"/></svg>
+    <span data-i18n="opsAssistant">运维助手</span>
+  </button>
+
+  <script>
+    const TZ = 'Asia/Hong_Kong';
+    const CHAR_MAP = {
+      'maryknoll-teacher': { name: '小瑪老師', cls: 'tag-1' },
+      'qin-shihuang': { name: '秦始皇', cls: 'tag-2' },
+      'elizabeth-i': { name: 'Elizabeth I', cls: 'tag-3' },
+      'character-49fd372d': { name: '李白', cls: 'tag-4' }
+    };
+    const COLORS = ['#10a37f','#5a5aff','#cc7a00','#cc3366','#8b5cf6','#06b6d4'];
+    const ICON_USER = '<svg viewBox="0 0 24 24" style="width:10px;height:10px;fill:currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z"/></svg>';
+    const now = new Date();
+    const today = fmtDate(now);
+    const weekAgo = fmtDate(new Date(now - 7*864e5));
+    const monthAgo = fmtDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    let rangeType = 'today', rawLogs = '', opsStatus = null, opsDiag = null, convStats = null;
+    let chatHistory = [];
+    let lastConvData = null, lastConvRows = [];
+    let lang = localStorage.getItem('opsLang') || 'zh';
+    let cCht, dCht, hCht, lCht;
+    const I18N = {
+      zh: {
+        appTitle:'数字人数据看板', refresh:'刷新', timeRange:'时间范围', today:'今日', week:'本周', month:'本月', all:'全部', custom:'自定义',
+        from:'从', to:'至', opsCode:'运维码', opsCodePlaceholder:'可选，用于资源/诊断', save:'保存',
+        conversations:'对话次数', connections:'连接数', activeChars:'活跃角色', avgResponse:'平均响应', errors:'异常', period:'统计期内', loaded:'已加载',
+        charHeat:'角色热度', dailyTrend:'每日趋势', hourDist:'时段分布', latency:'响应延迟', serviceStatus:'服务状态总览', resources:'系统资源监控', diagnostics:'异常诊断面板',
+        waitingOps:'等待运维码或数据...', liveLogs:'实时日志', logsNote:'每 5 秒更新，自动保持在底部', logSearch:'搜索 ERROR / TTS / WS / 角色ID', clear:'清除', exportLogs:'导出日志',
+        conversationRecords:'对话记录', conversationNote:'来自 SQLite 对话数据库，按筛选时间展示最近记录', exportConvs:'导出聊天记录',
+        opsAssistant:'运维助手', close:'关闭', chipToday:'今天有多少对话？', chipErrors:'最近有没有异常？', chipMary:'小瑪老師配置在哪？', chipRestart:'帮我重启服务',
+        askPlaceholder:'输入运维问题', ask:'询问', chatReady:'只读助手已准备好。写操作会只给命令和确认提示，不会直接执行。',
+        loading:'正在分析当前状态、日志和对话统计...', enterQuestion:'请输入运维问题。', authNeeded:'请输入正确运维码后使用 MiniMax 运维 Chatbot。',
+        fallback:'MiniMax Chatbot 暂不可用，以上为本地只读规则回答。', noLogs:'暂无日志', noConvs:'暂无对话记录', exportAuth:'请输入正确运维码后导出。', exportFailed:'导出失败，请稍后重试。',
+        digitalHuman:'Digital Human 主服务', nginx:'Nginx 反向代理', minimax:'MiniMax 语音服务', status:'状态', startup:'启动', running:'运行中', needsAttention:'需要关注', unknown:'未知', notRunning:'未正常运行',
+        autoStart:'开机自启', noAutoStart:'未设自启', autoState:'自启状态', ttsModel:'TTS 模型', configured:'已配置', notConfigured:'未配置', normal:'正常', warning:'警告', error:'错误',
+        uptime:'运行时间', process:'进程', time:'时间', database:'对话数据库', path:'路径', size:'大小',
+        cpu:'CPU', memory:'Memory', disk:'Disk', rootCause:'根因', advice:'建议', log:'日志', locate:'定位',
+        diagError:'错误', diagErrorDesc:'需要优先处理的服务或接口问题', diagWarn:'警告', diagWarnDesc:'建议观察或排查的异常信号', diagOk:'正常', diagOkDesc:'当前检查未发现明显问题',
+        role:'角色', userQuestion:'用户提问', assistantReply:'数字人回复', totalCost:'总耗时', user:'用户', todayCount:'今日对话', total:'累计', readonlyRestart:'页面保持只读。人工确认后执行：ssh ec2-dh "sudo systemctl restart digitalhuman.service"。执行前建议先看异常诊断和最近 ERROR 日志。',
+        maryPath:'小瑪老師配置：characters/maryknoll-teacher/character.json；知识库：characters/maryknoll-teacher/knowledge.md。',
+        canAnswer:'我可以回答：今天对话量、最近异常、小瑪老師配置路径、重启服务命令。当前版本只读，不直接操作服务器。'
+      },
+      en: {
+        appTitle:'Digital Human Dashboard', refresh:'Refresh', timeRange:'Range', today:'Today', week:'Week', month:'Month', all:'All', custom:'Custom',
+        from:'From', to:'To', opsCode:'Ops Code', opsCodePlaceholder:'For diagnostics', save:'Save',
+        conversations:'Conversations', connections:'Connections', activeChars:'Active Roles', avgResponse:'Avg Response', errors:'Errors', period:'Selected period', loaded:'Loaded',
+        charHeat:'Role Heat', dailyTrend:'Daily Trend', hourDist:'Hourly Distribution', latency:'Response Latency', serviceStatus:'Service Status', resources:'System Resources', diagnostics:'Diagnostics',
+        waitingOps:'Waiting for ops code or data...', liveLogs:'Live Logs', logsNote:'Updates every 5 seconds and stays at the bottom', logSearch:'Search ERROR / TTS / WS / role ID', clear:'Clear', exportLogs:'Export Logs',
+        conversationRecords:'Conversation Records', conversationNote:'From SQLite conversation database, showing recent records for the selected period', exportConvs:'Export Chats',
+        opsAssistant:'Ops Assistant', close:'Close', chipToday:'How many conversations today?', chipErrors:'Any recent incidents?', chipMary:'Where is Maryknoll config?', chipRestart:'Restart the service',
+        askPlaceholder:'Ask an ops question', ask:'Ask', chatReady:'Read-only assistant is ready. Write operations return commands and confirmation guidance only.',
+        loading:'Analyzing current status, logs, and conversation stats...', enterQuestion:'Please enter an ops question.', authNeeded:'Enter the correct ops code to use the MiniMax ops chatbot.',
+        fallback:'MiniMax chatbot is unavailable. The answer above is from local read-only rules.', noLogs:'No logs', noConvs:'No conversation records', exportAuth:'Enter the correct ops code before exporting.', exportFailed:'Export failed. Please try again.',
+        digitalHuman:'Digital Human Main Service', nginx:'Nginx Reverse Proxy', minimax:'MiniMax Voice Service', status:'Status', startup:'Startup', running:'Running', needsAttention:'Needs attention', unknown:'Unknown', notRunning:'Not running normally',
+        autoStart:'Enabled on boot', noAutoStart:'Not enabled on boot', autoState:'Startup state', ttsModel:'TTS Model', configured:'Configured', notConfigured:'Not configured', normal:'Normal', warning:'Warning', error:'Error',
+        uptime:'Uptime', process:'Process', time:'Time', database:'Conversation Database', path:'Path', size:'Size',
+        cpu:'CPU', memory:'Memory', disk:'Disk', rootCause:'Root Cause', advice:'Advice', log:'Log', locate:'Locate',
+        diagError:'Errors', diagErrorDesc:'Issues that need priority handling', diagWarn:'Warnings', diagWarnDesc:'Signals worth watching or investigating', diagOk:'Normal', diagOkDesc:'No obvious issue in current checks',
+        role:'Role', userQuestion:'User Question', assistantReply:'Digital Human Reply', totalCost:'Total Time', user:'User', todayCount:'Today', total:'Total', readonlyRestart:'This page is read-only. After manual confirmation run: ssh ec2-dh "sudo systemctl restart digitalhuman.service". Check diagnostics and recent ERROR logs first.',
+        maryPath:'Maryknoll config: characters/maryknoll-teacher/character.json; knowledge base: characters/maryknoll-teacher/knowledge.md.',
+        canAnswer:'I can answer today’s conversation count, recent incidents, Maryknoll config path, and restart guidance. This version is read-only and does not operate the server directly.'
+      }
+    };
+
+    document.getElementById('startDate').value = today;
+    document.getElementById('endDate').value = today;
+    document.getElementById('opsCode').value = localStorage.getItem('opsCode') || '';
+    document.getElementById('startDate').disabled = true;
+    document.getElementById('endDate').disabled = true;
+
+    function t(key) { return (I18N[lang] && I18N[lang][key]) || I18N.zh[key] || key; }
+    function applyLanguage() {
+      document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
+      document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+      document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
+      document.querySelectorAll('[data-i18n-aria]').forEach(el => { el.setAttribute('aria-label', t(el.dataset.i18nAria)); });
+      document.getElementById('langLabel').textContent = lang === 'en' ? '中' : 'EN';
+      document.getElementById('langToggle').title = lang === 'en' ? '中文' : 'English';
+      document.getElementById('langToggle').setAttribute('aria-label', lang === 'en' ? '中文' : 'English');
+      if (opsStatus || opsDiag) renderOps(opsStatus, opsDiag);
+      if (rawLogs) renderLogs();
+      if (lastConvData) renderConvs(lastConvData, lastConvRows);
+      renderStats(
+        parseLogs(filterLogs(rawLogs, document.getElementById('startDate').value || today, document.getElementById('endDate').value || today)),
+        parseConvs(lastConvData, document.getElementById('startDate').value || today, document.getElementById('endDate').value || today),
+        lastConvData?.total
+      );
+    }
+    function fmtDate(d) {
+      const parts = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(d);
+      const m = Object.fromEntries(parts.map(p => [p.type, p.value]));
+      return `${m.year}-${m.month}-${m.day}`;
+    }
+    function fmtTime(d = new Date()) {
+      return d.toLocaleTimeString(lang === 'en' ? 'en-US' : 'zh-CN', { hour12:false, timeZone: TZ }) + ' UTC+8';
+    }
+    function fmtRecordTime(v) {
+      if (!v) return '-';
+      const d = new Date(String(v).includes('T') ? v : String(v).replace(' ', 'T'));
+      if (Number.isNaN(d.getTime())) return String(v).slice(5, 19);
+      return d.toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false, timeZone: TZ });
+    }
+    function headers() {
+      const code = document.getElementById('opsCode').value.trim();
+      return code ? { 'X-User-Code': code } : {};
+    }
+    async function fetchJson(url, auth=false) {
+      const r = await fetch(url, auth ? { headers: headers() } : {});
+      if (r.status === 401 || r.status === 503) return null;
+      if (!r.ok) throw new Error(`${url}: ${r.status}`);
+      return r.json();
+    }
+
+    document.querySelectorAll('.btn-ghost[data-range]').forEach(b => {
+      b.addEventListener('click', () => {
+        document.querySelectorAll('.btn-ghost[data-range]').forEach(p => p.classList.remove('active'));
+        b.classList.add('active');
+        rangeType = b.dataset.range;
+        const s = document.getElementById('startDate'), e = document.getElementById('endDate');
+        if (rangeType === 'today') { s.value = today; e.value = today; }
+        else if (rangeType === 'week') { s.value = weekAgo; e.value = today; }
+        else if (rangeType === 'month') { s.value = monthAgo; e.value = today; }
+        else if (rangeType === 'all') { s.value = '2026-01-01'; e.value = today; }
+        s.disabled = e.disabled = rangeType !== 'custom';
+        refreshAll();
+      });
+    });
+    document.getElementById('startDate').addEventListener('change', refreshAll);
+    document.getElementById('endDate').addEventListener('change', refreshAll);
+    document.getElementById('saveCode').addEventListener('click', () => {
+      localStorage.setItem('opsCode', document.getElementById('opsCode').value.trim());
+      refreshAll();
+    });
+
+    function filterLogs(raw, from, to) {
+      return raw.split('\n').filter(l => {
+        const m = l.match(/(\d{4}-\d{2}-\d{2})/);
+        return m && m[1] >= from && m[1] <= to;
+      }).join('\n');
+    }
+    function parseLogs(text) {
+      const hourly = Array(24).fill(0), daily = {}, charCount = {}, lats = [];
+      let conn = 0, turns = 0, errors = 0;
+      for (const l of text.split('\n')) {
+        if (l.includes('WS connected')) {
+          conn++; const m = l.match(/char=(\S+)/); if (m) charCount[m[1]] = (charCount[m[1]] || 0) + 1;
+          const hm = l.match(/T(\d{2}):(\d{2}):| (\d{2}):(\d{2}):/); if (hm) hourly[+(hm[1] || hm[3])]++;
+        }
+        if (l.includes('WS disconnected')) { const dm = l.match(/(\d{4}-\d{2}-\d{2})/); if (dm) daily[dm[1]] = (daily[dm[1]] || 0) + 1; }
+        if (l.includes('LLM done')) { turns++; const tm = l.match(/total=(\d+)ms/); if (tm) lats.push(+tm[1]); }
+        if (l.includes('ERROR') || l.includes('CRITICAL')) errors++;
+      }
+      return { hourly, daily, charCount, conn, turns, errors, lats };
+    }
+    function parseConvs(convData, from, to) {
+      const rows = (convData?.conversations || []).filter(c => (c.time || '').slice(0,10) >= from && (c.time || '').slice(0,10) <= to);
+      const charCount = {}, daily = {}, hourly = Array(24).fill(0), lats = [];
+      for (const c of rows) {
+        charCount[c.char_id] = (charCount[c.char_id] || 0) + 1;
+        const day = (c.time || '').slice(0,10); if (day) daily[day] = (daily[day] || 0) + 1;
+        const h = +((c.time || '').match(/T(\d{2}):/) || [])[1]; if (!Number.isNaN(h)) hourly[h]++;
+        const ms = (c.llm_ms || 0) + (c.tts_ms || 0); if (ms) lats.push(ms);
+      }
+      return { rows, charCount, daily, hourly, lats };
+    }
+    function mergeCounts(a, b) {
+      const out = { ...a };
+      for (const [k,v] of Object.entries(b || {})) out[k] = Math.max(out[k] || 0, v);
+      return out;
+    }
+
+    function renderStats(logs, convParsed, convTotal = null) {
+      let total = Number.isFinite(convTotal) ? convTotal : (convParsed.rows.length || logs.turns || 0);
+      if (rangeType === 'all' && Number.isFinite(convStats?.total)) total = convStats.total;
+      if (rangeType === 'today' && Number.isFinite(convStats?.today)) total = Math.max(total, convStats.today);
+      const statChars = rangeType === 'all' ? (convStats?.per_character || {}) : {};
+      const chars = Object.keys(mergeCounts(mergeCounts(logs.charCount, convParsed.charCount), statChars)).length;
+      const lats = convParsed.lats.length ? convParsed.lats : logs.lats;
+      document.getElementById('sTotal').textContent = total.toLocaleString();
+      document.getElementById('sConn').textContent = logs.conn || '-';
+      document.getElementById('sChars').textContent = chars ? (lang === 'en' ? String(chars) : chars + '个') : '-';
+      document.getElementById('sLatency').textContent = lats.length ? (lats.reduce((a,b)=>a+b,0)/lats.length/1000).toFixed(1) + 's' : '-';
+      document.getElementById('sErrors').textContent = logs.errors;
+    }
+    function initCht(el) { return echarts.init(el); }
+    function renderCharCht(counts) {
+      if (!cCht) cCht = initCht(document.getElementById('charCht'));
+      const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+      const names = sorted.map(s => CHAR_MAP[s[0]]?.name || s[0]).reverse();
+      const vals = sorted.map(s => s[1]).reverse();
+      const clrs = sorted.map(s => { const i = ['maryknoll-teacher','qin-shihuang','elizabeth-i','character-49fd372d'].indexOf(s[0]); return COLORS[i >= 0 ? i : 4]; }).reverse();
+      cCht.setOption({ tooltip:{trigger:'axis',axisPointer:{type:'shadow'}}, grid:{left:20,right:40,bottom:20,top:10,containLabel:true}, xAxis:{type:'value',axisLine:{show:false},axisTick:{show:false},splitLine:{lineStyle:{color:'#f0f0f0'}}}, yAxis:{type:'category',data:names,axisLine:{show:false},axisTick:{show:false}}, series:[{type:'bar',data:vals,barWidth:24,borderRadius:[0,4,4,0],itemStyle:{color:p=>clrs[p.dataIndex]},label:{show:true,position:'right',fontWeight:600,fontSize:12,color:'#353740'}}] }, true);
+    }
+    function renderDailyCht(daily) {
+      if (!dCht) dCht = initCht(document.getElementById('dailyCht'));
+      const e = Object.entries(daily).sort((a,b)=>a[0].localeCompare(b[0]));
+      dCht.setOption({ tooltip:{trigger:'axis'}, grid:{left:30,right:20,bottom:20,top:10,containLabel:true}, xAxis:{type:'category',data:e.map(x=>x[0].slice(5)),axisLine:{show:false},axisLabel:{fontSize:11}}, yAxis:{type:'value',splitLine:{lineStyle:{color:'#f0f0f0'}},axisLine:{show:false},axisTick:{show:false}}, series:[{type:'line',data:e.map(x=>x[1]),smooth:true,symbol:'circle',symbolSize:5,lineStyle:{width:2,color:'#10a37f'},areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(16,163,127,.2)'},{offset:1,color:'rgba(16,163,127,0)'}]}},itemStyle:{color:'#10a37f'}}] }, true);
+    }
+    function renderHourCht(hourly) {
+      if (!hCht) hCht = initCht(document.getElementById('hourCht'));
+      const m = Math.max(...hourly, 1);
+      hCht.setOption({ tooltip:{trigger:'axis'}, grid:{left:30,right:20,bottom:20,top:10,containLabel:true}, xAxis:{type:'category',data:Array.from({length:24},(_,i)=>`${i}时`),axisLabel:{interval:3,fontSize:10},axisLine:{show:false}}, yAxis:{type:'value',splitLine:{lineStyle:{color:'#f0f0f0'}},axisLine:{show:false},axisTick:{show:false}}, series:[{type:'bar',data:hourly,barWidth:16,borderRadius:[3,3,0,0],itemStyle:{color:p=>`rgba(16,163,127,${.3+p.value/m*.7})`}}] }, true);
+    }
+    function renderLateCht(lats) {
+      if (!lCht) lCht = initCht(document.getElementById('lateCht'));
+      if (!lats.length) { lCht.setOption({title:{text:'暂无数据',left:'center',top:'center',textStyle:{color:'#8e8ea0',fontSize:13}}}, true); return; }
+      const mt = Math.max(...lats), st = mt / 15 || 1, bk = Array(15).fill(0);
+      lats.forEach(t => { bk[Math.min(Math.floor(t / st), 14)]++; });
+      lCht.setOption({ tooltip:{trigger:'axis'}, grid:{left:30,right:20,bottom:35,top:10,containLabel:true}, xAxis:{type:'category',data:bk.map((_,i)=>`${Math.round(i*st/1000)}-${Math.round((i+1)*st/1000)}s`),axisLabel:{rotate:30,fontSize:9},axisLine:{show:false}}, yAxis:{type:'value',splitLine:{lineStyle:{color:'#f0f0f0'}},axisLine:{show:false},axisTick:{show:false}}, series:[{type:'line',data:bk,smooth:true,symbol:'none',lineStyle:{width:2,color:'#5a5aff'},areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(90,90,255,.15)'},{offset:1,color:'rgba(90,90,255,0)'}]}}}] }, true);
+    }
+    function badge(status) {
+      const cls = status === 'ok' || status === 'active' ? 'ok' : status === 'warning' ? 'warn' : 'bad';
+      const txt = cls === 'ok' ? t('normal') : cls === 'warn' ? t('warning') : t('error');
+      return `<span class="pill ${cls}"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/></svg>${txt}</span>`;
+    }
+    function meter(name, val, sub) {
+      const cls = val >= 90 ? 'bad' : val >= 75 ? 'warn' : '';
+      return `<div class="meter"><div class="meter-row"><span>${name}</span><b>${val}%</b></div><div class="meter-bar ${cls}"><i style="width:${Math.min(val,100)}%"></i></div><div class="meter-sub">${sub}</div></div>`;
+    }
+    function fmtBytes(n) {
+      return !n ? '-' : n > 1073741824 ? (n/1073741824).toFixed(1)+' GB' : (n/1048576).toFixed(1)+' MB';
+    }
+    function serviceDisplayName(name) {
+      const map = {
+        'digitalhuman.service': t('digitalHuman'),
+        'nginx.service': t('nginx')
+      };
+      return map[name] || name || '服务';
+    }
+    function activeText(value) {
+      if (value === 'active' || value === 'ok') return t('running');
+      if (value === 'warning') return t('needsAttention');
+      if (!value) return t('unknown');
+      return t('notRunning');
+    }
+    function enabledText(value) {
+      if (value === 'enabled') return t('autoStart');
+      if (value === 'disabled') return t('noAutoStart');
+      return value ? `${t('autoState')}: ${escapeHtml(value)}` : `${t('autoState')}: ${t('unknown')}`;
+    }
+    function statusCard(title, meta, status) {
+      return `<div class="status-card"><div><div class="status-title">${escapeHtml(title)}</div><div class="status-meta">${meta.map(x => `<span>${x}</span>`).join('')}</div></div>${badge(status)}</div>`;
+    }
+    function renderOps(status, diag) {
+      const svcBox = document.getElementById('svcBox'), resBox = document.getElementById('resBox'), diagBox = document.getElementById('diagBox');
+      if (!status) {
+        svcBox.innerHTML = `<div class="empty">${t('waitingOps')}</div>`;
+        resBox.innerHTML = `<div class="empty">${t('waitingOps')}</div>`;
+        diagBox.innerHTML = `<div class="empty">${t('waitingOps')}</div>`;
+        return;
+      }
+      const serviceCards = (status.services || []).map(s => statusCard(
+        serviceDisplayName(s.name),
+        [`<b>${t('status')}</b>${activeText(s.active)}`, `<b>${t('startup')}</b>${enabledText(s.enabled)}`],
+        s.active
+      ));
+      serviceCards.push(statusCard(
+        t('minimax'),
+        [`<b>${t('ttsModel')}</b>${escapeHtml(status.app?.tts_model || 'speech-2.8-hd')}`, `<b>${t('status')}</b>${status.app?.minimax_configured ? t('configured') : t('notConfigured')}`],
+        status.app?.minimax_configured ? 'ok' : 'error'
+      ));
+      svcBox.innerHTML = `<div class="status-list">${serviceCards.join('')}</div>`;
+      const r = status.resources;
+      resBox.innerHTML = [
+        meter(t('cpu'), Math.round(r.cpu.load_percent), `load 1/5/15: ${r.cpu.load_1}, ${r.cpu.load_5}, ${r.cpu.load_15}`),
+        meter(t('memory'), Math.round(r.memory.percent), `${fmtBytes(r.memory.used)} / ${fmtBytes(r.memory.total)}`),
+        meter(t('disk'), Math.round(r.disk.percent), `${fmtBytes(r.disk.used)} / ${fmtBytes(r.disk.total)}`),
+        statusCard(t('uptime'), [`<b>Uptime</b>${escapeHtml(r.uptime)}`, `<b>${t('process')}</b>PID ${escapeHtml(r.process.pid)}`, `<b>${t('time')}</b>${escapeHtml(r.timezone)}`], 'ok'),
+        statusCard(t('database'), [`<b>${t('path')}</b>${escapeHtml(r.database.path)}`, `<b>${t('size')}</b>${fmtBytes(r.database.size)}`], 'ok')
+      ].join('');
+      const diagItems = diag?.items || [];
+      const counts = {
+        error: diagItems.filter(x => x.status === 'error').length,
+        warning: diagItems.filter(x => x.status === 'warning').length,
+        ok: diagItems.filter(x => x.status === 'ok').length
+      };
+      diagBox.innerHTML = `<div class="diag-strip"><div class="diag-card"><b>${t('diagError')} ${counts.error}</b><span>${t('diagErrorDesc')}</span></div><div class="diag-card"><b>${t('diagWarn')} ${counts.warning}</b><span>${t('diagWarnDesc')}</span></div><div class="diag-card"><b>${t('diagOk')} ${counts.ok}</b><span>${t('diagOkDesc')}</span></div></div>` +
+        (diagItems.map((x,i) => `<article class="diag" data-log="${escapeHtml(x.log || x.description || '')}"><div class="diag-top"><h3>${escapeHtml(x.title)}</h3>${badge(x.status)}</div><p>${escapeHtml(x.description)}</p><dl><dt>${t('rootCause')}</dt><dd>${escapeHtml(x.root_cause)}</dd><dt>${t('advice')}</dt><dd>${escapeHtml(x.advice)}</dd>${x.log ? `<dt>${t('log')}</dt><dd><button class="btn btn-ghost" onclick="focusDiagLog(${i})">${t('locate')}</button></dd>` : ''}</dl></article>`).join('') || `<div class="empty">${t('waitingOps')}</div>`);
+    }
+    function renderLogs() {
+      const q = document.getElementById('logSearch').value.trim().toLowerCase();
+      const level = document.getElementById('logLevel').value;
+      const lines = rawLogs.split('\n').filter(Boolean).filter(line => {
+        const l = line.toLowerCase();
+        if (q && !l.includes(q)) return false;
+        if (level !== 'all' && !l.includes(level)) return false;
+        return true;
+      });
+      const box = document.getElementById('logsBox');
+      box.innerHTML = lines.slice(-800).map(line => {
+        const c = line.includes('ERROR') || line.includes('CRITICAL') ? 'log-error' : line.includes('WARNING') ? 'log-warn' : line.includes('INFO') ? 'log-info' : 'log-muted';
+        const safe = escapeHtml(line).replace(/^(\S+)/, '<span class="log-time">$1</span>');
+        return `<span class="log-line ${c}">${safe}</span>`;
+      }).join('') || `<span class="log-line log-muted">${t('noLogs')}</span>`;
+      box.scrollTop = box.scrollHeight;
+    }
+    function focusDiagLog(i) {
+      const raw = document.querySelectorAll('.diag')[i]?.dataset.log || '';
+      document.getElementById('logSearch').value = raw.split(' ').slice(-6).join(' ');
+      document.getElementById('logLevel').value = raw.includes('WARNING') ? 'warning' : raw.includes('ERROR') ? 'error' : 'all';
+      renderLogs();
+      document.getElementById('logsBox').scrollIntoView({ behavior:'smooth', block:'center' });
+    }
+    function renderConvs(data, rows) {
+      const el = document.getElementById('convTable');
+      rows = rows.length ? rows : (data?.conversations || []);
+      if (!rows.length) { el.innerHTML = `<div class="empty">${t('noConvs')}</div>`; return; }
+      el.innerHTML = `<table><thead><tr><th>${t('role')}</th><th>${t('time')}</th><th>${t('userQuestion')}</th><th>${t('assistantReply')}</th><th>${t('totalCost')}</th></tr></thead><tbody>${rows.slice(0,80).map(c => {
+        const ch = CHAR_MAP[c.char_id] || { name:c.char_id, cls:'tag-1' };
+        const msg = c.user_msg || '', rep = (c.assistant_msg || '').replace(/\n/g, ' ');
+        const cost = (c.llm_ms || 0) + (c.tts_ms || 0);
+        return `<tr><td><span class="tag ${ch.cls}">${ICON_USER}${ch.name}</span></td><td class="time-cell">${fmtRecordTime(c.time)}<div class="cell-sub">UTC+8</div></td><td class="question-cell"><div class="cell-title">${escapeHtml(msg)}</div><div class="cell-sub">${escapeHtml(c.user_ip || t('user'))}</div></td><td class="answer-cell"><div class="cell-title msg-muted">${escapeHtml(rep)}</div></td><td class="cost">${cost}ms</td></tr>`;
+      }).join('')}</tbody></table>`;
+    }
+    function localAnswerText(q) {
+      const text = (q || '').toLowerCase();
+      if (text.includes('today') || text.includes('今天') || text.includes('对话')) {
+        return `${t('todayCount')}: ${opsStatus?.conversations?.today ?? convStats?.today ?? document.getElementById('sTotal').textContent}; ${t('total')}: ${opsStatus?.conversations?.total ?? convStats?.total ?? '-'}.`;
+      } else if (text.includes('error') || text.includes('异常') || text.includes('错误')) {
+        const alerts = (opsDiag?.items || []).filter(x => x.status !== 'ok');
+        return alerts.length ? alerts.map(x => `${x.title}: ${x.advice}`).join('\n') : `当前筛选日志内 ERROR 数：${document.getElementById('sErrors').textContent}。`;
+      } else if (text.includes('mary') || text.includes('瑪') || text.includes('小马') || text.includes('小瑪')) {
+        return t('maryPath');
+      } else if (text.includes('restart') || text.includes('重启')) {
+        return t('readonlyRestart');
+      } else {
+        return t('canAnswer');
+      }
+    }
+    async function answer(q) {
+      const message = (q || document.getElementById('askInput').value || '').trim();
+      const out = document.getElementById('chatOut');
+      const btn = document.getElementById('askBtn');
+      if (!message) { out.textContent = t('enterQuestion'); return; }
+      out.textContent = t('loading');
+      btn.disabled = true;
+      try {
+        const r = await fetch('/api/ops/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...headers() },
+          body: JSON.stringify({ message, history: chatHistory.slice(-6), language: lang })
+        });
+        if (r.status === 401 || r.status === 503) {
+          out.textContent = t('authNeeded');
+          return;
+        }
+        if (!r.ok) throw new Error(`ops chat ${r.status}`);
+        const data = await r.json();
+        const text = data.answer || localAnswerText(message);
+        out.textContent = text;
+        chatHistory.push({ role:'user', content: message }, { role:'assistant', content: text });
+        chatHistory = chatHistory.slice(-8);
+      } catch (err) {
+        console.error(err);
+        out.textContent = `${localAnswerText(message)}\n\n${t('fallback')}`;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+    function currentRangeParams() {
+      const s = document.getElementById('startDate').value || today;
+      const e = document.getElementById('endDate').value || today;
+      return { s, e, query: `start=${encodeURIComponent(s)}&end=${encodeURIComponent(e)}` };
+    }
+    function filenameFromDisposition(value, fallback) {
+      const m = String(value || '').match(/filename="?([^";]+)"?/i);
+      return m ? m[1] : fallback;
+    }
+    async function downloadExport(url, fallbackName) {
+      try {
+        const r = await fetch(url, { headers: headers() });
+        if (r.status === 401 || r.status === 503) { alert(t('exportAuth')); return; }
+        if (!r.ok) throw new Error(`export ${r.status}`);
+        const blob = await r.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filenameFromDisposition(r.headers.get('content-disposition'), fallbackName);
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      } catch (err) {
+        console.error(err);
+        alert(t('exportFailed'));
+      }
+    }
+    function exportCurrentLogs() {
+      const { query } = currentRangeParams();
+      const level = encodeURIComponent(document.getElementById('logLevel').value);
+      const q = encodeURIComponent(document.getElementById('logSearch').value.trim());
+      downloadExport(`/api/ops/export/logs?lines=20000&${query}&level=${level}&q=${q}`, 'digitalhuman-logs.txt');
+    }
+    function exportCurrentConversations() {
+      const { query } = currentRangeParams();
+      downloadExport(`/api/ops/export/conversations?${query}&fmt=csv`, 'digitalhuman-conversations.csv');
+    }
+    async function refreshAll() {
+      const s = document.getElementById('startDate').value || today;
+      const e = document.getElementById('endDate').value || today;
+      document.getElementById('updTime').textContent = lang === 'en' ? 'Refreshing...' : '刷新中...';
+      try {
+        const [convRes, statsRes, logsRes, statusRes, diagRes] = await Promise.all([
+          fetchJson(`/api/conversations?limit=2000&start=${encodeURIComponent(s)}&end=${encodeURIComponent(e)}`),
+          fetchJson('/api/conversations/stats'),
+          fetchJson('/api/logs?lines=8000'),
+          fetchJson('/api/ops/status', true),
+          fetchJson('/api/ops/diagnostics?lines=900', true)
+        ]);
+        opsStatus = statusRes; opsDiag = diagRes; convStats = statsRes;
+        rawLogs = diagRes?.logs || logsRes?.logs || '';
+        const logParsed = parseLogs(filterLogs(rawLogs, s, e));
+        const convParsed = parseConvs(convRes, s, e);
+        const statChars = rangeType === 'all' ? (convStats?.per_character || {}) : {};
+        renderStats(logParsed, convParsed, convRes?.total);
+        renderCharCht(mergeCounts(mergeCounts(logParsed.charCount, convParsed.charCount), statChars));
+        renderDailyCht(mergeCounts(logParsed.daily, convParsed.daily));
+        renderHourCht(convParsed.hourly.some(Boolean) ? convParsed.hourly : logParsed.hourly);
+        renderLateCht(convParsed.lats.length ? convParsed.lats : logParsed.lats);
+        renderOps(statusRes, diagRes);
+        renderLogs();
+        lastConvData = convRes;
+        lastConvRows = convParsed.rows;
+        renderConvs(convRes, convParsed.rows);
+        document.getElementById('updTime').textContent = fmtTime();
+      } catch (err) {
+        document.getElementById('updTime').textContent = lang === 'en' ? 'Load failed' : '加载失败';
+        console.error(err);
+      }
+    }
+    async function refreshLogsOnly() {
+      try {
+        const diagRes = await fetchJson('/api/ops/diagnostics?lines=900', true);
+        if (diagRes) {
+          opsDiag = diagRes;
+          rawLogs = diagRes.logs || rawLogs;
+          renderOps(opsStatus, opsDiag);
+        } else {
+          const logsRes = await fetchJson('/api/logs?lines=1000');
+          rawLogs = logsRes?.logs || rawLogs;
+        }
+        renderLogs();
+        document.getElementById('updTime').textContent = fmtTime();
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    function escapeHtml(v) { return String(v).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+    document.getElementById('logSearch').addEventListener('input', renderLogs);
+    document.getElementById('logLevel').addEventListener('change', renderLogs);
+    document.getElementById('exportLogs').addEventListener('click', exportCurrentLogs);
+    document.getElementById('exportConvs').addEventListener('click', exportCurrentConversations);
+    document.getElementById('clearLog').addEventListener('click', () => { document.getElementById('logSearch').value = ''; document.getElementById('logLevel').value = 'all'; renderLogs(); });
+    document.getElementById('askBtn').addEventListener('click', () => answer(document.getElementById('askInput').value));
+    document.getElementById('askInput').addEventListener('keydown', e => { if (e.key === 'Enter') answer(e.target.value); });
+    document.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => { document.getElementById('askInput').value = b.textContent; answer(b.textContent); }));
+    document.getElementById('langToggle').addEventListener('click', () => {
+      lang = lang === 'en' ? 'zh' : 'en';
+      localStorage.setItem('opsLang', lang);
+      applyLanguage();
+    });
+    document.getElementById('chatFab').addEventListener('click', () => document.getElementById('chatPanel').classList.toggle('open'));
+    document.getElementById('chatClose').addEventListener('click', () => document.getElementById('chatPanel').classList.remove('open'));
+    window.addEventListener('resize', () => [cCht,dCht,hCht,lCht].forEach(c => c && c.resize()));
+    applyLanguage();
+    refreshAll();
+    setInterval(refreshLogsOnly, 5000);
+    setInterval(refreshAll, 30000);
+  </script>
+</body>
+</html>

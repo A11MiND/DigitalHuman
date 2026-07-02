@@ -1,10 +1,16 @@
 """
-Digital Human Backend — Qin Shi Huang (秦始皇) for primary/secondary students
-FastAPI + MiniMax LLM + MiniMax TTS (Streaming) + WebSocket 全双工对话
+Digital Human Palace backend.
+FastAPI + MiniMax LLM + MiniMax TTS + WebSocket real-time conversations.
 """
 import os
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 import asyncio
 import base64
+import csv
 import json
 import logging
 import re
@@ -23,11 +29,13 @@ import zipfile
 import io
 import tempfile
 import uuid
+import sqlite3
+import datetime
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Header
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # ── Config ──────────────────────────────────────────────
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "")
@@ -40,6 +48,53 @@ GENERATED_DIR = Path(".generated")
 CREATE_JOBS_DIR = GENERATED_DIR / "jobs"
 MAX_KNOWLEDGE_FILE_BYTES = 10 * 1024 * 1024
 MAX_KNOWLEDGE_CHARS = 6000
+OPS_TZ = datetime.timezone(datetime.timedelta(hours=8), name="UTC+8")
+
+# ── Conversation Database ──────────────────────────────
+DB_PATH = Path("data/conversations.db")
+
+def _init_db():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(str(DB_PATH)) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS conversations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                time TEXT NOT NULL,
+                char_id TEXT NOT NULL,
+                user_ip TEXT,
+                user_msg TEXT NOT NULL,
+                assistant_msg TEXT NOT NULL,
+                llm_ms INTEGER DEFAULT 0,
+                tts_ms INTEGER DEFAULT 0
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_conversations_time
+            ON conversations(time DESC)
+        """)
+    logger.info(f"Conversation DB ready: {DB_PATH}")
+
+def _save_conversation(char_id: str, user_ip: str, user_msg: str,
+                       assistant_msg: str, llm_ms: int = 0, tts_ms: int = 0):
+    try:
+        with sqlite3.connect(str(DB_PATH)) as conn:
+            conn.execute(
+                "INSERT INTO conversations (time, char_id, user_ip, user_msg, assistant_msg, llm_ms, tts_ms) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (datetime.datetime.now(OPS_TZ).isoformat(), char_id, user_ip,
+                 user_msg[:2000], assistant_msg[:2000], llm_ms, tts_ms)
+            )
+    except Exception as e:
+        logger.warning(f"Failed to save conversation: {e}")
+
+
+def _client_ip_from_headers(headers, fallback: str = "unknown") -> str:
+    """Return the original client IP when behind nginx, falling back to socket peer."""
+    for name in ("x-forwarded-for", "x-real-ip", "cf-connecting-ip", "fastly-client-ip"):
+        value = headers.get(name) if headers else ""
+        if value:
+            return value.split(",")[0].strip()[:80] or fallback
+    return fallback or "unknown"
 
 # ── User Codes ──────────────────────────────────────────
 # Format: "username:code,username:code"
@@ -209,6 +264,7 @@ class CharacterManager:
 
 # ── Global Character Manager ────────────────────────────
 char_mgr = CharacterManager()
+_init_db()
 
 
 # ── Language Instruction Builder ─────────────────────────
@@ -248,6 +304,11 @@ class AskRequest(BaseModel):
 
 class TTSRequest(BaseModel):
     text: str
+
+class OpsChatRequest(BaseModel):
+    message: str
+    history: list[dict] = Field(default_factory=list)
+    language: str = "zh"
 
 class CreatePromptRequest(BaseModel):
     name: str
@@ -317,6 +378,13 @@ def _require_user_code(code: str | None) -> str:
     if not username:
         raise HTTPException(status_code=401, detail="Invalid invite code")
     return username
+
+
+def _require_ops_access(code: str | None) -> str:
+    """Require invite-code auth for ops APIs when codes are configured."""
+    if not USER_CODES:
+        return "local-ops"
+    return _require_user_code(code)
 
 
 def _effective_minimax_key(api_key: str | None = None) -> str:
@@ -979,7 +1047,9 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     ws_start = time.time()
     req_id = uuid.uuid4().hex[:8]
-    logger.info(f"[{req_id}] WS connected  char={char_id}")
+    socket_ip = websocket.client.host if websocket.client else "unknown"
+    client_ip = _client_ip_from_headers(websocket.headers, socket_ip)
+    logger.info(f"[{req_id}] WS connected  char={char_id} ip={client_ip}")
 
     # Per-connection state — no global mutation
     tts_config: dict = char_mgr.get_tts_defaults(char_id)
@@ -1102,6 +1172,16 @@ async def websocket_endpoint(websocket: WebSocket):
                 tts_ms = int((time.time() - t_tts) * 1000)
                 logger.info(f"[{req_id}] TTS done: {tts_chunks} chunks, {tts_ms}ms")
                 await websocket.send_json({"type": "status", "content": "done"})
+
+                # Save conversation to DB (fire and forget)
+                _save_conversation(
+                    char_id=char_id,
+                    user_ip=client_ip,
+                    user_msg=user_text,
+                    assistant_msg=full_response,
+                    llm_ms=llm_total,
+                    tts_ms=tts_ms,
+                )
 
     except WebSocketDisconnect:
         elapsed = int(time.time() - ws_start)
@@ -1530,17 +1610,524 @@ async def auth_me(x_user_code: UserCodeHeader = None):
     }
 
 
+# ── Ops API helpers ────────────────────────────────────
+def _run_ops_cmd(args: list[str], timeout: int = 4) -> dict:
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        return {
+            "ok": result.returncode == 0,
+            "returncode": result.returncode,
+            "stdout": result.stdout.strip(),
+            "stderr": result.stderr.strip(),
+        }
+    except Exception as e:
+        return {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e)}
+
+
+def _human_duration(seconds: float) -> str:
+    seconds = int(max(seconds, 0))
+    days, rem = divmod(seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, _ = divmod(rem, 60)
+    if days:
+        return f"{days}d {hours}h {minutes}m"
+    if hours:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m"
+
+
+def _read_meminfo() -> dict:
+    data: dict[str, int] = {}
+    try:
+        for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
+            key, raw = line.split(":", 1)
+            data[key] = int(raw.strip().split()[0]) * 1024
+    except Exception:
+        return {"total": 0, "available": 0, "used": 0, "percent": 0}
+    total = data.get("MemTotal", 0)
+    available = data.get("MemAvailable", 0)
+    used = max(total - available, 0)
+    percent = round((used / total) * 100, 1) if total else 0
+    return {"total": total, "available": available, "used": used, "percent": percent}
+
+
+def _system_resources() -> dict:
+    try:
+        uptime_seconds = float(Path("/proc/uptime").read_text(encoding="utf-8").split()[0])
+    except Exception:
+        uptime_seconds = 0
+    try:
+        load1, load5, load15 = os.getloadavg()
+    except Exception:
+        load1 = load5 = load15 = 0
+    cores = os.cpu_count() or 1
+    disk = shutil.disk_usage("/")
+    db_size = DB_PATH.stat().st_size if DB_PATH.exists() else 0
+    return {
+        "time": datetime.datetime.now(OPS_TZ).isoformat(),
+        "timezone": "UTC+8",
+        "uptime_seconds": int(uptime_seconds),
+        "uptime": _human_duration(uptime_seconds),
+        "cpu": {
+            "cores": cores,
+            "load_1": round(load1, 2),
+            "load_5": round(load5, 2),
+            "load_15": round(load15, 2),
+            "load_percent": round(min((load1 / cores) * 100, 999), 1),
+        },
+        "memory": _read_meminfo(),
+        "disk": {
+            "total": disk.total,
+            "used": disk.used,
+            "free": disk.free,
+            "percent": round((disk.used / disk.total) * 100, 1) if disk.total else 0,
+        },
+        "database": {
+            "path": str(DB_PATH),
+            "exists": DB_PATH.exists(),
+            "size": db_size,
+        },
+        "process": {
+            "pid": os.getpid(),
+            "cwd": str(Path.cwd()),
+            "python": ".".join(map(str, os.sys.version_info[:3])),
+        },
+    }
+
+
+def _service_state(name: str) -> dict:
+    active = _run_ops_cmd(["systemctl", "is-active", name])
+    enabled = _run_ops_cmd(["systemctl", "is-enabled", name])
+    status = "ok" if active["stdout"] == "active" else "error"
+    return {
+        "name": name,
+        "active": active["stdout"] or "unknown",
+        "enabled": enabled["stdout"] or "unknown",
+        "status": status,
+    }
+
+
+_JOURNAL_TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:\d{2}|Z))(\s+)(.*)$")
+
+
+def _journal_to_hkt(text: str) -> str:
+    """Convert journalctl short-iso timestamps to explicit HKT/UTC+8 for operators."""
+    out = []
+    for line in (text or "").splitlines():
+        m = _JOURNAL_TS_RE.match(line)
+        if not m:
+            out.append(line)
+            continue
+        raw_ts, gap, rest = m.groups()
+        try:
+            normalized = raw_ts.replace("Z", "+00:00")
+            dt = datetime.datetime.fromisoformat(normalized).astimezone(OPS_TZ)
+            out.append(f"{dt.strftime('%Y-%m-%dT%H:%M:%S')}+08:00 HKT{gap}{rest}")
+        except ValueError:
+            out.append(line)
+    return "\n".join(out)
+
+
+def _recent_journal(lines: int = 200) -> str:
+    result = _run_ops_cmd(
+        ["journalctl", "-u", "digitalhuman.service", "--no-pager", "-n", str(lines), "-o", "short-iso"],
+        timeout=6,
+    )
+    if result["ok"] or result["stdout"]:
+        return _journal_to_hkt(result["stdout"])
+    return _journal_to_hkt(result["stderr"])
+
+
+def _conversation_summary() -> dict:
+    try:
+        with sqlite3.connect(str(DB_PATH)) as conn:
+            conn.row_factory = sqlite3.Row
+            total = conn.execute("SELECT COUNT(*) FROM conversations").fetchone()[0]
+            today_key = datetime.datetime.now(OPS_TZ).date().isoformat()
+            today = conn.execute(
+                "SELECT COUNT(*) FROM conversations WHERE substr(time, 1, 10)=?",
+                (today_key,),
+            ).fetchone()[0]
+            per_char = conn.execute(
+                "SELECT char_id, COUNT(*) as cnt FROM conversations GROUP BY char_id ORDER BY cnt DESC"
+            ).fetchall()
+            recent = conn.execute(
+                "SELECT time, char_id, user_ip, user_msg, assistant_msg, llm_ms, tts_ms "
+                "FROM conversations ORDER BY time DESC LIMIT 12"
+            ).fetchall()
+        return {
+            "ok": True,
+            "total": total,
+            "today": today,
+            "per_character": dict(per_char),
+            "recent": [dict(r) for r in recent],
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e), "total": 0, "today": 0, "per_character": {}, "recent": []}
+
+
+def _diagnose(logs: str, resources: dict, services: list[dict]) -> list[dict]:
+    items = []
+    lines = [line for line in logs.splitlines() if line.strip()]
+    ws_keepalive_lines = [
+        line for line in lines
+        if (
+            "ConnectionClosedError" in line
+            or "keepalive ping timeout" in line
+            or "CloseCode.INTERNAL_ERROR" in line
+        )
+    ]
+    error_lines = [
+        line for line in lines
+        if ("ERROR" in line or "CRITICAL" in line)
+        and line not in ws_keepalive_lines
+    ]
+    warn_lines = [line for line in lines if "WARNING" in line]
+
+    for service in services:
+        if service["active"] != "active":
+            items.append({
+                "status": "error",
+                "code": f"service-{service['name']}",
+                "title": f"{service['name']} is not active",
+                "description": f"systemctl reports {service['active']}.",
+                "root_cause": "The process may have crashed, failed during boot, or been stopped manually.",
+                "advice": f"Run journalctl -u {service['name']} -n 100 before restarting.",
+                "log": "",
+            })
+
+    if resources["disk"]["percent"] >= 85:
+        items.append({
+            "status": "warning",
+            "code": "disk-high",
+            "title": "Disk usage is high",
+            "description": f"Root disk is {resources['disk']['percent']}% used.",
+            "root_cause": "Logs, generated media, or SQLite backups may be accumulating.",
+            "advice": "Archive old reports/media and check journal size before it reaches 95%.",
+            "log": "",
+        })
+
+    if resources["memory"]["percent"] >= 85:
+        items.append({
+            "status": "warning",
+            "code": "memory-high",
+            "title": "Memory pressure is high",
+            "description": f"Memory usage is {resources['memory']['percent']}%.",
+            "root_cause": "Long sessions, media generation, or another process may be holding memory.",
+            "advice": "Check top processes and recent traffic before restarting the app.",
+            "log": "",
+        })
+
+    if resources["cpu"]["load_percent"] >= 90:
+        items.append({
+            "status": "warning",
+            "code": "cpu-load-high",
+            "title": "CPU load is high",
+            "description": f"1-minute load is {resources['cpu']['load_1']} on {resources['cpu']['cores']} cores.",
+            "root_cause": "Concurrent TTS/LLM traffic or background jobs may be saturating the instance.",
+            "advice": "Check active WebSocket sessions and consider rate limiting if this repeats.",
+            "log": "",
+        })
+
+    if ws_keepalive_lines:
+        items.append({
+            "status": "warning",
+            "code": "ws-keepalive-timeout",
+            "title": "WebSocket idle connection closed",
+            "description": f"{len(ws_keepalive_lines)} keepalive timeout log line(s) detected.",
+            "root_cause": "A browser tab or network path stopped responding to WebSocket ping frames; the app process stayed healthy.",
+            "advice": "If this repeats during events, keep the client page active and check visitor network stability. Server timeouts have been relaxed.",
+            "log": ws_keepalive_lines[-1][:260],
+        })
+
+    for line in error_lines[:6]:
+        lower = line.lower()
+        if "tts" in lower:
+            root = "MiniMax TTS request, voice config, or network latency likely failed."
+            advice = "Verify MINIMAX_API_KEY, voice_id, and upstream TTS status; retry a short diagnostic TTS."
+        elif "llm" in lower or "chatcompletion" in lower:
+            root = "MiniMax LLM request likely failed or timed out."
+            advice = "Check API key validity, quota, and outbound network; inspect the full stack trace."
+        elif "sqlite" in lower or "database" in lower or "conversation" in lower:
+            root = "SQLite write/read path may be unavailable or locked."
+            advice = "Check data directory permissions and database file size/locks."
+        elif "websocket" in lower or " ws " in lower:
+            root = "Client WebSocket disconnected or the dialogue loop raised an exception."
+            advice = "Compare the log timestamp with traffic spikes and client browser errors."
+        else:
+            root = "Application log contains an unclassified error."
+            advice = "Open the related log line and inspect surrounding entries."
+        items.append({
+            "status": "error",
+            "code": "log-error",
+            "title": "Recent application error",
+            "description": line[:180],
+            "root_cause": root,
+            "advice": advice,
+            "log": line,
+        })
+
+    for line in warn_lines[:3]:
+        items.append({
+            "status": "warning",
+            "code": "log-warning",
+            "title": "Recent warning",
+            "description": line[:180],
+            "root_cause": "The application recovered but reported a degraded condition.",
+            "advice": "Review repeated warnings; a single warning may be harmless.",
+            "log": line,
+        })
+
+    if not items:
+        items.append({
+            "status": "ok",
+            "code": "healthy",
+            "title": "No active exceptions detected",
+            "description": "Services are active and recent logs do not show ERROR entries.",
+            "root_cause": "No immediate root cause to investigate.",
+            "advice": "Keep monitoring response latency, disk usage, and weekly report delivery.",
+            "log": "",
+        })
+    return items
+
+
+@app.get("/api/ops/resources")
+async def ops_resources(x_user_code: UserCodeHeader = None):
+    """Return system resource data for the ops console."""
+    _require_ops_access(x_user_code)
+    return {"ok": True, "resources": _system_resources()}
+
+
+@app.get("/api/ops/status")
+async def ops_status(x_user_code: UserCodeHeader = None):
+    """Return service and app status for the ops console."""
+    _require_ops_access(x_user_code)
+    chars = char_mgr.list_all()
+    services = [_service_state("digitalhuman.service"), _service_state("nginx.service")]
+    return {
+        "ok": True,
+        "app": {
+            "status": "ok",
+            "tts_model": TTS_MODEL,
+            "characters_loaded": len(chars),
+            "characters": [c["id"] for c in chars],
+            "minimax_configured": bool(MINIMAX_API_KEY),
+        },
+        "services": services,
+        "resources": _system_resources(),
+        "conversations": _conversation_summary(),
+    }
+
+
+@app.get("/api/ops/diagnostics")
+async def ops_diagnostics(lines: int = 300, x_user_code: UserCodeHeader = None):
+    """Return recent logs plus rule-based operational diagnostics."""
+    _require_ops_access(x_user_code)
+    lines = max(50, min(lines, 2000))
+    resources = _system_resources()
+    services = [_service_state("digitalhuman.service"), _service_state("nginx.service")]
+    logs = _recent_journal(lines)
+    return {
+        "ok": True,
+        "items": _diagnose(logs, resources, services),
+        "logs": logs,
+        "resources": resources,
+        "services": services,
+    }
+
+
+@app.post("/api/ops/chat")
+async def ops_chat(req: OpsChatRequest, x_user_code: UserCodeHeader = None):
+    """Simple read-only ops chatbot backed by the configured MiniMax API key."""
+    _require_ops_access(x_user_code)
+    if not MINIMAX_API_KEY:
+        raise HTTPException(status_code=503, detail="MINIMAX_API_KEY not configured")
+
+    message = (req.message or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="message is required")
+
+    resources = _system_resources()
+    services = [_service_state("digitalhuman.service"), _service_state("nginx.service")]
+    logs = _recent_journal(180)
+    diagnostics = _diagnose(logs, resources, services)
+    conversations = _conversation_summary()
+    chars = char_mgr.list_all()
+
+    context = {
+        "services": services,
+        "app": {
+            "tts_model": TTS_MODEL,
+            "characters_loaded": len(chars),
+            "characters": [c["id"] for c in chars],
+            "minimax_configured": bool(MINIMAX_API_KEY),
+        },
+        "resources": resources,
+        "conversations": {
+            "total": conversations.get("total", 0),
+            "today": conversations.get("today", 0),
+            "per_character": conversations.get("per_character", {}),
+        },
+        "diagnostics": diagnostics[:8],
+        "recent_log_excerpt": "\n".join(logs.splitlines()[-40:]),
+    }
+    safe_history = []
+    for item in (req.history or [])[-6:]:
+        role = item.get("role")
+        content = str(item.get("content") or "").strip()
+        if role in ("user", "assistant") and content:
+            safe_history.append({"role": role, "content": content[:800]})
+
+    answer_language = "English" if (req.language or "").lower().startswith("en") else "中文"
+    system = (
+        "你是 Digital Human 东京服务器的只读运维 Chatbot。"
+        "只能基于提供的 JSON 运维上下文回答服务状态、日志异常、对话统计、角色配置路径和排查建议。"
+        "不要编造未提供的数据，不要声称已经连接 SSH、重启服务、修改配置、扩缩容或执行任何命令。"
+        "如果用户要求写操作，只给出需要人工二次确认的建议命令，并明确你没有执行。"
+        f"回答要简洁、专业，使用{answer_language}；必要时列 2-4 条要点。"
+        "不要输出密钥、密码、App Password、完整环境变量或敏感凭据。"
+    )
+    user_payload = (
+        "用户问题：\n"
+        f"{message[:1200]}\n\n"
+        "运维上下文 JSON：\n"
+        f"{json.dumps(context, ensure_ascii=False, default=str)[:12000]}"
+    )
+    if safe_history:
+        user_payload += "\n\n最近对话上下文：\n" + json.dumps(safe_history, ensure_ascii=False)
+
+    provider = MiniMaxProvider(MINIMAX_API_KEY)
+    answer = await provider.simple_text(system, user_payload, max_tokens=700, temperature=0.2)
+    return {"ok": True, "answer": answer}
+
+
+@app.get("/ops")
+async def ops_console():
+    """Canonical ops console entrypoint."""
+    return RedirectResponse("/ops.html")
+
+
+# ── Conversation History API ────────────────────────────
+def _conversation_where(char: str = "", start: str = "", end: str = "") -> tuple[str, list]:
+    clauses = []
+    params: list = []
+    if char:
+        clauses.append("char_id=?")
+        params.append(char)
+    if start:
+        clauses.append("substr(time, 1, 10) >= ?")
+        params.append(start[:10])
+    if end:
+        clauses.append("substr(time, 1, 10) <= ?")
+        params.append(end[:10])
+    return (" WHERE " + " AND ".join(clauses)) if clauses else "", params
+
+
+def _fetch_conversations(limit: int = 200, char: str = "", start: str = "", end: str = "") -> tuple[int, list[dict]]:
+    limit = max(1, min(int(limit), 20000))
+    where, params = _conversation_where(char, start, end)
+    with sqlite3.connect(str(DB_PATH)) as conn:
+        conn.row_factory = sqlite3.Row
+        total = conn.execute(f"SELECT COUNT(*) FROM conversations{where}", params).fetchone()[0]
+        rows = conn.execute(
+            f"SELECT * FROM conversations{where} ORDER BY time DESC LIMIT ?",
+            [*params, limit],
+        ).fetchall()
+    return total, [dict(r) for r in rows]
+
+
+@app.get("/api/conversations")
+async def list_conversations(limit: int = 20, char: str = "", start: str = "", end: str = ""):
+    """Return recent conversation records. Optionally filter by char_id/date."""
+    try:
+        total, rows = _fetch_conversations(limit, char, start, end)
+        return {"ok": True, "total": total, "conversations": rows}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/conversations/stats")
+async def conversation_stats():
+    """Show simple stats about saved conversations."""
+    try:
+        with sqlite3.connect(str(DB_PATH)) as conn:
+            total = conn.execute("SELECT COUNT(*) FROM conversations").fetchone()[0]
+            per_char = conn.execute(
+                "SELECT char_id, COUNT(*) as cnt FROM conversations GROUP BY char_id ORDER BY cnt DESC"
+            ).fetchall()
+            today_key = datetime.datetime.now(OPS_TZ).date().isoformat()
+            today = conn.execute(
+                "SELECT COUNT(*) FROM conversations WHERE substr(time, 1, 10)=?",
+                (today_key,),
+            ).fetchone()[0]
+        return {"ok": True, "total": total, "today": today, "per_character": dict(per_char)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ops/export/conversations")
+async def export_conversations(start: str = "", end: str = "", char: str = "", fmt: str = "csv", x_user_code: UserCodeHeader = None):
+    """Export conversation records for the selected date range."""
+    _require_ops_access(x_user_code)
+    total, rows = _fetch_conversations(20000, char, start, end)
+    stamp = datetime.datetime.now(OPS_TZ).strftime("%Y%m%d-%H%M%S")
+    if fmt.lower() == "json":
+        payload = json.dumps({"ok": True, "total": total, "conversations": rows}, ensure_ascii=False, indent=2).encode("utf-8")
+        return StreamingResponse(
+            io.BytesIO(payload),
+            media_type="application/json; charset=utf-8",
+            headers={"Content-Disposition": f"attachment; filename=conversations-{stamp}.json"},
+        )
+
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=["time", "char_id", "user_ip", "user_msg", "assistant_msg", "llm_ms", "tts_ms"])
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({k: row.get(k, "") for k in writer.fieldnames})
+    data = ("\ufeff" + buf.getvalue()).encode("utf-8")
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename=conversations-{stamp}.csv"},
+    )
+
+
+@app.get("/api/ops/export/logs")
+async def export_logs(lines: int = 8000, start: str = "", end: str = "", level: str = "all", q: str = "", x_user_code: UserCodeHeader = None):
+    """Export filtered service logs."""
+    _require_ops_access(x_user_code)
+    raw = _recent_journal(max(10, min(lines, 20000)))
+    q_l = q.lower().strip()
+    level_l = level.lower().strip()
+    out_lines = []
+    for line in raw.splitlines():
+        day = line[:10] if re.match(r"^\d{4}-\d{2}-\d{2}", line) else ""
+        if start and day and day < start[:10]:
+            continue
+        if end and day and day > end[:10]:
+            continue
+        lower = line.lower()
+        if q_l and q_l not in lower:
+            continue
+        if level_l != "all" and level_l not in lower:
+            continue
+        out_lines.append(line)
+    stamp = datetime.datetime.now(OPS_TZ).strftime("%Y%m%d-%H%M%S")
+    data = ("\n".join(out_lines) + ("\n" if out_lines else "")).encode("utf-8")
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename=digitalhuman-logs-{stamp}.txt"},
+    )
+
+
 # ── Log Viewer ────────────────────────────────────────
 @app.get("/api/logs")
 async def api_logs(lines: int = 30):
     """Return recent service logs (journalctl)."""
-    import subprocess
     try:
-        result = subprocess.run(
-            ["journalctl", "-u", "digitalhuman.service", "--no-pager", "-n", str(lines), "-o", "short-iso"],
-            capture_output=True, text=True, timeout=5
-        )
-        return {"logs": result.stdout.strip(), "stderr": result.stderr.strip()}
+        lines = max(10, min(lines, 8000))
+        return {"logs": _recent_journal(lines).strip(), "stderr": ""}
     except Exception as e:
         return {"logs": f"Error reading logs: {e}", "stderr": ""}
 
