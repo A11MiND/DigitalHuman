@@ -82,6 +82,7 @@ http://localhost:8080/ops
 | 变量 | 必填 | 说明 |
 | --- | --- | --- |
 | `MINIMAX_API_KEY` | 是 | MiniMax API Key，用于 LLM、TTS、图像和视频生成 |
+| `MINIMAX_TOKEN_PLAN_API_KEY` | 否 | MiniMax Token Plan 查询 Key，用于 `/api/ops/token-plan` |
 | `USER_CODES` | 否 | 用户码配置，格式为 `name:code,name2:code2` |
 | `PYTHONUNBUFFERED` | 否 | 部署时建议设为 `1`，方便日志实时输出 |
 
@@ -114,11 +115,14 @@ http://localhost:8080/ops
 | `/ask` | POST | 文本问答 |
 | `/tts` | POST | 文本转语音 |
 | `/api/characters` | GET | 角色列表 |
-| `/api/conversations` | GET | 查询对话记录，支持 `limit/start/end/char` |
+| `/api/conversations` | GET | 分页查询对话记录，支持 `limit/offset/start/end/char` |
+| `/api/conversations/analytics` | GET | 聚合对话统计，供看板图表使用 |
 | `/api/ops/status` | GET | 服务状态总览 |
 | `/api/ops/resources` | GET | CPU、内存、磁盘与数据库状态 |
 | `/api/ops/diagnostics` | GET | 异常诊断与关联日志 |
 | `/api/ops/chat` | POST | 只读运维 Chatbot |
+| `/api/ops/chat/stream` | POST | 只读运维 Chatbot 流式输出 |
+| `/api/ops/token-plan` | GET | MiniMax Token Plan 用量查询 |
 | `/api/ops/export/logs` | GET | 导出日志 |
 | `/api/ops/export/conversations` | GET | 导出聊天记录 |
 
@@ -192,6 +196,7 @@ http://localhost:8080/ops
 | Variable | Required | Description |
 | --- | --- | --- |
 | `MINIMAX_API_KEY` | Yes | MiniMax API key for LLM, TTS, image, and video generation |
+| `MINIMAX_TOKEN_PLAN_API_KEY` | No | MiniMax Token Plan key for `/api/ops/token-plan` |
 | `USER_CODES` | No | Optional access codes in `name:code,name2:code2` format |
 | `PYTHONUNBUFFERED` | No | Recommended as `1` in production for real-time logs |
 
