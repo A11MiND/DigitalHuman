@@ -19,7 +19,7 @@ import time
 from copy import deepcopy
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Optional
 from urllib.parse import quote_plus, urlparse, parse_qs, unquote
 
 import httpx
@@ -31,7 +31,7 @@ import tempfile
 import uuid
 import sqlite3
 import datetime
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Header
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Header, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -42,6 +42,8 @@ MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "")
 MINIMAX_LLM_BASE = "https://api.minimaxi.com/v1"
 MINIMAX_IMAGE_BASE = "https://api.minimaxi.com/v1"
 MINIMAX_VIDEO_BASE = "https://api.minimaxi.com/v1"
+MINIMAX_TOKEN_PLAN_URL = "https://www.minimaxi.com/v1/token_plan/remains"
+MINIMAX_TOKEN_PLAN_API_KEY = os.getenv("MINIMAX_TOKEN_PLAN_API_KEY", "")
 TTS_MODEL = "speech-2.8-hd"
 TTS_TEXT_MAX = 5000  # TTS max chars before truncation
 GENERATED_DIR = Path(".generated")
@@ -49,6 +51,39 @@ CREATE_JOBS_DIR = GENERATED_DIR / "jobs"
 MAX_KNOWLEDGE_FILE_BYTES = 10 * 1024 * 1024
 MAX_KNOWLEDGE_CHARS = 6000
 OPS_TZ = datetime.timezone(datetime.timedelta(hours=8), name="UTC+8")
+GLOBAL_OUTPUT_RULES = (
+    "\n\n## 输出限制\n"
+    "- 不要输出任何 emoji、贴纸字符或 Unicode 表情符号。\n"
+    "- 如需表达语气，请使用文字描述或 MiniMax 支持的语气标签，例如 (laughs)、(chuckle)、(emm)。\n"
+    "- 输出内容会进入语音合成，必须保证可自然朗读。"
+)
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F1E6-\U0001F1FF"  # flags
+    "\U0001F300-\U0001FAFF"  # pictographs, emoticons, symbols
+    "\u2600-\u27BF"          # miscellaneous symbols / dingbats
+    "\u3030\u303D\u3297\u3299"
+    "\u00A9\u00AE\u2122\u2139"
+    "]+"
+)
+_EMOJI_FORMAT_RE = re.compile("[\u200D\uFE0E\uFE0F]")
+
+
+def _with_global_output_rules(prompt: str) -> str:
+    """Append global speech-safe output rules once."""
+    prompt = prompt or SYSTEM_PROMPT
+    if "不要输出任何 emoji" in prompt:
+        return prompt
+    return prompt.rstrip() + GLOBAL_OUTPUT_RULES
+
+
+def _strip_emoji_for_tts(text: str) -> str:
+    """Remove emoji-only glyphs before TTS while preserving the displayed reply."""
+    cleaned = _EMOJI_RE.sub("", text or "")
+    cleaned = _EMOJI_FORMAT_RE.sub("", cleaned)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
 
 # ── Conversation Database ──────────────────────────────
 DB_PATH = Path("data/conversations.db")
@@ -71,6 +106,10 @@ def _init_db():
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_conversations_time
             ON conversations(time DESC)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_conversations_char_time
+            ON conversations(char_id, time DESC)
         """)
     logger.info(f"Conversation DB ready: {DB_PATH}")
 
@@ -339,7 +378,7 @@ class CreateImagesRequest(BaseModel):
     prompt: str
     reference_description: str = ""
     count: int = 4
-    job_id: str = ""  # optional: reuse existing prompt job instead of creating a new one
+    job_id: Optional[str] = ""  # optional: reuse existing prompt job instead of creating a new one
 
 class CreateVideosRequest(BaseModel):
     job_id: str
@@ -789,7 +828,7 @@ async def minimax_llm_stream(query: str, history: list[dict] | None = None, syst
         yield "[ERROR] MINIMAX_API_KEY not configured"
         return
 
-    messages = [{"role": "system", "content": system_prompt or SYSTEM_PROMPT}]
+    messages = [{"role": "system", "content": _with_global_output_rules(system_prompt or SYSTEM_PROMPT)}]
 
     history = history or []
     for msg in history[-20:]:
@@ -857,9 +896,12 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
     if not MINIMAX_API_KEY:
         return
 
-    text = text.strip()
+    raw_text_len = len(text or "")
+    text = _strip_emoji_for_tts(text)
     if not text:
         return
+    if len(text) != raw_text_len:
+        logger.info(f"TTS text sanitized for speech: {raw_text_len} -> {len(text)} chars")
 
     # Truncate long text with log warning
     if len(text) > TTS_TEXT_MAX:
@@ -1743,10 +1785,11 @@ def _conversation_summary() -> dict:
         with sqlite3.connect(str(DB_PATH)) as conn:
             conn.row_factory = sqlite3.Row
             total = conn.execute("SELECT COUNT(*) FROM conversations").fetchone()[0]
-            today_key = datetime.datetime.now(OPS_TZ).date().isoformat()
+            today = datetime.datetime.now(OPS_TZ).date()
+            tomorrow = today + datetime.timedelta(days=1)
             today = conn.execute(
-                "SELECT COUNT(*) FROM conversations WHERE substr(time, 1, 10)=?",
-                (today_key,),
+                "SELECT COUNT(*) FROM conversations WHERE time >= ? AND time < ?",
+                (f"{today.isoformat()}T00:00:00", f"{tomorrow.isoformat()}T00:00:00"),
             ).fetchone()[0]
             per_char = conn.execute(
                 "SELECT char_id, COUNT(*) as cnt FROM conversations GROUP BY char_id ORDER BY cnt DESC"
@@ -1936,13 +1979,41 @@ async def ops_diagnostics(lines: int = 300, x_user_code: UserCodeHeader = None):
     }
 
 
-@app.post("/api/ops/chat")
-async def ops_chat(req: OpsChatRequest, x_user_code: UserCodeHeader = None):
-    """Simple read-only ops chatbot backed by the configured MiniMax API key."""
+@app.get("/api/ops/token-plan")
+async def ops_token_plan(response: Response, x_user_code: UserCodeHeader = None):
+    """Proxy MiniMax token plan usage without exposing the API key to the browser."""
     _require_ops_access(x_user_code)
-    if not MINIMAX_API_KEY:
-        raise HTTPException(status_code=503, detail="MINIMAX_API_KEY not configured")
+    response.headers["Cache-Control"] = "no-store"
+    api_key = (MINIMAX_TOKEN_PLAN_API_KEY or "").strip()
+    if not api_key:
+        return {"ok": False, "configured": False, "error": "MINIMAX_TOKEN_PLAN_API_KEY is not configured"}
 
+    try:
+        async with httpx.AsyncClient(timeout=8, follow_redirects=True) as client:
+            res = await client.get(
+                MINIMAX_TOKEN_PLAN_URL,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+            )
+        payload = res.json() if "application/json" in res.headers.get("content-type", "") else {"text": res.text[:2000]}
+        return {
+            "ok": res.is_success,
+            "configured": True,
+            "source": "minimax.token_plan.remains",
+            "key_source": "MINIMAX_TOKEN_PLAN_API_KEY",
+            "fetched_at": datetime.datetime.now(OPS_TZ).isoformat(),
+            "status_code": res.status_code,
+            "data": payload,
+        }
+    except Exception as e:
+        logger.warning(f"MiniMax token plan query failed: {e}")
+        return {"ok": False, "configured": True, "error": str(e)}
+
+
+def _build_ops_chat_prompt(req: OpsChatRequest) -> tuple[str, str, list[dict]]:
+    """Build a bounded, read-only ops prompt for JSON and streaming chat responses."""
     message = (req.message or "").strip()
     if not message:
         raise HTTPException(status_code=400, detail="message is required")
@@ -1996,9 +2067,54 @@ async def ops_chat(req: OpsChatRequest, x_user_code: UserCodeHeader = None):
     if safe_history:
         user_payload += "\n\n最近对话上下文：\n" + json.dumps(safe_history, ensure_ascii=False)
 
+    return system, user_payload, safe_history
+
+
+@app.post("/api/ops/chat")
+async def ops_chat(req: OpsChatRequest, x_user_code: UserCodeHeader = None):
+    """Simple read-only ops chatbot backed by the configured MiniMax API key."""
+    _require_ops_access(x_user_code)
+    if not MINIMAX_API_KEY:
+        raise HTTPException(status_code=503, detail="MINIMAX_API_KEY not configured")
+
+    system, user_payload, _safe_history = _build_ops_chat_prompt(req)
     provider = MiniMaxProvider(MINIMAX_API_KEY)
     answer = await provider.simple_text(system, user_payload, max_tokens=700, temperature=0.2)
     return {"ok": True, "answer": answer}
+
+
+@app.post("/api/ops/chat/stream")
+async def ops_chat_stream(req: OpsChatRequest, x_user_code: UserCodeHeader = None):
+    """Stream the read-only ops chatbot response as Server-Sent Events."""
+    _require_ops_access(x_user_code)
+    if not MINIMAX_API_KEY:
+        raise HTTPException(status_code=503, detail="MINIMAX_API_KEY not configured")
+
+    system, user_payload, safe_history = _build_ops_chat_prompt(req)
+
+    async def event_stream():
+        full_answer: list[str] = []
+        try:
+            async for chunk in minimax_llm_stream(user_payload, safe_history, system_prompt=system):
+                if not chunk:
+                    continue
+                full_answer.append(chunk)
+                yield f"data: {json.dumps({'delta': chunk}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'done': True, 'answer': ''.join(full_answer)}, ensure_ascii=False)}\n\n"
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"Ops chatbot stream failed: {e}", exc_info=True)
+            yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/ops")
@@ -2015,33 +2131,96 @@ def _conversation_where(char: str = "", start: str = "", end: str = "") -> tuple
         clauses.append("char_id=?")
         params.append(char)
     if start:
-        clauses.append("substr(time, 1, 10) >= ?")
-        params.append(start[:10])
+        clauses.append("time >= ?")
+        params.append(f"{start[:10]}T00:00:00")
     if end:
-        clauses.append("substr(time, 1, 10) <= ?")
-        params.append(end[:10])
+        try:
+            end_next = datetime.date.fromisoformat(end[:10]) + datetime.timedelta(days=1)
+            clauses.append("time < ?")
+            params.append(f"{end_next.isoformat()}T00:00:00")
+        except ValueError:
+            clauses.append("time <= ?")
+            params.append(f"{end[:10]}T23:59:59")
     return (" WHERE " + " AND ".join(clauses)) if clauses else "", params
 
 
-def _fetch_conversations(limit: int = 200, char: str = "", start: str = "", end: str = "") -> tuple[int, list[dict]]:
+def _fetch_conversations(limit: int = 200, char: str = "", start: str = "", end: str = "", offset: int = 0) -> tuple[int, list[dict]]:
     limit = max(1, min(int(limit), 20000))
+    offset = max(0, int(offset))
     where, params = _conversation_where(char, start, end)
     with sqlite3.connect(str(DB_PATH)) as conn:
         conn.row_factory = sqlite3.Row
         total = conn.execute(f"SELECT COUNT(*) FROM conversations{where}", params).fetchone()[0]
         rows = conn.execute(
-            f"SELECT * FROM conversations{where} ORDER BY time DESC LIMIT ?",
-            [*params, limit],
+            f"SELECT * FROM conversations{where} ORDER BY time DESC LIMIT ? OFFSET ?",
+            [*params, limit, offset],
         ).fetchall()
     return total, [dict(r) for r in rows]
 
 
+def _conversation_analytics(char: str = "", start: str = "", end: str = "") -> dict:
+    where, params = _conversation_where(char, start, end)
+    with sqlite3.connect(str(DB_PATH)) as conn:
+        conn.row_factory = sqlite3.Row
+        total = conn.execute(f"SELECT COUNT(*) FROM conversations{where}", params).fetchone()[0]
+        per_char = conn.execute(
+            f"SELECT char_id, COUNT(*) as cnt FROM conversations{where} GROUP BY char_id ORDER BY cnt DESC",
+            params,
+        ).fetchall()
+        daily = conn.execute(
+            f"SELECT substr(time, 1, 10) as day, COUNT(*) as cnt FROM conversations{where} GROUP BY day ORDER BY day",
+            params,
+        ).fetchall()
+        hourly_rows = conn.execute(
+            f"SELECT substr(time, 12, 2) as hour, COUNT(*) as cnt FROM conversations{where} GROUP BY hour ORDER BY hour",
+            params,
+        ).fetchall()
+        latency_expr = "COALESCE(llm_ms, 0) + COALESCE(tts_ms, 0)"
+        latency_where = where + (" AND " if where else " WHERE ") + f"{latency_expr} > 0"
+        avg_latency = conn.execute(
+            f"SELECT AVG({latency_expr}) FROM conversations{latency_where}",
+            params,
+        ).fetchone()[0]
+        latency_rows = conn.execute(
+            f"SELECT {latency_expr} as ms FROM conversations{latency_where} ORDER BY time DESC LIMIT ?",
+            [*params, 5000],
+        ).fetchall()
+
+    hourly = [0] * 24
+    for row in hourly_rows:
+        try:
+            hour = int(row["hour"])
+        except (TypeError, ValueError):
+            continue
+        if 0 <= hour < 24:
+            hourly[hour] = row["cnt"]
+
+    return {
+        "total": total,
+        "per_character": {r["char_id"]: r["cnt"] for r in per_char},
+        "daily": {r["day"]: r["cnt"] for r in daily if r["day"]},
+        "hourly": hourly,
+        "avg_latency_ms": round(avg_latency or 0),
+        "latencies": [r["ms"] for r in latency_rows],
+        "latencies_truncated": len(latency_rows) >= 5000,
+    }
+
+
 @app.get("/api/conversations")
-async def list_conversations(limit: int = 20, char: str = "", start: str = "", end: str = ""):
+async def list_conversations(limit: int = 20, offset: int = 0, char: str = "", start: str = "", end: str = ""):
     """Return recent conversation records. Optionally filter by char_id/date."""
     try:
-        total, rows = _fetch_conversations(limit, char, start, end)
-        return {"ok": True, "total": total, "conversations": rows}
+        total, rows = _fetch_conversations(limit, char, start, end, offset)
+        return {"ok": True, "total": total, "limit": limit, "offset": offset, "conversations": rows}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/conversations/analytics")
+async def conversation_analytics(char: str = "", start: str = "", end: str = ""):
+    """Return aggregate conversation metrics for dashboards without row sampling."""
+    try:
+        return {"ok": True, **_conversation_analytics(char, start, end)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -2055,10 +2234,11 @@ async def conversation_stats():
             per_char = conn.execute(
                 "SELECT char_id, COUNT(*) as cnt FROM conversations GROUP BY char_id ORDER BY cnt DESC"
             ).fetchall()
-            today_key = datetime.datetime.now(OPS_TZ).date().isoformat()
+            today_key = datetime.datetime.now(OPS_TZ).date()
+            tomorrow_key = today_key + datetime.timedelta(days=1)
             today = conn.execute(
-                "SELECT COUNT(*) FROM conversations WHERE substr(time, 1, 10)=?",
-                (today_key,),
+                "SELECT COUNT(*) FROM conversations WHERE time >= ? AND time < ?",
+                (f"{today_key.isoformat()}T00:00:00", f"{tomorrow_key.isoformat()}T00:00:00"),
             ).fetchone()[0]
         return {"ok": True, "total": total, "today": today, "per_character": dict(per_char)}
     except Exception as e:

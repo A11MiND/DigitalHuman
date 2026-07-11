@@ -991,7 +991,7 @@ $('btnGenerateImages').onclick = async () => {
         prompt: imagePrompt,
         reference_description: `${$('wizName').value.trim()} ${$('wizRole').value.trim()}`.trim(),
         count: 4,
-        job_id: null,
+        job_id: createState.promptJobId || '',
       }),
     });
     const data = await res.json().catch(() => ({}));
