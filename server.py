@@ -19,7 +19,7 @@ import time
 from copy import deepcopy
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Optional
 from urllib.parse import quote_plus, urlparse, parse_qs, unquote
 
 import httpx
@@ -378,7 +378,7 @@ class CreateImagesRequest(BaseModel):
     prompt: str
     reference_description: str = ""
     count: int = 4
-    job_id: str = ""  # optional: reuse existing prompt job instead of creating a new one
+    job_id: Optional[str] = ""  # optional: reuse existing prompt job instead of creating a new one
 
 class CreateVideosRequest(BaseModel):
     job_id: str
