@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light dark">
-  <title>数字人数据看板</title>
+  <title>數字人數據看板</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2310a37f'/%3E%3Cpath d='M14 46h36M18 46V28h28v18M14 28l18-12 18 12M24 46V34m8 12V34m8 12V34M22 28h20' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <script>
     (function () {
@@ -152,6 +152,111 @@
       background: var(--card); padding: 10px 16px; border-radius: var(--radius);
       box-shadow: var(--shadow); border: 1px solid var(--border); margin-bottom: 20px;
     }
+
+    /* ── 分頁導航 ───────────────────────────── */
+    .tabbar {
+      display: flex; align-items: center; gap: 4px;
+      border-bottom: 1px solid var(--border); margin-bottom: 20px;
+    }
+    .tab {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 10px 16px; border: none; background: none; cursor: pointer;
+      font-family: inherit; font-size: 13.5px; font-weight: 500; color: var(--text2);
+      border-bottom: 2px solid transparent; margin-bottom: -1px;
+      transition: color .15s, border-color .15s;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.on { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab .icon { width: 15px; height: 15px; }
+    .tab-badge {
+      min-width: 17px; height: 17px; padding: 0 5px; border-radius: 9px;
+      background: var(--accent-light); color: var(--accent-dark);
+      font-size: 11px; font-weight: 600; line-height: 17px; text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+    .tab-badge:empty, .tab-badge[data-count="0"] { display: none; }
+    .tabpanel[hidden] { display: none; }
+
+    /* ── 用戶管理 ───────────────────────────── */
+    .acct-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .acct-tbl th {
+      text-align: left; padding: 9px 12px; font-size: 11.5px; font-weight: 600;
+      color: var(--text3); text-transform: uppercase; letter-spacing: .04em;
+      border-bottom: 1px solid var(--border); white-space: nowrap;
+    }
+    .acct-tbl td { padding: 11px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .acct-tbl tr:last-child td { border-bottom: none; }
+    .acct-tbl tbody tr:hover { background: var(--hover); }
+    .acct-name { font-weight: 600; color: var(--text); }
+    .acct-sub { font-size: 11.5px; color: var(--text3); margin-top: 2px; }
+    .pill {
+      display: inline-block; padding: 2px 9px; border-radius: 11px;
+      font-size: 11.5px; font-weight: 600; white-space: nowrap;
+    }
+    .pill-trial   { background: var(--muted-surface); color: var(--text2); border: 1px solid var(--border); }
+    .pill-premium { background: var(--accent-light); color: var(--accent-dark); }
+    .pill-admin   { background: rgba(90,90,255,.10); color: var(--blue); }
+    .pill-on      { background: var(--accent-light); color: var(--accent-dark); }
+    .pill-off     { background: rgba(229,62,62,.10); color: var(--red); }
+    .qbar { width: 120px; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; margin-top: 5px; }
+    .qbar > i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+    .qbar.full > i { background: var(--red); }
+    .qtext { font-variant-numeric: tabular-nums; font-size: 12.5px; }
+    .qtext.out { color: var(--red); font-weight: 600; }
+    .row-acts { display: flex; gap: 5px; justify-content: flex-end; flex-wrap: wrap; }
+    .btn-mini {
+      padding: 3px 9px; font-size: 12px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border); background: var(--card); color: var(--text2);
+      cursor: pointer; font-family: inherit; white-space: nowrap;
+    }
+    .btn-mini:hover { background: var(--hover); color: var(--text); }
+    .btn-mini.danger { color: var(--red); border-color: rgba(229,62,62,.28); }
+    .btn-mini.danger:hover { background: rgba(229,62,62,.07); }
+    .btn-mini.go { color: var(--accent-dark); border-color: var(--accent-ring); }
+    .btn-mini.go:hover { background: var(--accent-light); }
+    .req-row {
+      display: flex; align-items: center; gap: 12px; padding: 11px 12px;
+      border-bottom: 1px solid var(--border); flex-wrap: wrap;
+    }
+    .req-row:last-child { border-bottom: none; }
+    .req-msg {
+      flex: 1; min-width: 200px; background: var(--muted-surface);
+      border-radius: var(--radius-sm); padding: 7px 11px; font-size: 12.5px; color: var(--text2);
+    }
+    .req-grant { width: 66px; }
+    .modal-back {
+      position: fixed; inset: 0; background: rgba(0,0,0,.42); z-index: 60;
+      display: flex; align-items: center; justify-content: center; padding: 20px;
+    }
+    .modal-back[hidden] { display: none; }
+    .modal {
+      background: var(--card); border-radius: var(--radius); border: 1px solid var(--border);
+      box-shadow: 0 12px 40px rgba(0,0,0,.16); width: 100%; max-width: 440px;
+      max-height: 90vh; overflow-y: auto;
+    }
+    .modal-hd {
+      padding: 15px 18px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      font-weight: 600; font-size: 14.5px;
+    }
+    .modal-bd { padding: 18px; display: grid; gap: 13px; }
+    .modal-ft { padding: 13px 18px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
+    .fld { display: grid; gap: 5px; }
+    .fld label { font-size: 12px; color: var(--text2); font-weight: 500; }
+    .fld input, .fld select {
+      padding: 7px 11px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      font-size: 13px; background: var(--card); color: var(--text);
+      outline: none; font-family: inherit; width: 100%;
+    }
+    .fld input:focus, .fld select:focus { border-color: var(--accent); }
+    .fld .hint { font-size: 11.5px; color: var(--text3); }
+    .btn-primary {
+      background: var(--accent); color: #fff; border: 1px solid var(--accent);
+      padding: 7px 15px; border-radius: var(--radius-sm); font-size: 13px;
+      font-weight: 500; cursor: pointer; font-family: inherit;
+    }
+    .btn-primary:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
+    .btn-primary:disabled { opacity: .55; cursor: not-allowed; }
     .fbar-label { font-size: 12px; color: var(--text2); font-weight: 500; margin-right: 4px; }
     .fbar input[type="date"], .fbar input[type="password"], .fbar select, .search {
       padding: 5px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -159,6 +264,9 @@
       font-family: inherit; font-variant-numeric: tabular-nums; height: 32px;
     }
     .fbar input:focus, .fbar select:focus, .search:focus { border-color: var(--accent); }
+    .code-status { font-size:11px; color:var(--text3); min-height:16px; }
+    .code-status.ok { color:var(--accent); }
+    .code-status.bad { color:var(--red); }
     .fbar input[type="date"]:disabled { opacity: .5; cursor: not-allowed; }
     .fbar .sep { color: var(--border); font-size: 16px; user-select: none; padding: 0 2px; }
     .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
@@ -429,7 +537,7 @@
       .fbar .sep { display:none; }
       .fbar .btn { justify-content:center; }
       .fbar input[type="date"], .fbar input[type="password"], .fbar select { width: 100%; }
-      .fbar input[type="date"], .fbar input[type="password"], .fbar select, .fbar #saveCode { grid-column: 1 / -1; }
+      .fbar input[type="date"], .fbar input[type="password"], .fbar select { grid-column: 1 / -1; }
       .logs { height: 300px; }
       .token-visual { grid-template-columns:1fr; }
       .token-chart-wrap { max-width:220px; }
@@ -458,6 +566,7 @@
     <symbol id="i-sun" viewBox="0 0 24 24"><path d="M12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
     <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 14.7A8 8 0 0 1 9.3 3a9 9 0 1 0 11.7 11.7Z"/></symbol>
     <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></symbol>
+    <symbol id="i-control" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M9 12h6M12 9v6"/></symbol>
     <symbol id="i-message" viewBox="0 0 24 24"><path d="M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-5 4v-4H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><path d="M8 9h8M8 13h5"/></symbol>
     <symbol id="i-plug" viewBox="0 0 24 24"><path d="M8 3v5m8-5v5M6 8h12v4a6 6 0 0 1-6 6h0a6 6 0 0 1-6-6V8Zm6 10v3"/></symbol>
     <symbol id="i-user" viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0"/></symbol>
@@ -478,24 +587,28 @@
       <div class="logo-mark">
         <svg class="icon"><use href="#i-palace"></use></svg>
       </div>
-      <h1 data-i18n="appTitle">数字人数据看板</h1>
+      <h1 data-i18n="appTitle">數字人數據看板</h1>
     </div>
     <div class="topbar-right">
       <span class="topbar-time" id="updTime">-</span>
+      <a class="btn btn-ghost" href="/control" target="_blank" rel="noopener" title="主站控制">
+        <svg class="icon"><use href="#i-control"></use></svg>
+        <span data-i18n="mainControl">主站控制</span>
+      </a>
       <div class="theme-wrap" id="themeWrap">
-        <button class="btn btn-ghost" id="themeToggle" type="button" aria-haspopup="menu" aria-expanded="false" title="主题">
+        <button class="btn btn-ghost" id="themeToggle" type="button" aria-haspopup="menu" aria-expanded="false" title="主題">
           <svg class="icon" id="themeIcon"><use href="#i-monitor"></use></svg>
-          <span id="themeLabel">系统</span>
+          <span id="themeLabel">系統</span>
         </button>
         <div class="theme-menu" id="themeMenu" role="menu" aria-label="Theme">
           <button class="theme-option" type="button" role="menuitem" data-theme-choice="system">
-            <svg class="icon"><use href="#i-monitor"></use></svg><span data-i18n="themeSystem">跟随系统</span>
+            <svg class="icon"><use href="#i-monitor"></use></svg><span data-i18n="themeSystem">跟隨系統</span>
           </button>
           <button class="theme-option" type="button" role="menuitem" data-theme-choice="light">
-            <svg class="icon"><use href="#i-sun"></use></svg><span data-i18n="themeLight">浅色主题</span>
+            <svg class="icon"><use href="#i-sun"></use></svg><span data-i18n="themeLight">淺色主題</span>
           </button>
           <button class="theme-option" type="button" role="menuitem" data-theme-choice="dark">
-            <svg class="icon"><use href="#i-moon"></use></svg><span data-i18n="themeDark">暗黑主题</span>
+            <svg class="icon"><use href="#i-moon"></use></svg><span data-i18n="themeDark">暗黑主題</span>
           </button>
         </div>
       </div>
@@ -511,100 +624,162 @@
   </div>
 
   <div class="container">
+    <div class="tabbar" id="tabbar">
+      <button class="tab on" type="button" data-tab="ops">
+        <svg class="icon"><use href="#i-gauge"></use></svg><span data-i18n="tabOps">運維監控</span>
+      </button>
+      <button class="tab" type="button" data-tab="users" id="tabUsers" hidden>
+        <svg class="icon"><use href="#i-user"></use></svg><span data-i18n="tabUsers">用戶管理</span>
+        <span class="tab-badge" id="tabUsersBadge" data-count="0"></span>
+      </button>
+    </div>
+
+    <div class="tabpanel" data-panel="ops">
     <div class="fbar">
-      <span class="fbar-label" data-i18n="timeRange">时间范围</span>
+      <span class="fbar-label" data-i18n="timeRange">時間範圍</span>
       <button class="btn btn-ghost active" data-range="today" data-i18n="today">今日</button>
-      <button class="btn btn-ghost" data-range="week" data-i18n="week">本周</button>
+      <button class="btn btn-ghost" data-range="week" data-i18n="week">本週</button>
       <button class="btn btn-ghost" data-range="month" data-i18n="month">本月</button>
       <button class="btn btn-ghost" data-range="all" data-i18n="all">全部</button>
-      <button class="btn btn-ghost" data-range="custom" data-i18n="custom">自定义</button>
+      <button class="btn btn-ghost" data-range="custom" data-i18n="custom">自定義</button>
       <span class="sep">|</span>
-      <span class="fbar-label" data-i18n="from">从</span><input type="date" id="startDate">
+      <span class="fbar-label" data-i18n="from">從</span><input type="date" id="startDate">
       <span class="fbar-label" data-i18n="to">至</span><input type="date" id="endDate">
-      <span class="sep">|</span>
-      <span class="fbar-label" data-i18n="opsCode">运维码</span>
-      <input type="password" id="opsCode" placeholder="可选，用于资源/诊断" data-i18n-placeholder="opsCodePlaceholder">
-      <button class="btn btn-ghost" id="saveCode" data-i18n="save">保存</button>
     </div>
 
     <div class="stats">
-      <div class="stat"><div class="stat-hd"><svg class="icon"><use href="#i-message"></use></svg></div><div class="stat-lbl" data-i18n="conversations">对话次数</div><div class="stat-val accent" id="sTotal">-</div><div class="stat-sub" data-i18n="period">统计期内</div></div>
-      <div class="stat"><div class="stat-hd"><svg class="icon"><use href="#i-plug"></use></svg></div><div class="stat-lbl" data-i18n="connections">连接数</div><div class="stat-val" id="sConn">-</div><div class="stat-sub" data-i18n="period">统计期内</div></div>
-      <div class="stat"><div class="stat-hd"><svg class="icon"><use href="#i-user"></use></svg></div><div class="stat-lbl" data-i18n="activeChars">活跃角色</div><div class="stat-val" id="sChars">-</div><div class="stat-sub" data-i18n="loaded">已加载</div></div>
-      <div class="stat"><div class="stat-hd"><svg class="icon"><use href="#i-clock"></use></svg></div><div class="stat-lbl" data-i18n="avgResponse">平均响应</div><div class="stat-val" id="sLatency">-</div><div class="stat-sub">LLM + TTS</div></div>
-      <div class="stat"><div class="stat-hd"><svg class="icon"><use href="#i-alert"></use></svg></div><div class="stat-lbl" data-i18n="errors">异常</div><div class="stat-val" id="sErrors">-</div><div class="stat-sub danger" data-i18n="period">统计期内</div></div>
+      <div class="stat"><div class="stat-hd"><svg class="icon"><use href="#i-message"></use></svg></div><div class="stat-lbl" data-i18n="conversations">對話次數</div><div class="stat-val accent" id="sTotal">-</div><div class="stat-sub" data-i18n="period">統計期內</div></div>
+      <div class="stat"><div class="stat-hd"><svg class="icon"><use href="#i-plug"></use></svg></div><div class="stat-lbl" data-i18n="connections">連接數</div><div class="stat-val" id="sConn">-</div><div class="stat-sub" data-i18n="period">統計期內</div></div>
+      <div class="stat"><div class="stat-hd"><svg class="icon"><use href="#i-user"></use></svg></div><div class="stat-lbl" data-i18n="activeChars">活躍角色</div><div class="stat-val" id="sChars">-</div><div class="stat-sub" data-i18n="loaded">已加載</div></div>
+      <div class="stat"><div class="stat-hd"><svg class="icon"><use href="#i-clock"></use></svg></div><div class="stat-lbl" data-i18n="avgResponse">平均響應</div><div class="stat-val" id="sLatency">-</div><div class="stat-sub">LLM + TTS</div></div>
+      <div class="stat"><div class="stat-hd"><svg class="icon"><use href="#i-alert"></use></svg></div><div class="stat-lbl" data-i18n="errors">異常</div><div class="stat-val" id="sErrors">-</div><div class="stat-sub danger" data-i18n="period">統計期內</div></div>
     </div>
 
     <div class="grid">
-      <div class="box"><div class="box-hd"><svg class="icon"><use href="#i-grid"></use></svg><span data-i18n="charHeat">角色热度</span></div><div class="cht" id="charCht"></div></div>
-      <div class="box"><div class="box-hd"><svg class="icon"><use href="#i-trend"></use></svg><span data-i18n="dailyTrend">每日趋势</span></div><div class="cht" id="dailyCht"></div></div>
+      <div class="box"><div class="box-hd"><svg class="icon"><use href="#i-grid"></use></svg><span data-i18n="charHeat">角色熱度</span></div><div class="cht" id="charCht"></div></div>
+      <div class="box"><div class="box-hd"><svg class="icon"><use href="#i-trend"></use></svg><span data-i18n="dailyTrend">每日趨勢</span></div><div class="cht" id="dailyCht"></div></div>
     </div>
     <div class="grid">
-      <div class="box"><div class="box-hd"><svg class="icon"><use href="#i-clock"></use></svg><span data-i18n="hourDist">时段分布</span></div><div class="cht" id="hourCht"></div></div>
-      <div class="box"><div class="box-hd"><svg class="icon"><use href="#i-gauge"></use></svg><span data-i18n="latency">响应延迟</span></div><div class="cht" id="lateCht"></div></div>
+      <div class="box"><div class="box-hd"><svg class="icon"><use href="#i-clock"></use></svg><span data-i18n="hourDist">時段分佈</span></div><div class="cht" id="hourCht"></div></div>
+      <div class="box"><div class="box-hd"><svg class="icon"><use href="#i-gauge"></use></svg><span data-i18n="latency">響應延遲</span></div><div class="cht" id="lateCht"></div></div>
     </div>
 
     <div class="ops-grid">
-      <div class="box"><div class="box-hd"><svg class="icon"><use href="#i-server"></use></svg><span data-i18n="serviceStatus">服务状态总览</span></div><div id="svcBox"><div class="empty" data-i18n="waitingOps">等待运维码或数据...</div></div></div>
-      <div class="box"><div class="box-hd"><svg class="icon"><use href="#i-cpu"></use></svg><span data-i18n="resources">系统资源监控</span></div><div id="resBox"><div class="empty" data-i18n="waitingOps">等待运维码或数据...</div></div></div>
-      <div class="box token-box"><div class="box-hd"><svg class="icon"><use href="#i-token"></use></svg><span data-i18n="tokenPlan">Token Plan 用量</span><div class="box-tools"><button class="btn btn-ghost" id="refreshTokenPlan" data-i18n="queryToken">查询</button></div></div><div id="tokenBox"><div class="empty" data-i18n="tokenPlanWaiting">点击查询 Token Plan 用量</div></div></div>
+      <div class="box"><div class="box-hd"><svg class="icon"><use href="#i-server"></use></svg><span data-i18n="serviceStatus">服務狀態總覽</span></div><div id="svcBox"><div class="empty" data-i18n="waitingOps">載入中...</div></div></div>
+      <div class="box"><div class="box-hd"><svg class="icon"><use href="#i-cpu"></use></svg><span data-i18n="resources">系統資源監控</span></div><div id="resBox"><div class="empty" data-i18n="waitingOps">載入中...</div></div></div>
+      <div class="box token-box"><div class="box-hd"><svg class="icon"><use href="#i-token"></use></svg><span data-i18n="tokenPlan">Token Plan 用量</span><div class="box-tools"><button class="btn btn-ghost" id="refreshTokenPlan" data-i18n="queryToken">查詢</button></div></div><div id="tokenBox"><div class="empty" data-i18n="tokenPlanWaiting">點擊查詢 Token Plan 用量</div></div></div>
     </div>
 
     <div class="grid" style="margin-top:12px">
-      <div class="box full"><div class="box-hd"><svg class="icon"><use href="#i-shield-alert"></use></svg><span data-i18n="diagnostics">异常诊断面板</span></div><div id="diagBox"><div class="empty" data-i18n="waitingOps">等待运维码或数据...</div></div></div>
+      <div class="box full"><div class="box-hd"><svg class="icon"><use href="#i-shield-alert"></use></svg><span data-i18n="diagnostics">異常診斷面板</span></div><div id="diagBox"><div class="empty" data-i18n="waitingOps">載入中...</div></div></div>
     </div>
 
     <div class="box full" style="margin-bottom:12px">
       <div class="box-hd">
-        <svg class="icon"><use href="#i-file-text"></use></svg><span data-i18n="liveLogs">实时日志</span><small class="table-note" data-i18n="logsNote">每 5 秒更新，自动保持在底部</small>
-        <div class="box-tools"><input id="logSearch" class="search" placeholder="搜索 ERROR / TTS / WS / 角色ID" data-i18n-placeholder="logSearch"><select id="logLevel" class="search"><option value="all" data-i18n="all">全部</option><option value="error">ERROR</option><option value="warning">WARNING</option><option value="info">INFO</option></select><button class="btn btn-ghost" id="exportLogs" data-i18n="exportLogs">导出日志</button><button class="btn btn-ghost" id="clearLog" data-i18n="clear">清除</button></div>
+        <svg class="icon"><use href="#i-file-text"></use></svg><span data-i18n="liveLogs">實時日誌</span><small class="table-note" data-i18n="logsNote">每 5 秒更新，自動保持在底部</small>
+        <div class="box-tools"><input id="logSearch" class="search" placeholder="搜尋 ERROR / TTS / WS / 角色ID" data-i18n-placeholder="logSearch"><select id="logLevel" class="search"><option value="all" data-i18n="all">全部</option><option value="error">ERROR</option><option value="warning">WARNING</option><option value="info">INFO</option></select><button class="btn btn-ghost" id="exportLogs" data-i18n="exportLogs">導出日誌</button><button class="btn btn-ghost" id="clearLog" data-i18n="clear">清除</button></div>
       </div>
-      <pre class="logs" id="logsBox">加载中...</pre>
+      <pre class="logs" id="logsBox">加載中...</pre>
     </div>
 
     <div class="box full">
-      <div class="box-hd"><svg class="icon"><use href="#i-messages"></use></svg><span data-i18n="conversationRecords">对话记录</span><small class="table-note" data-i18n="conversationNote">来自 SQLite 对话数据库，按筛选时间展示最近记录</small><div class="box-tools"><button class="btn btn-ghost" id="exportConvs" data-i18n="exportConvs">导出聊天记录</button></div></div>
-      <div class="tbl" id="convTable"><div class="empty">加载中...</div></div>
+      <div class="box-hd"><svg class="icon"><use href="#i-messages"></use></svg><span data-i18n="conversationRecords">對話記錄</span><small class="table-note" data-i18n="conversationNote">來自 SQLite 對話數據庫，按篩選時間展示最近記錄</small><div class="box-tools"><button class="btn btn-ghost" id="exportConvs" data-i18n="exportConvs">導出聊天記錄</button></div></div>
+      <div class="tbl" id="convTable"><div class="empty">加載中...</div></div>
       <div class="pager" id="convPager" hidden>
         <div class="pager-left" id="convPagerTotal"></div>
         <div class="pager-right">
-          <select class="page-size" id="convPageSize" aria-label="每页条数">
-            <option value="10">10 条/页</option>
-            <option value="20">20 条/页</option>
-            <option value="50">50 条/页</option>
-            <option value="100">100 条/页</option>
+          <select class="page-size" id="convPageSize" aria-label="每頁條數">
+            <option value="10">10 條/頁</option>
+            <option value="20">20 條/頁</option>
+            <option value="50">50 條/頁</option>
+            <option value="100">100 條/頁</option>
           </select>
-          <button class="page-btn" id="convPrev" type="button" aria-label="上一页">‹</button>
+          <button class="page-btn" id="convPrev" type="button" aria-label="上一頁">‹</button>
           <div class="page-pages" id="convPages"></div>
-          <button class="page-btn" id="convNext" type="button" aria-label="下一页">›</button>
+          <button class="page-btn" id="convNext" type="button" aria-label="下一頁">›</button>
         </div>
+      </div>
+    </div>
+    </div><!-- /panel:ops -->
+
+    <div class="tabpanel" data-panel="users" hidden>
+      <div class="stats" id="acctStats">
+        <div class="stat"><div class="stat-hd"><svg class="icon"><use href="#i-user"></use></svg></div><div class="stat-lbl" data-i18n="totalAccounts">帳號總數</div><div class="stat-val" id="aTotal">-</div><div class="stat-sub" data-i18n="allRoles">全部角色</div></div>
+        <div class="stat"><div class="stat-hd"><svg class="icon"><use href="#i-message"></use></svg></div><div class="stat-lbl" data-i18n="trialAccounts">體驗帳戶</div><div class="stat-val" id="aTrial">-</div><div class="stat-sub" data-i18n="limitedQuota">有限額度</div></div>
+        <div class="stat"><div class="stat-hd"><svg class="icon"><use href="#i-token"></use></svg></div><div class="stat-lbl" data-i18n="premiumAccounts">高級帳戶</div><div class="stat-val accent" id="aPremium">-</div><div class="stat-sub" data-i18n="unlimited">不限次數</div></div>
+        <div class="stat"><div class="stat-hd"><svg class="icon"><use href="#i-plug"></use></svg></div><div class="stat-lbl" data-i18n="activeSessions">在線會話</div><div class="stat-val" id="aSessions">-</div><div class="stat-sub" data-i18n="valid">有效期內</div></div>
+        <div class="stat"><div class="stat-hd"><svg class="icon"><use href="#i-alert"></use></svg></div><div class="stat-lbl" data-i18n="quotaExhausted">額度用盡</div><div class="stat-val" id="aExhausted">-</div><div class="stat-sub danger" data-i18n="needTopUp">待處理</div></div>
+      </div>
+
+      <div class="box full" id="reqBox" style="margin-bottom:12px" hidden>
+        <div class="box-hd">
+          <svg class="icon"><use href="#i-alert"></use></svg><span data-i18n="quotaRequests">額度申請</span>
+          <small class="table-note" data-i18n="quotaRequestsNote">體驗用戶申請追加對話次數</small>
+        </div>
+        <div id="reqList"></div>
+      </div>
+
+      <div class="box full">
+        <div class="box-hd">
+          <svg class="icon"><use href="#i-user"></use></svg><span data-i18n="accountList">帳號列表</span>
+          <div class="box-tools">
+            <input id="acctSearch" class="search" placeholder="搜尋帳號 / 名稱 / 備註" data-i18n-placeholder="acctSearch">
+            <select id="acctRole" class="search">
+              <option value="" data-i18n="allRoles">全部角色</option>
+              <option value="trial" data-i18n="roleTrial">體驗</option>
+              <option value="premium" data-i18n="rolePremium">高級</option>
+              <option value="admin" data-i18n="roleAdmin">管理員</option>
+            </select>
+            <select id="acctStatus" class="search">
+              <option value="" data-i18n="allStatus">全部狀態</option>
+              <option value="active" data-i18n="statusActive">啓用</option>
+              <option value="disabled" data-i18n="statusDisabled">停用</option>
+            </select>
+            <button class="btn-primary" id="btnNewAcct" data-i18n="newAccount">+ 新建帳號</button>
+          </div>
+        </div>
+        <div class="tbl" id="acctTable"><div class="empty" data-i18n="loading">加載中...</div></div>
+      </div>
+    </div><!-- /panel:users -->
+  </div>
+
+  <div class="modal-back" id="acctModalBack" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="acctModalTitle">
+      <div class="modal-hd">
+        <span id="acctModalTitle" data-i18n="newAccount">新建帳號</span>
+        <button class="icon-btn" id="acctModalClose" aria-label="關閉">×</button>
+      </div>
+      <div class="modal-bd" id="acctModalBody"></div>
+      <div class="modal-ft">
+        <button class="btn btn-ghost" id="acctCancel" data-i18n="cancel">取消</button>
+        <button class="btn-primary" id="acctSave" data-i18n="save">保存</button>
       </div>
     </div>
   </div>
 
-  <section class="chat-panel" id="chatPanel" aria-label="运维助手">
+  <section class="chat-panel" id="chatPanel" aria-label="運維助手">
     <div class="chat-agent-bar">
       <div class="agent-pill">
         <span class="agent-mark"><svg class="icon"><use href="#i-message"></use></svg><i class="agent-status"></i></span>
-        <span data-i18n="opsAssistant">运维助手</span>
+        <span data-i18n="opsAssistant">運維助手</span>
       </div>
-      <button class="icon-btn chat-close" id="chatClose" aria-label="关闭" data-i18n-aria="close">×</button>
+      <button class="icon-btn chat-close" id="chatClose" aria-label="關閉" data-i18n-aria="close">×</button>
     </div>
-    <div class="chips"><button class="chip" data-q="today" data-i18n="chipToday">今天有多少对话？</button><button class="chip" data-q="errors" data-i18n="chipErrors">最近有没有异常？</button><button class="chip" data-q="mary" data-i18n="chipMary">小瑪老師配置在哪？</button><button class="chip" data-q="restart" data-i18n="chipRestart">帮我重启服务</button></div>
+    <div class="chips"><button class="chip" data-q="today" data-i18n="chipToday">今天有多少對話？</button><button class="chip" data-q="errors" data-i18n="chipErrors">最近有沒有異常？</button><button class="chip" data-q="mary" data-i18n="chipMary">小瑪老師配置在哪？</button><button class="chip" data-q="restart" data-i18n="chipRestart">幫我重啓服務</button></div>
     <div class="chat-messages" id="chatMessages">
       <article class="chat-msg assistant">
         <div class="chat-avatar"><svg class="icon"><use href="#i-message"></use></svg></div>
-        <div class="chat-bubble" data-i18n="chatReady">只读助手已准备好。写操作会只给命令和确认提示，不会直接执行。</div>
+        <div class="chat-bubble" data-i18n="chatReady">只讀助手已準備好。寫操作會只給命令和確認提示，不會直接執行。</div>
       </article>
     </div>
     <div class="chat-composer">
-      <input id="askInput" placeholder="输入运维问题" data-i18n-placeholder="askPlaceholder">
-      <button class="btn btn-primary" id="askBtn" data-i18n="ask">询问</button>
+      <input id="askInput" placeholder="輸入運維問題" data-i18n-placeholder="askPlaceholder">
+      <button class="btn btn-primary" id="askBtn" data-i18n="ask">詢問</button>
     </div>
   </section>
-  <button class="chat-fab" id="chatFab" aria-label="打开运维助手">
+  <button class="chat-fab" id="chatFab" aria-label="打開運維助手">
     <svg class="icon"><use href="#i-message"></use></svg>
-    <span data-i18n="opsAssistant">运维助手</span>
+    <span data-i18n="opsAssistant">運維助手</span>
   </button>
 
   <script>
@@ -627,7 +802,7 @@
     let convPageSize = Number(localStorage.getItem('opsConvPageSize') || 20);
     let tokenPlanData = null;
     let selectedTokenModel = '';
-    let lastConvData = null, lastConvRows = [], lastConvAnalyticsData = null;
+    let lastConvData = null, lastConvRows = [], lastConvSampleData = null;
     let lang = localStorage.getItem('opsLang') || 'zh';
     let themePref = localStorage.getItem('opsTheme') || 'system';
     let diagIgnoredKeys = new Set();
@@ -636,42 +811,52 @@
     let cCht, dCht, hCht, lCht, tokenCht;
     const I18N = {
       zh: {
-        appTitle:'数字人数据看板', refresh:'刷新', timeRange:'时间范围', today:'今日', week:'本周', month:'本月', all:'全部', custom:'自定义',
-        theme:'主题', themeSystem:'跟随系统', themeLight:'浅色主题', themeDark:'暗黑主题',
-        from:'从', to:'至', opsCode:'运维码', opsCodePlaceholder:'可选，用于资源/诊断', save:'保存',
-        conversations:'对话次数', connections:'连接数', activeChars:'活跃角色', avgResponse:'平均响应', errors:'异常', period:'统计期内', loaded:'已加载',
-        charHeat:'角色热度', dailyTrend:'每日趋势', hourDist:'时段分布', latency:'响应延迟', serviceStatus:'服务状态总览', resources:'系统资源监控', tokenPlan:'Token Plan 用量', diagnostics:'异常诊断面板',
-        waitingOps:'等待运维码或数据...', liveLogs:'实时日志', logsNote:'每 5 秒更新，自动保持在底部', logSearch:'搜索 ERROR / TTS / WS / 角色ID', clear:'清除', exportLogs:'导出日志',
-        conversationRecords:'对话记录', conversationNote:'来自 SQLite 对话数据库，按筛选时间展示最近记录', exportConvs:'导出聊天记录',
-        opsAssistant:'运维助手', close:'关闭', chipToday:'今天有多少对话？', chipErrors:'最近有没有异常？', chipMary:'小瑪老師配置在哪？', chipRestart:'帮我重启服务',
-        askPlaceholder:'输入运维问题', ask:'询问', chatReady:'只读助手已准备好。写操作会只给命令和确认提示，不会直接执行。',
-        loading:'正在分析当前状态、日志和对话统计...', enterQuestion:'请输入运维问题。', authNeeded:'请输入正确运维码后使用 MiniMax 运维 Chatbot。',
-        fallback:'MiniMax Chatbot 暂不可用，以上为本地只读规则回答。', noLogs:'暂无日志', noConvs:'暂无对话记录', exportAuth:'请输入正确运维码后导出。', exportFailed:'导出失败，请稍后重试。',
-        digitalHuman:'Digital Human 主服务', nginx:'Nginx 反向代理', minimax:'MiniMax 语音服务', status:'状态', startup:'启动', running:'运行中', needsAttention:'需要关注', unknown:'未知', notRunning:'未正常运行',
-        autoStart:'开机自启', noAutoStart:'未设自启', autoState:'自启状态', ttsModel:'TTS 模型', configured:'已配置', notConfigured:'未配置', normal:'正常', warning:'警告', error:'错误',
-        uptime:'运行时间', process:'进程', time:'时间', database:'对话数据库', path:'路径', size:'大小',
-        queryToken:'查询', tokenPlanWaiting:'点击查询 Token Plan 用量', tokenLoading:'正在查询 Token Plan...', tokenNotConfigured:'未配置 MINIMAX_TOKEN_PLAN_API_KEY', tokenQueryFailed:'Token Plan 查询失败', tokenUsed:'已用', tokenTotal:'总额度', tokenRemain:'剩余', tokenReset:'重置',
-        tokenAvailable:'可用', tokenWeekly:'周额度', tokenInterval:'5h 限额', tokenModel:'模型', tokenResetAt:'重置', tokenRemainingTime:'剩余时间', tokenTotalQuota:'额度', tokenUsageCount:'调用量', tokenApiStatus:'API 状态', tokenApiSource:'来源', tokenApiFields:'字段', tokenRawFallback:'未识别到 MiniMax 明确百分比字段，显示原始 API 字段',
-        cpu:'CPU', memory:'Memory', disk:'Disk', rootCause:'根因', advice:'建议', log:'日志', locate:'定位', ignore:'忽略', ignored:'已忽略 {count} 项', restoreIgnored:'恢复忽略', allDiagnosticsIgnored:'当前异常已被忽略，可恢复后查看。',
-        diagError:'错误', diagErrorDesc:'需要优先处理的服务或接口问题', diagWarn:'警告', diagWarnDesc:'建议观察或排查的异常信号', diagOk:'正常', diagOkDesc:'当前检查未发现明显问题',
-        role:'角色', userQuestion:'用户提问', assistantReply:'数字人回复', totalCost:'总耗时', user:'用户', todayCount:'今日对话', total:'累计',
-        recordsRange:'共 {total} 条记录 · 第 {start}-{end} 条', perPage:'条/页', prevPage:'上一页', nextPage:'下一页',
-        readonlyRestart:'页面保持只读。人工确认后执行：ssh ec2-dh "sudo systemctl restart digitalhuman.service"。执行前建议先看异常诊断和最近 ERROR 日志。',
-        maryPath:'小瑪老師配置：characters/maryknoll-teacher/character.json；知识库：characters/maryknoll-teacher/knowledge.md。',
-        canAnswer:'我可以回答：今天对话量、最近异常、小瑪老師配置路径、重启服务命令。当前版本只读，不直接操作服务器。'
+        tabOps:'運維監控', tabUsers:'用戶管理',
+        totalAccounts:'帳號總數', trialAccounts:'體驗帳戶', premiumAccounts:'高級帳戶', activeSessions:'在線會話', quotaExhausted:'額度用盡',
+        allRoles:'全部角色', limitedQuota:'有限額度', unlimited:'不限次數', valid:'有效期內', needTopUp:'待處理',
+        quotaRequests:'額度申請', quotaRequestsNote:'體驗用戶申請追加對話次數', accountList:'帳號列表',
+        acctSearch:'搜尋帳號 / 名稱 / 備註', roleTrial:'體驗', rolePremium:'高級', roleAdmin:'管理員',
+        allStatus:'全部狀態', statusActive:'啓用', statusDisabled:'停用', newAccount:'新建帳號', cancel:'取消', save:'保存', loading:'加載中...',
+        appTitle:'數字人數據看板', refresh:'刷新', mainControl:'主站控制', timeRange:'時間範圍', today:'今日', week:'本週', month:'本月', all:'全部', custom:'自定義',
+        theme:'主題', themeSystem:'跟隨系統', themeLight:'淺色主題', themeDark:'暗黑主題',
+        from:'從', to:'至', conversations:'對話次數', connections:'連接數', activeChars:'活躍角色', avgResponse:'平均響應', errors:'異常', period:'統計期內', loaded:'已加載',
+        charHeat:'角色熱度', dailyTrend:'每日趨勢', hourDist:'時段分佈', latency:'響應延遲', serviceStatus:'服務狀態總覽', resources:'系統資源監控', tokenPlan:'Token Plan 用量', diagnostics:'異常診斷面板',
+        waitingOps:'載入中...', liveLogs:'實時日誌', logsNote:'每 5 秒更新，自動保持在底部', logSearch:'搜尋 ERROR / TTS / WS / 角色ID', clear:'清除', exportLogs:'導出日誌',
+        conversationRecords:'對話記錄', conversationNote:'來自 SQLite 對話數據庫，按篩選時間展示最近記錄', exportConvs:'導出聊天記錄',
+        opsAssistant:'運維助手', close:'關閉', chipToday:'今天有多少對話？', chipErrors:'最近有沒有異常？', chipMary:'小瑪老師配置在哪？', chipRestart:'幫我重啓服務',
+        askPlaceholder:'輸入運維問題', ask:'詢問', chatReady:'只讀助手已準備好。寫操作會只給命令和確認提示，不會直接執行。',
+        loading:'正在分析當前狀態、日誌和對話統計...', enterQuestion:'請輸入運維問題。', authNeeded:'請以管理員身分登入後使用 MiniMax 運維 Chatbot。',
+        fallback:'MiniMax Chatbot 暫不可用，以上爲本地只讀規則回答。', noLogs:'暫無日誌', noConvs:'暫無對話記錄', exportAuth:'請以管理員身分登入後導出。', exportFailed:'導出失敗，請稍後重試。',
+        digitalHuman:'Digital Human 主服務', nginx:'Nginx 反向代理', minimax:'MiniMax 語音服務', status:'狀態', startup:'啓動', running:'運行中', needsAttention:'需要關注', unknown:'未知', notRunning:'未正常運行',
+        autoStart:'開機自啓', noAutoStart:'未設自啓', autoState:'自啓狀態', ttsModel:'TTS 模型', configured:'已配置', notConfigured:'未配置', normal:'正常', warning:'警告', error:'錯誤',
+        uptime:'運行時間', process:'進程', time:'時間', database:'對話數據庫', path:'路徑', size:'大小',
+        queryToken:'查詢', tokenPlanWaiting:'點擊查詢 Token Plan 用量', tokenLoading:'正在查詢 Token Plan...', tokenNotConfigured:'未配置 MINIMAX_TOKEN_PLAN_API_KEY', tokenQueryFailed:'Token Plan 查詢失敗', tokenUsed:'已用', tokenTotal:'總額度', tokenRemain:'剩餘', tokenReset:'重置',
+        tokenAvailable:'可用', tokenWeekly:'周額度', tokenInterval:'5h 限額', tokenModel:'模型', tokenResetAt:'重置', tokenRemainingTime:'剩餘時間', tokenTotalQuota:'額度', tokenUsageCount:'調用量', tokenApiStatus:'API 狀態', tokenApiSource:'來源', tokenApiFields:'字段', tokenRawFallback:'未識別到 MiniMax 明確百分比字段，顯示原始 API 字段',
+        cpu:'CPU', memory:'Memory', disk:'Disk', rootCause:'根因', advice:'建議', log:'日誌', locate:'定位', ignore:'忽略', ignored:'已忽略 {count} 項', restoreIgnored:'恢復忽略', allDiagnosticsIgnored:'當前異常已被忽略，可恢復後查看。',
+        diagError:'錯誤', diagErrorDesc:'需要優先處理的服務或接口問題', diagWarn:'警告', diagWarnDesc:'建議觀察或排查的異常信號', diagOk:'正常', diagOkDesc:'當前檢查未發現明顯問題',
+        role:'角色', userQuestion:'用戶提問', assistantReply:'數字人回覆', totalCost:'總耗時', user:'用戶', todayCount:'今日對話', total:'累計',
+        recordsRange:'共 {total} 條記錄 · 第 {start}-{end} 條', perPage:'條/頁', prevPage:'上一頁', nextPage:'下一頁',
+        readonlyRestart:'請打開頂部「主站控制」執行重啓。執行前建議先看異常診斷和最近 ERROR 日誌。',
+        maryPath:'小瑪老師配置：characters/maryknoll-teacher/character.json；知識庫：characters/maryknoll-teacher/knowledge.md。',
+        canAnswer:'我可以回答：今天對話量、最近異常、小瑪老師配置路徑和運維建議。服務操作請使用頂部「主站控制」。'
       },
       en: {
-        appTitle:'Digital Human Dashboard', refresh:'Refresh', timeRange:'Range', today:'Today', week:'Week', month:'Month', all:'All', custom:'Custom',
+        tabOps:'Operations', tabUsers:'Users',
+        totalAccounts:'Total accounts', trialAccounts:'Trial', premiumAccounts:'Premium', activeSessions:'Active sessions', quotaExhausted:'Quota used up',
+        allRoles:'All roles', limitedQuota:'Limited quota', unlimited:'Unlimited', valid:'Valid', needTopUp:'Pending',
+        quotaRequests:'Quota requests', quotaRequestsNote:'Trial users asking for more conversations', accountList:'Accounts',
+        acctSearch:'Search account / name / note', roleTrial:'Trial', rolePremium:'Premium', roleAdmin:'Admin',
+        allStatus:'All status', statusActive:'Active', statusDisabled:'Disabled', newAccount:'+ New account', cancel:'Cancel', save:'Save', loading:'Loading...',
+        appTitle:'Digital Human Dashboard', refresh:'Refresh', mainControl:'Site Control', timeRange:'Range', today:'Today', week:'Week', month:'Month', all:'All', custom:'Custom',
         theme:'Theme', themeSystem:'System', themeLight:'Light', themeDark:'Dark',
-        from:'From', to:'To', opsCode:'Ops Code', opsCodePlaceholder:'For diagnostics', save:'Save',
-        conversations:'Conversations', connections:'Connections', activeChars:'Active Roles', avgResponse:'Avg Response', errors:'Errors', period:'Selected period', loaded:'Loaded',
+        from:'From', to:'To', conversations:'Conversations', connections:'Connections', activeChars:'Active Roles', avgResponse:'Avg Response', errors:'Errors', period:'Selected period', loaded:'Loaded',
         charHeat:'Role Heat', dailyTrend:'Daily Trend', hourDist:'Hourly Distribution', latency:'Response Latency', serviceStatus:'Service Status', resources:'System Resources', tokenPlan:'Token Plan Usage', diagnostics:'Diagnostics',
-        waitingOps:'Waiting for ops code or data...', liveLogs:'Live Logs', logsNote:'Updates every 5 seconds and stays at the bottom', logSearch:'Search ERROR / TTS / WS / role ID', clear:'Clear', exportLogs:'Export Logs',
+        waitingOps:'Loading...', liveLogs:'Live Logs', logsNote:'Updates every 5 seconds and stays at the bottom', logSearch:'Search ERROR / TTS / WS / role ID', clear:'Clear', exportLogs:'Export Logs',
         conversationRecords:'Conversation Records', conversationNote:'From SQLite conversation database, showing recent records for the selected period', exportConvs:'Export Chats',
         opsAssistant:'Ops Assistant', close:'Close', chipToday:'How many conversations today?', chipErrors:'Any recent incidents?', chipMary:'Where is Maryknoll config?', chipRestart:'Restart the service',
         askPlaceholder:'Ask an ops question', ask:'Ask', chatReady:'Read-only assistant is ready. Write operations return commands and confirmation guidance only.',
-        loading:'Analyzing current status, logs, and conversation stats...', enterQuestion:'Please enter an ops question.', authNeeded:'Enter the correct ops code to use the MiniMax ops chatbot.',
-        fallback:'MiniMax chatbot is unavailable. The answer above is from local read-only rules.', noLogs:'No logs', noConvs:'No conversation records', exportAuth:'Enter the correct ops code before exporting.', exportFailed:'Export failed. Please try again.',
+        loading:'Analyzing current status, logs, and conversation stats...', enterQuestion:'Please enter an ops question.', authNeeded:'Sign in as an administrator to use the MiniMax ops chatbot.',
+        fallback:'MiniMax chatbot is unavailable. The answer above is from local read-only rules.', noLogs:'No logs', noConvs:'No conversation records', exportAuth:'Sign in as an administrator before exporting.', exportFailed:'Export failed. Please try again.',
         digitalHuman:'Digital Human Main Service', nginx:'Nginx Reverse Proxy', minimax:'MiniMax Voice Service', status:'Status', startup:'Startup', running:'Running', needsAttention:'Needs attention', unknown:'Unknown', notRunning:'Not running normally',
         autoStart:'Enabled on boot', noAutoStart:'Not enabled on boot', autoState:'Startup state', ttsModel:'TTS Model', configured:'Configured', notConfigured:'Not configured', normal:'Normal', warning:'Warning', error:'Error',
         uptime:'Uptime', process:'Process', time:'Time', database:'Conversation Database', path:'Path', size:'Size',
@@ -681,9 +866,9 @@
         diagError:'Errors', diagErrorDesc:'Issues that need priority handling', diagWarn:'Warnings', diagWarnDesc:'Signals worth watching or investigating', diagOk:'Normal', diagOkDesc:'No obvious issue in current checks',
         role:'Role', userQuestion:'User Question', assistantReply:'Digital Human Reply', totalCost:'Total Time', user:'User', todayCount:'Today', total:'Total',
         recordsRange:'{start}-{end} of {total} records', perPage:'/ page', prevPage:'Previous page', nextPage:'Next page',
-        readonlyRestart:'This page is read-only. After manual confirmation run: ssh ec2-dh "sudo systemctl restart digitalhuman.service". Check diagnostics and recent ERROR logs first.',
+        readonlyRestart:'Open Site Control from the top bar and confirm restart. Check diagnostics and recent ERROR logs first.',
         maryPath:'Maryknoll config: characters/maryknoll-teacher/character.json; knowledge base: characters/maryknoll-teacher/knowledge.md.',
-        canAnswer:'I can answer today’s conversation count, recent incidents, Maryknoll config path, and restart guidance. This version is read-only and does not operate the server directly.'
+        canAnswer:'I can answer today’s conversation count, recent incidents, Maryknoll config path, and ops guidance. Use Site Control in the top bar for service actions.'
       }
     };
 
@@ -714,10 +899,10 @@
       });
     }
     function rerenderChartsForTheme() {
-      if (rawLogs || lastConvData || lastConvAnalyticsData) {
+      if (rawLogs || lastConvData || lastConvSampleData) {
         renderStats(
           parseLogs(filterLogs(rawLogs, document.getElementById('startDate').value || today, document.getElementById('endDate').value || today)),
-          lastConvAnalyticsData ? parseAnalytics(lastConvAnalyticsData) : parseConvs(lastConvData, document.getElementById('startDate').value || today, document.getElementById('endDate').value || today),
+          parseConvs(lastConvSampleData || lastConvData, document.getElementById('startDate').value || today, document.getElementById('endDate').value || today),
           lastConvData?.total
         );
       }
@@ -731,7 +916,6 @@
 
     document.getElementById('startDate').value = today;
     document.getElementById('endDate').value = today;
-    document.getElementById('opsCode').value = localStorage.getItem('opsCode') || '';
     document.getElementById('convPageSize').value = String(convPageSize);
     document.getElementById('startDate').disabled = true;
     document.getElementById('endDate').disabled = true;
@@ -763,8 +947,8 @@
       if (lastConvData) renderConvs(lastConvData, lastConvRows);
       renderStats(
         parseLogs(filterLogs(rawLogs, document.getElementById('startDate').value || today, document.getElementById('endDate').value || today)),
-        lastConvAnalyticsData ? parseAnalytics(lastConvAnalyticsData) : parseConvs(lastConvData, document.getElementById('startDate').value || today, document.getElementById('endDate').value || today),
-        lastConvAnalyticsData?.total ?? lastConvData?.total
+        parseConvs(lastConvSampleData || lastConvData, document.getElementById('startDate').value || today, document.getElementById('endDate').value || today),
+        lastConvData?.total
       );
     }
     function fmtDate(d) {
@@ -781,9 +965,18 @@
       if (Number.isNaN(d.getTime())) return String(v).slice(5, 19);
       return d.toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false, timeZone: TZ });
     }
+    // 管理平台統一走帳號會話，運維碼已廢棄
+    let SESSION_TOKEN = '';
+    try { SESSION_TOKEN = localStorage.getItem('dh_session_token') || ''; } catch (_) {}
+    let SESSION = null;
+
     function headers() {
-      const code = document.getElementById('opsCode').value.trim();
-      return code ? { 'X-User-Code': code } : {};
+      const h = {};
+      if (SESSION_TOKEN) h['X-Session-Token'] = SESSION_TOKEN;
+      return h;
+    }
+    function authHeaders(extra) {
+      return Object.assign({ 'X-Session-Token': SESSION_TOKEN }, extra || {});
     }
     async function fetchJson(url, auth=false, noStore=false) {
       const init = {};
@@ -812,11 +1005,6 @@
     });
     document.getElementById('startDate').addEventListener('change', () => { convPage = 1; refreshAll(); });
     document.getElementById('endDate').addEventListener('change', () => { convPage = 1; refreshAll(); });
-    document.getElementById('saveCode').addEventListener('click', () => {
-      localStorage.setItem('opsCode', document.getElementById('opsCode').value.trim());
-      refreshAll();
-    });
-
     function filterLogs(raw, from, to) {
       return raw.split('\n').filter(l => {
         const m = l.match(/(\d{4}-\d{2}-\d{2})/);
@@ -848,16 +1036,6 @@
       }
       return { rows, charCount, daily, hourly, lats };
     }
-    function parseAnalytics(data) {
-      return {
-        rows: [],
-        charCount: data?.per_character || {},
-        daily: data?.daily || {},
-        hourly: Array.isArray(data?.hourly) ? data.hourly : Array(24).fill(0),
-        lats: Array.isArray(data?.latencies) ? data.latencies : [],
-        avgLatencyMs: Number(data?.avg_latency_ms || 0)
-      };
-    }
     function mergeCounts(a, b) {
       const out = { ...a };
       for (const [k,v] of Object.entries(b || {})) out[k] = Math.max(out[k] || 0, v);
@@ -871,11 +1049,10 @@
       const statChars = rangeType === 'all' ? (convStats?.per_character || {}) : {};
       const chars = Object.keys(mergeCounts(mergeCounts(logs.charCount, convParsed.charCount), statChars)).length;
       const lats = convParsed.lats.length ? convParsed.lats : logs.lats;
-      const avgLatencyMs = Number(convParsed.avgLatencyMs || 0);
       document.getElementById('sTotal').textContent = total.toLocaleString();
       document.getElementById('sConn').textContent = logs.conn || '-';
-      document.getElementById('sChars').textContent = chars ? (lang === 'en' ? String(chars) : chars + '个') : '-';
-      document.getElementById('sLatency').textContent = avgLatencyMs > 0 ? (avgLatencyMs/1000).toFixed(1) + 's' : lats.length ? (lats.reduce((a,b)=>a+b,0)/lats.length/1000).toFixed(1) + 's' : '-';
+      document.getElementById('sChars').textContent = chars ? (lang === 'en' ? String(chars) : chars + '個') : '-';
+      document.getElementById('sLatency').textContent = lats.length ? (lats.reduce((a,b)=>a+b,0)/lats.length/1000).toFixed(1) + 's' : '-';
       document.getElementById('sErrors').textContent = logs.errors;
     }
     function initCht(el) { return echarts.init(el); }
@@ -903,11 +1080,11 @@
       const m = Math.max(...hourly, 1);
       const gridColor = cssVar('--chart-grid', '#f0f0f0');
       const axisColor = cssVar('--text3', '#8e8ea0');
-      hCht.setOption({ tooltip:{trigger:'axis'}, grid:{left:30,right:20,bottom:20,top:10,containLabel:true}, xAxis:{type:'category',data:Array.from({length:24},(_,i)=>`${i}时`),axisLabel:{interval:3,fontSize:10,color:axisColor},axisLine:{show:false}}, yAxis:{type:'value',splitLine:{lineStyle:{color:gridColor}},axisLine:{show:false},axisTick:{show:false},axisLabel:{color:axisColor}}, series:[{type:'bar',data:hourly,barWidth:16,borderRadius:[3,3,0,0],itemStyle:{color:p=>`rgba(16,163,127,${.3+p.value/m*.7})`}}] }, true);
+      hCht.setOption({ tooltip:{trigger:'axis'}, grid:{left:30,right:20,bottom:20,top:10,containLabel:true}, xAxis:{type:'category',data:Array.from({length:24},(_,i)=>`${i}時`),axisLabel:{interval:3,fontSize:10,color:axisColor},axisLine:{show:false}}, yAxis:{type:'value',splitLine:{lineStyle:{color:gridColor}},axisLine:{show:false},axisTick:{show:false},axisLabel:{color:axisColor}}, series:[{type:'bar',data:hourly,barWidth:16,borderRadius:[3,3,0,0],itemStyle:{color:p=>`rgba(16,163,127,${.3+p.value/m*.7})`}}] }, true);
     }
     function renderLateCht(lats) {
       if (!lCht) lCht = initCht(document.getElementById('lateCht'));
-      if (!lats.length) { lCht.setOption({title:{text:'暂无数据',left:'center',top:'center',textStyle:{color:cssVar('--text3', '#8e8ea0'),fontSize:13}}}, true); return; }
+      if (!lats.length) { lCht.setOption({title:{text:'暫無數據',left:'center',top:'center',textStyle:{color:cssVar('--text3', '#8e8ea0'),fontSize:13}}}, true); return; }
       const mt = Math.max(...lats), st = mt / 15 || 1, bk = Array(15).fill(0);
       lats.forEach(t => { bk[Math.min(Math.floor(t / st), 14)]++; });
       const gridColor = cssVar('--chart-grid', '#f0f0f0');
@@ -932,7 +1109,7 @@
         'digitalhuman.service': t('digitalHuman'),
         'nginx.service': t('nginx')
       };
-      return map[name] || name || '服务';
+      return map[name] || name || '服務';
     }
     function activeText(value) {
       if (value === 'active' || value === 'ok') return t('running');
@@ -1069,11 +1246,9 @@
       return parts.join(' · ');
     }
     function fmtTokenTime(value) {
-      if (value === undefined || value === null || value === '') return '-';
       const n = Number(value);
-      const d = Number.isFinite(n) && n > 0
-        ? new Date(n < 1e12 ? n * 1000 : n)
-        : new Date(String(value));
+      if (!Number.isFinite(n) || n <= 0) return '-';
+      const d = new Date(n);
       if (Number.isNaN(d.getTime())) return '-';
       return d.toLocaleString(lang === 'en' ? 'en-US' : 'zh-CN', {
         month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false, timeZone: TZ
@@ -1091,9 +1266,9 @@
         if (hours) return `${hours}h ${minutes}m`;
         return `${minutes}m`;
       }
-      if (days) return `${days}天 ${hours}小时`;
-      if (hours) return `${hours}小时 ${minutes}分钟`;
-      return `${minutes}分钟`;
+      if (days) return `${days}天 ${hours}小時`;
+      if (hours) return `${hours}小時 ${minutes}分鐘`;
+      return `${minutes}分鐘`;
     }
     function normalizeTokenPlans(payload) {
       const data = payload?.data || payload || {};
@@ -1359,14 +1534,14 @@
     }
     function localAnswerText(q) {
       const text = (q || '').toLowerCase();
-      if (text.includes('today') || text.includes('今天') || text.includes('对话')) {
+      if (text.includes('today') || text.includes('今天') || text.includes('對話')) {
         return `${t('todayCount')}: ${opsStatus?.conversations?.today ?? convStats?.today ?? document.getElementById('sTotal').textContent}; ${t('total')}: ${opsStatus?.conversations?.total ?? convStats?.total ?? '-'}.`;
-      } else if (text.includes('error') || text.includes('异常') || text.includes('错误')) {
+      } else if (text.includes('error') || text.includes('異常') || text.includes('錯誤')) {
         const alerts = (opsDiag?.items || []).filter(x => x.status !== 'ok');
-        return alerts.length ? alerts.map(x => `${x.title}: ${x.advice}`).join('\n') : `当前筛选日志内 ERROR 数：${document.getElementById('sErrors').textContent}。`;
-      } else if (text.includes('mary') || text.includes('瑪') || text.includes('小马') || text.includes('小瑪')) {
+        return alerts.length ? alerts.map(x => `${x.title}: ${x.advice}`).join('\n') : `當前篩選日誌內 ERROR 數：${document.getElementById('sErrors').textContent}。`;
+      } else if (text.includes('mary') || text.includes('瑪') || text.includes('小馬') || text.includes('小瑪')) {
         return t('maryPath');
-      } else if (text.includes('restart') || text.includes('重启')) {
+      } else if (text.includes('restart') || text.includes('重啓')) {
         return t('readonlyRestart');
       } else {
         return t('canAnswer');
@@ -1535,8 +1710,8 @@
       const offset = (convPage - 1) * convPageSize;
       document.getElementById('updTime').textContent = lang === 'en' ? 'Refreshing...' : '刷新中...';
       try {
-        const [convAnalyticsRes, convPageRes, statsRes, statusRes, diagRes] = await Promise.all([
-          fetchJson(`/api/conversations/analytics?start=${encodeURIComponent(s)}&end=${encodeURIComponent(e)}`),
+        const [convSampleRes, convPageRes, statsRes, statusRes, diagRes] = await Promise.all([
+          fetchJson(`/api/conversations?limit=2000&start=${encodeURIComponent(s)}&end=${encodeURIComponent(e)}`),
           fetchJson(`/api/conversations?limit=${convPageSize}&offset=${offset}&start=${encodeURIComponent(s)}&end=${encodeURIComponent(e)}`),
           fetchJson('/api/conversations/stats'),
           fetchJson('/api/ops/status', true),
@@ -1549,27 +1724,27 @@
         }
         opsStatus = statusRes; opsDiag = diagRes; convStats = statsRes;
         rawLogs = diagRes?.logs || rawLogs || '';
-        if (!rawLogs && !document.getElementById('opsCode').value.trim()) {
+        if (!rawLogs) {
           const logsRes = await fetchJson('/api/logs?lines=1000');
           rawLogs = logsRes?.logs || '';
         }
         const logParsed = parseLogs(filterLogs(rawLogs, s, e));
-        const convParsed = parseAnalytics(convAnalyticsRes);
+        const convParsed = parseConvs(convSampleRes, s, e);
         const statChars = rangeType === 'all' ? (convStats?.per_character || {}) : {};
-        renderStats(logParsed, convParsed, convAnalyticsRes?.total);
+        renderStats(logParsed, convParsed, convSampleRes?.total);
         renderCharCht(mergeCounts(mergeCounts(logParsed.charCount, convParsed.charCount), statChars));
         renderDailyCht(mergeCounts(logParsed.daily, convParsed.daily));
         renderHourCht(convParsed.hourly.some(Boolean) ? convParsed.hourly : logParsed.hourly);
         renderLateCht(convParsed.lats.length ? convParsed.lats : logParsed.lats);
         renderOps(statusRes, diagRes);
         renderLogs();
-        lastConvAnalyticsData = convAnalyticsRes;
+        lastConvSampleData = convSampleRes;
         lastConvData = convPageRes;
         lastConvRows = convPageRes?.conversations || [];
         renderConvs(convPageRes, lastConvRows);
         document.getElementById('updTime').textContent = fmtTime();
       } catch (err) {
-        document.getElementById('updTime').textContent = lang === 'en' ? 'Load failed' : '加载失败';
+        document.getElementById('updTime').textContent = lang === 'en' ? 'Load failed' : '加載失敗';
         console.error(err);
       }
     }
@@ -1663,6 +1838,239 @@
     document.getElementById('chatFab').addEventListener('click', () => document.getElementById('chatPanel').classList.toggle('open'));
     document.getElementById('chatClose').addEventListener('click', () => document.getElementById('chatPanel').classList.remove('open'));
     window.addEventListener('resize', () => [cCht,dCht,hCht,lCht,tokenCht].forEach(c => c && c.resize()));
+    // ── 分頁切換 ─────────────────────────────
+    function switchTab(name) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === name));
+      document.querySelectorAll('.tabpanel').forEach(p => { p.hidden = p.dataset.panel !== name; });
+      try { localStorage.setItem('dh_ops_tab', name); } catch (_) {}
+      if (name === 'users') loadAccounts();
+      if (name === 'ops') [cCht, dCht, hCht, lCht, tokenCht].forEach(c => c && c.resize());
+    }
+    document.querySelectorAll('.tab').forEach(t => {
+      t.addEventListener('click', () => switchTab(t.dataset.tab));
+    });
+
+    // ── 用戶管理 ─────────────────────────────
+    const ROLE_PILL = { trial: 'pill-trial', premium: 'pill-premium', admin: 'pill-admin' };
+    const ROLE_TEXT = { trial: '體驗', premium: '高級', admin: '管理員' };
+
+    async function acctFetch(url, options) {
+      const r = await fetch(url, Object.assign({}, options, {
+        headers: authHeaders(Object.assign({ 'Content-Type': 'application/json' }, (options || {}).headers)),
+      }));
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(typeof d.detail === 'object' ? JSON.stringify(d.detail) : (d.detail || `HTTP ${r.status}`));
+      return d;
+    }
+
+    function quotaCell(a) {
+      if (a.quota_limit === -1) return '<span class="qtext" style="color:var(--accent-dark)">∞ 不限</span>';
+      const out = a.quota_left <= 0;
+      const pct = a.quota_limit > 0 ? Math.min(100, (a.quota_used / a.quota_limit) * 100) : 0;
+      return `<div class="qtext${out ? ' out' : ''}">${a.quota_used} / ${a.quota_limit}${out ? ' · 已用盡' : ''}</div>
+              <div class="qbar${out ? ' full' : ''}"><i style="width:${pct}%"></i></div>`;
+    }
+
+    function renderAccounts(list) {
+      const box = document.getElementById('acctTable');
+      if (!list.length) { box.innerHTML = '<div class="empty">沒有匹配的帳號</div>'; return; }
+      box.innerHTML = `<table class="acct-tbl">
+        <thead><tr>
+          <th>帳號</th><th>角色</th><th>狀態</th><th>對話額度</th><th>最後登錄</th><th>備註</th><th style="text-align:right">操作</th>
+        </tr></thead><tbody>${list.map(a => `
+          <tr>
+            <td><div class="acct-name">${escapeHtml(a.username)}</div>${a.display_name ? `<div class="acct-sub">${escapeHtml(a.display_name)}</div>` : ''}</td>
+            <td><span class="pill ${ROLE_PILL[a.role] || 'pill-trial'}">${ROLE_TEXT[a.role] || escapeHtml(a.role)}</span></td>
+            <td><span class="pill ${a.status === 'active' ? 'pill-on' : 'pill-off'}">${a.status === 'active' ? '啓用' : '停用'}</span></td>
+            <td>${quotaCell(a)}</td>
+            <td class="qtext" style="color:var(--text2)">${a.last_login_at ? fmtRecordTime(a.last_login_at) : '—'}</td>
+            <td style="color:var(--text3);font-size:12.5px">${escapeHtml(a.note || '—')}</td>
+            <td><div class="row-acts">
+              ${a.role === 'trial' ? `<button class="btn-mini go" data-act="upgrade" data-u="${escapeHtml(a.username)}">升級</button>` : ''}
+              ${a.quota_limit !== -1 ? `<button class="btn-mini" data-act="reset" data-u="${escapeHtml(a.username)}">清零</button>` : ''}
+              <button class="btn-mini" data-act="pw" data-u="${escapeHtml(a.username)}">密碼</button>
+              <button class="btn-mini" data-act="toggle" data-u="${escapeHtml(a.username)}" data-s="${a.status}">${a.status === 'active' ? '停用' : '啓用'}</button>
+              <button class="btn-mini danger" data-act="del" data-u="${escapeHtml(a.username)}">刪除</button>
+            </div></td>
+          </tr>`).join('')}</tbody></table>`;
+      box.querySelectorAll('.btn-mini').forEach(b => b.addEventListener('click', () => acctAction(b.dataset.act, b.dataset.u, b.dataset.s)));
+    }
+
+    function renderRequests(reqs) {
+      const box = document.getElementById('reqBox');
+      const list = document.getElementById('reqList');
+      const badge = document.getElementById('tabUsersBadge');
+      const pending = reqs.filter(r => r.status === 'pending');
+      badge.textContent = pending.length || '';
+      badge.dataset.count = pending.length;
+      box.hidden = !pending.length;
+      if (!pending.length) return;
+      list.innerHTML = pending.map(r => `
+        <div class="req-row">
+          <div><div class="acct-name">${escapeHtml(r.username)}</div><div class="acct-sub">${fmtRecordTime(r.requested_at)}</div></div>
+          <div class="req-msg">${escapeHtml(r.message || '（無留言）')}</div>
+          <input class="search req-grant" type="number" min="1" value="20" id="grant-${r.id}">
+          <button class="btn-primary" data-req="${r.id}" data-do="approve">批准</button>
+          <button class="btn-mini danger" data-req="${r.id}" data-do="reject">拒絕</button>
+        </div>`).join('');
+      list.querySelectorAll('[data-req]').forEach(b => b.addEventListener('click', async () => {
+        const id = b.dataset.req;
+        const grant = parseInt((document.getElementById('grant-' + id) || {}).value || '20', 10);
+        b.disabled = true;
+        try {
+          await acctFetch(`/api/admin/quota-requests/${id}`, { method: 'POST', body: JSON.stringify({ action: b.dataset.do, grant }) });
+          loadAccounts();
+        } catch (e) { alert('處理失敗：' + e.message); b.disabled = false; }
+      }));
+    }
+
+    async function loadAccounts() {
+      if (!SESSION || SESSION.role !== 'admin') return;
+      const q = document.getElementById('acctSearch').value.trim();
+      const role = document.getElementById('acctRole').value;
+      const status = document.getElementById('acctStatus').value;
+      try {
+        const [accts, stats, reqs] = await Promise.all([
+          acctFetch(`/api/admin/accounts?q=${encodeURIComponent(q)}&role=${role}&status=${status}`),
+          acctFetch('/api/admin/stats'),
+          acctFetch('/api/admin/quota-requests'),
+        ]);
+        renderAccounts(accts.accounts || []);
+        renderRequests(reqs.requests || []);
+        document.getElementById('aTotal').textContent = stats.total ?? '-';
+        document.getElementById('aTrial').textContent = stats.by_role?.trial ?? '-';
+        document.getElementById('aPremium').textContent = stats.by_role?.premium ?? '-';
+        document.getElementById('aSessions').textContent = stats.active_sessions ?? '-';
+        document.getElementById('aExhausted').textContent = stats.quota_exhausted ?? '-';
+      } catch (e) {
+        document.getElementById('acctTable').innerHTML = `<div class="empty">加載失敗：${escapeHtml(e.message)}</div>`;
+      }
+    }
+
+    // ── 帳號操作 ─────────────────────────────
+    const modalBack = document.getElementById('acctModalBack');
+    let modalSave = null;
+    function openModal(title, bodyHtml, onSave) {
+      document.getElementById('acctModalTitle').textContent = title;
+      document.getElementById('acctModalBody').innerHTML = bodyHtml;
+      modalSave = onSave;
+      modalBack.hidden = false;
+    }
+    function closeModal() { modalBack.hidden = true; modalSave = null; }
+    document.getElementById('acctModalClose').addEventListener('click', closeModal);
+    document.getElementById('acctCancel').addEventListener('click', closeModal);
+    modalBack.addEventListener('click', e => { if (e.target === modalBack) closeModal(); });
+    document.getElementById('acctSave').addEventListener('click', async () => {
+      if (!modalSave) return;
+      const btn = document.getElementById('acctSave');
+      btn.disabled = true;
+      try { await modalSave(); closeModal(); loadAccounts(); }
+      catch (e) { alert('操作失敗：' + e.message); }
+      finally { btn.disabled = false; }
+    });
+
+    document.getElementById('btnNewAcct').addEventListener('click', () => {
+      openModal('新建帳號', `
+        <div class="fld"><label>帳號</label><input id="mUser" placeholder="登錄用的用戶名"></div>
+        <div class="fld"><label>密碼</label><input id="mPass" type="text" placeholder="至少 6 位"></div>
+        <div class="fld"><label>顯示名稱</label><input id="mName" placeholder="選填"></div>
+        <div class="fld"><label>角色</label><select id="mRole">
+          <option value="trial">體驗 — 有限額度</option>
+          <option value="premium">高級 — 不限次數、可創建角色</option>
+          <option value="admin">管理員 — 全部權限</option>
+        </select></div>
+        <div class="fld"><label>對話額度</label><input id="mQuota" type="number" value="20">
+          <span class="hint">高級／管理員填 -1 表示不限</span></div>
+        <div class="fld"><label>備註</label><input id="mNote" placeholder="選填"></div>`,
+        async () => {
+          const role = document.getElementById('mRole').value;
+          await acctFetch('/api/admin/accounts', { method: 'POST', body: JSON.stringify({
+            username: document.getElementById('mUser').value.trim(),
+            password: document.getElementById('mPass').value,
+            display_name: document.getElementById('mName').value.trim(),
+            role,
+            quota_limit: parseInt(document.getElementById('mQuota').value, 10),
+            note: document.getElementById('mNote').value.trim(),
+          })});
+        });
+    });
+
+    async function acctAction(act, username, status) {
+      if (act === 'pw') {
+        openModal(`重設密碼 — ${username}`, `
+          <div class="fld"><label>新密碼</label><input id="mPw" type="text" placeholder="至少 6 位"></div>`,
+          async () => acctFetch(`/api/admin/accounts/${encodeURIComponent(username)}/password`, {
+            method: 'POST', body: JSON.stringify({ password: document.getElementById('mPw').value }) }));
+        return;
+      }
+      if (act === 'del') {
+        if (!confirm(`確定刪除帳號 ${username}？此操作不可撤銷。`)) return;
+        try { await acctFetch(`/api/admin/accounts/${encodeURIComponent(username)}`, { method: 'DELETE' }); loadAccounts(); }
+        catch (e) { alert('刪除失敗：' + e.message); }
+        return;
+      }
+      try {
+        if (act === 'reset') {
+          await acctFetch(`/api/admin/accounts/${encodeURIComponent(username)}/quota/reset`, { method: 'POST' });
+        } else if (act === 'upgrade') {
+          await acctFetch(`/api/admin/accounts/${encodeURIComponent(username)}`, {
+            method: 'POST', body: JSON.stringify({ role: 'premium', quota_limit: -1 }) });
+        } else if (act === 'toggle') {
+          await acctFetch(`/api/admin/accounts/${encodeURIComponent(username)}`, {
+            method: 'POST', body: JSON.stringify({ status: status === 'active' ? 'disabled' : 'active' }) });
+        }
+        loadAccounts();
+      } catch (e) { alert('操作失敗：' + e.message); }
+    }
+
+    let acctTimer = null;
+    ['acctSearch', 'acctRole', 'acctStatus'].forEach(id => {
+      document.getElementById(id).addEventListener('input', () => {
+        clearTimeout(acctTimer);
+        acctTimer = setTimeout(loadAccounts, 250);
+      });
+    });
+
+    // ── 登錄守衛：管理平臺只對管理員開放 ──
+    function gotoLogin() {
+      try {
+        localStorage.removeItem('dh_session_token');
+        localStorage.removeItem('dh_session_user');
+      } catch (_) {}
+      location.replace('/login.html?next=' + encodeURIComponent(location.pathname));
+    }
+
+    (async function initSession() {
+      if (!SESSION_TOKEN) { gotoLogin(); return; }
+      try {
+        const d = await fetch('/api/auth/session', { headers: authHeaders() }).then(r => r.json());
+        if (!d.authenticated || d.role !== 'admin') { gotoLogin(); return; }
+        SESSION = d;
+        document.getElementById('tabUsers').hidden = false;
+        renderOperator(d);
+        let saved = '';
+        try { saved = localStorage.getItem('dh_ops_tab') || ''; } catch (_) {}
+        if (saved === 'users') switchTab('users');
+        else loadAccounts();   // 先拉一次，讓待處理角標出現
+      } catch (_) { gotoLogin(); }
+    })();
+
+    // 頂欄顯示當前管理員 + 登出
+    function renderOperator(d) {
+      const right = document.querySelector('.topbar-right');
+      if (!right || document.getElementById('opBar')) return;
+      const box = document.createElement('div');
+      box.id = 'opBar';
+      box.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text2);margin-right:2px;';
+      box.innerHTML = `<span>${escapeHtml(d.display_name || d.username)}</span>
+        <button class="btn btn-ghost" id="opLogout" type="button">登出</button>`;
+      right.insertBefore(box, right.firstChild);
+      document.getElementById('opLogout').addEventListener('click', async () => {
+        try { await fetch('/api/auth/logout', { method: 'POST', headers: authHeaders() }); } catch (_) {}
+        gotoLogin();
+      });
+    }
+
     applyTheme(false);
     applyLanguage();
     refreshAll();

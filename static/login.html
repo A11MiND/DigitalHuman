@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登入 — 數字人殿堂</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏛️</text></svg>">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --ink:        #3d3028;
+    --ink-soft:   #5a4a38;
+    --ink-mute:   #9a8a7a;
+    --paper:      #ece9e5;
+    --paper-warm: #f4f1ec;
+    --gold:       #c9a84c;
+    --bronze:     #8a6d3b;
+    --danger:     #c8322d;
+    --ok:         #5a9e4b;
+  }
+
+  html {
+    min-height: 100%;
+    background: var(--paper);
+  }
+
+  body {
+    min-height: 100vh;
+    font-family: -apple-system, "PingFang HK", "Microsoft JhengHei", sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* 背景：宣纸质感 + 一层极淡的朱印色晕染 */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 60% 45% at 18% 12%, rgba(201,168,76,0.13), transparent 65%),
+      radial-gradient(ellipse 55% 50% at 85% 88%, rgba(138,109,59,0.10), transparent 65%),
+      linear-gradient(160deg, #f1eee9 0%, #e8e4de 100%);
+    z-index: -2;
+  }
+  /* 极细的纸纹 */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(61,48,40,0.014) 0 1px, transparent 1px 3px),
+      repeating-linear-gradient(90deg, rgba(61,48,40,0.014) 0 1px, transparent 1px 3px);
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  .card {
+    width: 100%;
+    max-width: 400px;
+    background: rgba(255,255,255,0.72);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.75);
+    border-radius: 22px;
+    padding: 40px 32px 32px;
+    box-shadow:
+      0 20px 50px rgba(61,48,40,0.11),
+      0 2px 8px rgba(61,48,40,0.05);
+    animation: rise 0.5s cubic-bezier(0.2, 0.9, 0.3, 1);
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  /* ── 标题 ── */
+  .brand { text-align: center; margin-bottom: 30px; }
+  .seal {
+    width: 54px; height: 54px;
+    margin: 0 auto 16px;
+    border-radius: 13px;
+    background: linear-gradient(145deg, var(--gold), var(--bronze));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 27px;
+    box-shadow: 0 6px 18px rgba(138,109,59,0.32);
+  }
+  .brand h1 {
+    font-size: 25px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    margin-bottom: 7px;
+  }
+  .brand p {
+    font-size: 12.5px;
+    color: var(--ink-mute);
+    letter-spacing: 1.4px;
+  }
+
+  /* ── 表单 ── */
+  .field { margin-bottom: 17px; }
+  .field label {
+    display: block;
+    font-size: 12px;
+    color: var(--ink-mute);
+    letter-spacing: 1.1px;
+    margin-bottom: 7px;
+  }
+  .field input {
+    width: 100%;
+    padding: 13px 15px;
+    border: 1px solid rgba(61,48,40,0.13);
+    border-radius: 12px;
+    background: rgba(255,255,255,0.85);
+    font-size: 15px;
+    color: var(--ink);
+    font-family: inherit;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .field input:focus {
+    outline: none;
+    border-color: var(--gold);
+    box-shadow: 0 0 0 3px rgba(201,168,76,0.16);
+  }
+  .field input::placeholder { color: #bcb0a4; }
+
+  .pw-wrap { position: relative; }
+  .pw-toggle {
+    position: absolute;
+    right: 6px; top: 50%;
+    transform: translateY(-50%);
+    background: none; border: none;
+    padding: 8px 10px;
+    font-size: 15px;
+    cursor: pointer;
+    opacity: 0.5;
+    line-height: 1;
+  }
+  .pw-toggle:hover { opacity: 0.85; }
+
+  .btn-primary {
+    width: 100%;
+    padding: 14px;
+    margin-top: 8px;
+    border: none;
+    border-radius: 12px;
+    background: linear-gradient(145deg, #4a3828, var(--ink));
+    color: #f4f1ec;
+    font-size: 15px;
+    font-weight: 500;
+    letter-spacing: 2.5px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.2s, opacity 0.2s;
+    box-shadow: 0 5px 16px rgba(61,48,40,0.24);
+  }
+  .btn-primary:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 22px rgba(61,48,40,0.3);
+  }
+  .btn-primary:active:not(:disabled) { transform: translateY(0); }
+  .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+
+  /* ── 提示条 ── */
+  .msg {
+    display: none;
+    padding: 11px 14px;
+    border-radius: 11px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    margin-bottom: 17px;
+  }
+  .msg.show { display: block; animation: shake 0.32s; }
+  .msg.error {
+    background: rgba(200,50,45,0.09);
+    border: 1px solid rgba(200,50,45,0.22);
+    color: #9e2622;
+  }
+  .msg.ok {
+    background: rgba(90,158,75,0.11);
+    border: 1px solid rgba(90,158,75,0.26);
+    color: #3f7534;
+    animation: none;
+  }
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+  }
+
+  /* ── 底部说明 ── */
+  .foot {
+    margin-top: 26px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(61,48,40,0.09);
+    text-align: center;
+  }
+  .foot p {
+    font-size: 12.5px;
+    color: var(--ink-mute);
+    line-height: 1.75;
+  }
+  .foot .tiers {
+    display: flex;
+    gap: 9px;
+    margin-top: 14px;
+  }
+  .tier {
+    flex: 1;
+    padding: 11px 8px;
+    border-radius: 11px;
+    background: rgba(61,48,40,0.035);
+    border: 1px solid rgba(61,48,40,0.06);
+  }
+  .tier .t-name {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.8px;
+    margin-bottom: 3px;
+  }
+  .tier .t-desc { font-size: 11px; color: var(--ink-mute); line-height: 1.5; }
+  .tier.trial .t-name { color: var(--bronze); }
+  .tier.premium .t-name { color: var(--gold); }
+
+  .spin {
+    display: inline-block;
+    width: 13px; height: 13px;
+    border: 2px solid rgba(244,241,236,0.35);
+    border-top-color: #f4f1ec;
+    border-radius: 50%;
+    animation: spin 0.65s linear infinite;
+    vertical-align: -2px;
+    margin-right: 7px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (max-width: 420px) {
+    .card { padding: 32px 22px 26px; border-radius: 18px; }
+    .brand h1 { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="brand">
+    <div class="seal">🏛️</div>
+    <h1>數字人殿堂</h1>
+    <p>DIGITAL HUMAN PALACE</p>
+  </div>
+
+  <div class="msg" id="msg"></div>
+
+  <form id="loginForm" autocomplete="on">
+    <div class="field">
+      <label for="username">帳號</label>
+      <input type="text" id="username" name="username" placeholder="請輸入帳號"
+             autocomplete="username" autocapitalize="none" spellcheck="false" required>
+    </div>
+
+    <div class="field">
+      <label for="password">密碼</label>
+      <div class="pw-wrap">
+        <input type="password" id="password" name="password" placeholder="請輸入密碼"
+               autocomplete="current-password" required>
+        <button type="button" class="pw-toggle" id="pwToggle" aria-label="顯示密碼">👁</button>
+      </div>
+    </div>
+
+    <button type="submit" class="btn-primary" id="submitBtn">登 入</button>
+  </form>
+
+  <div class="foot">
+    <p>帳號由管理員統一開通，如需開通請聯繫管理員</p>
+    <div class="tiers">
+      <div class="tier trial">
+        <div class="t-name">體驗帳戶</div>
+        <div class="t-desc">20 次對話</div>
+      </div>
+      <div class="tier premium">
+        <div class="t-name">高級帳戶</div>
+        <div class="t-desc">全套服務 · 不限次數</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const msgEl = $('msg');
+
+function showMsg(text, kind = 'error') {
+  msgEl.textContent = text;
+  msgEl.className = `msg show ${kind}`;
+}
+function clearMsg() { msgEl.className = 'msg'; }
+
+// 已登录就直接进主站，不用重复登录
+(async function checkExisting() {
+  let token = '';
+  try { token = localStorage.getItem('dh_session_token') || ''; } catch (_) {}
+  if (!token) return;
+  try {
+    const r = await fetch('/api/auth/session', { headers: { 'X-Session-Token': token } });
+    const d = await r.json();
+    if (d.authenticated) location.replace(nextTarget(d));
+  } catch (_) {}
+})();
+
+function nextTarget(session) {
+  const params = new URLSearchParams(location.search);
+  const next = params.get('next');
+  // 只接受站内相对路径，避免开放重定向
+  if (next && next.startsWith('/') && !next.startsWith('//')) return next;
+  // 管理员直接进管理平台（运维 + 用户管理），普通用户进殿堂
+  return session.role === 'admin' ? '/ops.html' : '/index.html';
+}
+
+$('pwToggle').addEventListener('click', () => {
+  const pw = $('password');
+  const show = pw.type === 'password';
+  pw.type = show ? 'text' : 'password';
+  $('pwToggle').textContent = show ? '🙈' : '👁';
+  pw.focus();
+});
+
+$('loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  clearMsg();
+
+  const username = $('username').value.trim();
+  const password = $('password').value;
+  if (!username || !password) { showMsg('請填寫帳號和密碼'); return; }
+
+  const btn = $('submitBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>登入中';
+
+  try {
+    const r = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const d = await r.json();
+
+    if (!r.ok) {
+      showMsg(typeof d.detail === 'string' ? d.detail : '登入失敗，請重試');
+      btn.disabled = false;
+      btn.textContent = '登 入';
+      return;
+    }
+
+    try {
+      localStorage.setItem('dh_session_token', d.token);
+      localStorage.setItem('dh_session_user', JSON.stringify({
+        username: d.username,
+        display_name: d.display_name,
+        role: d.role,
+        features: d.features
+      }));
+    } catch (_) {}
+
+    const left = d.quota_limit === -1 ? '不限次數' : `剩餘 ${d.quota_left} 次對話`;
+    showMsg(`歡迎回來，${d.display_name} · ${left}`, 'ok');
+    setTimeout(() => location.replace(nextTarget(d)), 480);
+
+  } catch (err) {
+    showMsg('無法連接伺服器，請檢查網絡');
+    btn.disabled = false;
+    btn.textContent = '登 入';
+  }
+});
+
+$('username').focus();
+</script>
+
+</body>
+</html>

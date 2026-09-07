@@ -437,9 +437,12 @@
       <div class="wizard-steps" id="wizardSteps"></div>
 
       <section class="wizard-panel active" data-step="0">
-        <div class="field">
+        <div class="field" id="apiKeyField">
           <label>MiniMax API Key</label>
           <input id="wizApiKey" type="password" placeholder="sk-...">
+        </div>
+        <div class="status-line" id="serverKeyNote" style="display:none;">
+          已使用平台配置的 MiniMax 服務，無需填寫 API Key
         </div>
         <button class="wiz-btn primary" id="btnTestKey">測試 MiniMax Key</button>
         <div class="status-line" id="keyStatus"></div>
@@ -563,6 +566,62 @@ let userName = '';
 try { userCode = localStorage.getItem('dh_user_code') || ''; } catch(_) {}
 try { userName = localStorage.getItem('dh_user_name') || ''; } catch(_) {}
 
+// ── 帳戶會話（新帳號體系）──
+let SESSION_TOKEN = '';
+let SESSION = null;
+try { SESSION_TOKEN = localStorage.getItem('dh_session_token') || ''; } catch(_) {}
+
+function gotoLogin() {
+  try {
+    localStorage.removeItem('dh_session_token');
+    localStorage.removeItem('dh_session_user');
+  } catch(_) {}
+  location.replace('/login.html?next=' + encodeURIComponent(location.pathname + location.search));
+}
+
+if (!SESSION_TOKEN) gotoLogin();
+
+(async function verifySession() {
+  if (!SESSION_TOKEN) return;
+  try {
+    const r = await fetch('/api/auth/session', { headers: { 'X-Session-Token': SESSION_TOKEN } });
+    const d = await r.json();
+    if (!d.authenticated) { gotoLogin(); return; }
+    SESSION = d;
+    // 高級／管理員帳戶無需再輸邀請碼即可創建角色
+    if (d.features && d.features.create_character) {
+      userName = d.display_name || d.username;
+    }
+    renderSessionBar(d);
+  } catch(_) {}
+})();
+
+function renderSessionBar(d) {
+  let bar = document.getElementById('sessionBar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'sessionBar';
+    bar.style.cssText = 'position:fixed;top:12px;right:14px;z-index:400;display:flex;gap:8px;align-items:center;' +
+      'background:rgba(255,255,255,0.62);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);' +
+      'border:1px solid rgba(255,255,255,0.4);border-radius:20px;padding:6px 13px;font-size:12px;color:#4a3828;';
+    document.body.appendChild(bar);
+  }
+  const quota = d.quota_limit === -1
+    ? '<span style="color:#8a6a13;font-weight:600">✦ 高級帳戶</span>'
+    : `體驗 <b style="color:${d.quota_left <= 5 ? '#c8322d' : '#4a3828'}">${d.quota_left}</b>/${d.quota_limit}`;
+  bar.innerHTML =
+    `<span>${d.display_name || d.username}</span><span style="opacity:.35">·</span>${quota}` +
+    (d.features && d.features.admin_console
+      ? '<a href="/ops.html" style="color:#8a6d3b;text-decoration:none;margin-left:4px">後台</a>' : '') +
+    '<a href="#" id="sbLogout" style="color:#9a8a7a;text-decoration:none;margin-left:4px">登出</a>';
+  const lo = document.getElementById('sbLogout');
+  if (lo) lo.onclick = async e => {
+    e.preventDefault();
+    try { await fetch('/api/auth/logout', { method: 'POST', headers: { 'X-Session-Token': SESSION_TOKEN } }); } catch(_) {}
+    gotoLogin();
+  };
+}
+
 async function verifyCode(code) {
   const res = await fetch('/api/auth/verify', {
     method: 'POST',
@@ -673,7 +732,8 @@ async function loadCharacters() {
     const imp = document.createElement('div');
     imp.className = 'card-import';
     imp.onclick = async () => {
-      if (userCode) {
+      // 高級／管理員帳戶的「全套服務」已含創建角色，不再要求邀請碼
+      if (canCreateWithSession() || userCode) {
         openWizard();
       } else {
         const code = prompt('請輸入邀請碼：');
@@ -720,6 +780,14 @@ const wizardSteps = document.getElementById('wizardSteps');
 let wizardStep = 0;
 let sessionMiniMaxKey = '';
 let keyValidated = false;
+
+// 高級／管理員帳戶：後端已按帳戶備好 Key，前端無需手填也拿不到 Key 值
+function canCreateWithSession() {
+  return !!(SESSION && SESSION.features && SESSION.features.create_character);
+}
+function usesServerKey() {
+  return !!(SESSION && SESSION.features && SESSION.features.server_key);
+}
 let createState = {
   promptJobId: '',
   systemPrompt: '',
@@ -763,17 +831,35 @@ function clampKnowledgeInput() {
 }
 
 function headersJson() {
-  const h = {
-    'Content-Type': 'application/json',
-    'X-MiniMax-API-Key': sessionMiniMaxKey,
-  };
+  const h = { 'Content-Type': 'application/json' };
+  // 不帶此 header 時後端按帳戶回退到服務端 Key；Key 值不會出現在前端
+  if (sessionMiniMaxKey) h['X-MiniMax-API-Key'] = sessionMiniMaxKey;
   if (userCode) h['X-User-Code'] = userCode;
+  if (SESSION_TOKEN) h['X-Session-Token'] = SESSION_TOKEN;
   return h;
 }
 
 function openWizard() {
+  applyKeyMode();
   wizardOverlay.classList.add('open');
   showWizardStep(0);
+}
+
+// 依帳戶決定第 0 步的形態：平台備好 Key 時只留連結穩定性測試
+function applyKeyMode() {
+  const serverKey = usesServerKey();
+  const field = $('apiKeyField');
+  const note = $('serverKeyNote');
+  const btn = $('btnTestKey');
+  if (field) field.style.display = serverKey ? 'none' : '';
+  if (note) note.style.display = serverKey ? '' : 'none';
+  if (btn) btn.textContent = serverKey ? '測試連結穩定性' : '測試 MiniMax Key';
+  if (serverKey) {
+    sessionMiniMaxKey = '';
+    const input = $('wizApiKey');
+    if (input) input.value = '';
+    setStatus('wizardSubtitle', '使用平台配置的 MiniMax 服務');
+  }
 }
 
 function closeWizard() {
@@ -790,6 +876,17 @@ function showWizardStep(step) {
 
 function requireKey() {
   sessionMiniMaxKey = $('wizApiKey').value.trim();
+  if (!sessionMiniMaxKey && usesServerKey()) {
+    // 服務端已備好 Key，只要求先做一次連結穩定性測試
+    if (!keyValidated) {
+      setStatus('keyStatus', '請先測試連結穩定性，確認可用後再下一步', true);
+      setStatus('wizardSubtitle', '尚未測試連結穩定性', true);
+      showWizardStep(0);
+      return false;
+    }
+    setStatus('wizardSubtitle', '使用平台配置的 MiniMax 服務');
+    return true;
+  }
   if (!sessionMiniMaxKey) {
     setStatus('wizardSubtitle', '請先填寫 MiniMax API Key（只保存於本頁面會話）', true);
     showWizardStep(0);
@@ -859,19 +956,20 @@ $('wizApiKey').addEventListener('input', () => {
 $('btnTestKey').onclick = async () => {
   const btn = $('btnTestKey');
   sessionMiniMaxKey = $('wizApiKey').value.trim();
-  if (!sessionMiniMaxKey) {
+  const serverKey = !sessionMiniMaxKey && usesServerKey();
+  if (!sessionMiniMaxKey && !serverKey) {
     setStatus('keyStatus', '請先填寫 MiniMax API Key', true);
     return;
   }
   setBusy(btn, true, '測試中...');
-  setStatus('keyStatus', '正在用 MiniMax 做一次輕量文本測試...');
+  setStatus('keyStatus', serverKey ? '正在測試與 MiniMax 的連結穩定性...' : '正在用 MiniMax 做一次輕量文本測試...');
   try {
     const res = await fetch('/api/create/test-key', { method: 'POST', headers: headersJson() });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || 'MiniMax Key 測試失敗'));
+    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || 'MiniMax 連結測試失敗'));
     keyValidated = true;
-    setStatus('keyStatus', `測試通過，延遲 ${data.latency_ms}ms`);
-    setStatus('wizardSubtitle', 'API Key 已測試通過，刷新後會丟失');
+    setStatus('keyStatus', `連結正常，延遲 ${data.latency_ms}ms`);
+    setStatus('wizardSubtitle', data.server_key ? '使用平台配置的 MiniMax 服務' : 'API Key 已測試通過，刷新後會丟失');
   } catch (e) {
     keyValidated = false;
     setStatus('keyStatus', e.message, true);
@@ -905,6 +1003,7 @@ knowledgeInput.onchange = async () => {
   try {
     const h = {};
     if (userCode) h['X-User-Code'] = userCode;
+  if (SESSION_TOKEN) h['X-Session-Token'] = SESSION_TOKEN;
     const res = await fetch('/api/create/knowledge', { method: 'POST', body: form, headers: h });
     const data = await res.json();
     if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || '知識庫提取失敗'));
@@ -1107,6 +1206,7 @@ fileInput.onchange = async () => {
   try {
     const h = {};
     if (userCode) h['X-User-Code'] = userCode;
+  if (SESSION_TOKEN) h['X-Session-Token'] = SESSION_TOKEN;
     const res = await fetch('/api/characters/import', { method: 'POST', body: form, headers: h });
     if (res.ok) { loadCharacters(); }
     else { const e = await res.json(); alert('導入失敗: ' + (e.detail || '未知錯誤')); }

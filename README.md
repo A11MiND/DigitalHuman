@@ -34,12 +34,15 @@
 - **数据看板**：`/dashboard.html` 展示对话量、角色热度、时段分布和响应延迟。
 - **运维平台**：`/ops` 聚合服务状态、资源监控、异常诊断、实时日志、对话记录导出和只读运维助手。
 - **双语界面**：运维平台支持中文 / English 切换。
+- **账号与额度**：体验帐户 20 次对话额度，用尽弹出升级引导并可申请追加；高级帐户不限次数、可用全套服务；账号统一由管理员后台开通与管理。详见 [`docs/account-system.md`](docs/account-system.md)。
 
 ### 运维入口
 
 | 入口 | 说明 |
 | --- | --- |
-| `/` | 数字人主站 |
+| `/login.html` | 登录页（体验帐户 / 高级帐户） |
+| `/admin.html` | 管理员后台：账号、额度、申请审批 |
+| `/` | 数字人主站（需登录） |
 | `/dashboard.html` | 数据看板 |
 | `/logs` | 实时日志查看器 |
 | `/ops` | 合并后的运维平台 |
@@ -84,6 +87,12 @@ http://localhost:8080/ops
 | `MINIMAX_API_KEY` | 是 | MiniMax API Key，用于 LLM、TTS、图像和视频生成 |
 | `MINIMAX_TOKEN_PLAN_API_KEY` | 否 | MiniMax Token Plan 查询 Key，用于 `/api/ops/token-plan` |
 | `USER_CODES` | 否 | 用户码配置，格式为 `name:code,name2:code2` |
+| `MINIMAX_REGION` | 否 | Key 所属区域：`cn`（api.minimaxi.com，默认）或 `global`（api.minimax.io）。区域必须与 Key 配对 |
+| `PREMIUM_API_KEY` | 否 | 高级用户使用的服务 Key，留空则回退到 `MINIMAX_API_KEY` |
+| `PREMIUM_MINIMAX_REGION` | 否 | 高级 Key 所属区域，留空则跟随 `MINIMAX_REGION` |
+| `TRIAL_QUOTA` | 否 | 体验帐户默认对话额度，默认 20 |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 否 | 首次启动创建的管理员账号；未配置密码则随机生成并在日志打印一次 |
+| `SESSION_TTL_DAYS` | 否 | 登录会话有效期天数，默认 7 |
 | `PYTHONUNBUFFERED` | 否 | 部署时建议设为 `1`，方便日志实时输出 |
 
 不要把 `.env`、数据库、日志、服务器密钥或邮件密码提交到 Git。
@@ -125,6 +134,11 @@ http://localhost:8080/ops
 | `/api/ops/token-plan` | GET | MiniMax Token Plan 用量查询 |
 | `/api/ops/export/logs` | GET | 导出日志 |
 | `/api/ops/export/conversations` | GET | 导出聊天记录 |
+| `/api/auth/login` | POST | 账号登录，返回会话令牌 |
+| `/api/auth/session` | GET | 查询当前会话与剩余额度 |
+| `/api/quota/request` | POST | 体验用户申请追加额度 |
+| `/api/admin/accounts` | GET/POST | 管理员：账号列表与创建 |
+| `/api/admin/quota-requests` | GET | 管理员：额度申请与审批 |
 
 ### 部署建议
 
@@ -151,6 +165,7 @@ location / {
 - 运维接口默认只读；重启服务等写操作应保留人工确认。
 - 对外部署时建议配置 HTTPS、访问控制和 Nginx 限流。
 - 对话记录可能包含用户输入，应按学校或机构的数据合规要求保存、导出和清理。
+- `/api/conversations`、`/api/logs` 等会返回访客 IP、对话原文和账号名，必须携带运维码或管理员会话才能访问。
 
 ---
 

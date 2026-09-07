@@ -1,0 +1,2 @@
+ubuntu ALL=(root) NOPASSWD: /usr/local/sbin/digitalhuman-service-control start, /usr/local/sbin/digitalhuman-service-control stop, /usr/local/sbin/digitalhuman-service-control restart
+

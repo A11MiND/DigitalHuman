@@ -37,11 +37,31 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+import accounts
+
 # ── Config ──────────────────────────────────────────────
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "")
-MINIMAX_LLM_BASE = "https://api.minimaxi.com/v1"
-MINIMAX_IMAGE_BASE = "https://api.minimaxi.com/v1"
-MINIMAX_VIDEO_BASE = "https://api.minimaxi.com/v1"
+
+# MiniMax 的 base URL 取决于账号注册的地区，不是请求发起地。
+# 一把有效的 key 打到错误区域的端点会返回 2049 invalid api key，
+# 看起来和 key 本身失效一模一样，所以区域必须配对。
+MINIMAX_HOSTS = {
+    "cn": "api.minimaxi.com",       # 中国大陆账号
+    "global": "api.minimax.io",     # 国际账号
+}
+MINIMAX_REGION = os.getenv("MINIMAX_REGION", "cn").strip().lower()
+if MINIMAX_REGION not in MINIMAX_HOSTS:
+    MINIMAX_REGION = "cn"
+
+
+def _minimax_host(region: str) -> str:
+    return MINIMAX_HOSTS.get((region or "").strip().lower(), MINIMAX_HOSTS["cn"])
+
+
+MINIMAX_HOST = _minimax_host(MINIMAX_REGION)
+MINIMAX_LLM_BASE = f"https://{MINIMAX_HOST}/v1"
+MINIMAX_IMAGE_BASE = f"https://{MINIMAX_HOST}/v1"
+MINIMAX_VIDEO_BASE = f"https://{MINIMAX_HOST}/v1"
 MINIMAX_TOKEN_PLAN_URL = "https://www.minimaxi.com/v1/token_plan/remains"
 MINIMAX_TOKEN_PLAN_API_KEY = os.getenv("MINIMAX_TOKEN_PLAN_API_KEY", "")
 TTS_MODEL = "speech-2.8-hd"
@@ -114,15 +134,25 @@ def _init_db():
     logger.info(f"Conversation DB ready: {DB_PATH}")
 
 def _save_conversation(char_id: str, user_ip: str, user_msg: str,
-                       assistant_msg: str, llm_ms: int = 0, tts_ms: int = 0):
+                       assistant_msg: str, llm_ms: int = 0, tts_ms: int = 0,
+                       username: str = ""):
     try:
         with sqlite3.connect(str(DB_PATH)) as conn:
-            conn.execute(
-                "INSERT INTO conversations (time, char_id, user_ip, user_msg, assistant_msg, llm_ms, tts_ms) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (datetime.datetime.now(OPS_TZ).isoformat(), char_id, user_ip,
-                 user_msg[:2000], assistant_msg[:2000], llm_ms, tts_ms)
-            )
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(conversations)")}
+            if "username" in cols:
+                conn.execute(
+                    "INSERT INTO conversations (time, char_id, user_ip, user_msg, assistant_msg, llm_ms, tts_ms, username) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (datetime.datetime.now(OPS_TZ).isoformat(), char_id, user_ip,
+                     user_msg[:2000], assistant_msg[:2000], llm_ms, tts_ms, username[:64])
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO conversations (time, char_id, user_ip, user_msg, assistant_msg, llm_ms, tts_ms) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (datetime.datetime.now(OPS_TZ).isoformat(), char_id, user_ip,
+                     user_msg[:2000], assistant_msg[:2000], llm_ms, tts_ms)
+                )
     except Exception as e:
         logger.warning(f"Failed to save conversation: {e}")
 
@@ -304,6 +334,7 @@ class CharacterManager:
 # ── Global Character Manager ────────────────────────────
 char_mgr = CharacterManager()
 _init_db()
+accounts.init_accounts_db()
 
 
 # ── Language Instruction Builder ─────────────────────────
@@ -335,6 +366,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 账号体系：登录、体验额度、管理员后台
+app.include_router(accounts.router)
 
 # ── Models ──────────────────────────────────────────────
 class AskRequest(BaseModel):
@@ -419,11 +453,50 @@ def _require_user_code(code: str | None) -> str:
     return username
 
 
-def _require_ops_access(code: str | None) -> str:
-    """Require invite-code auth for ops APIs when codes are configured."""
-    if not USER_CODES:
-        return "local-ops"
+def _require_ops_access(code: str | None, token: str | None = None) -> str:
+    """运维接口的守卫 — 只认管理员会话。
+
+    管理平台已并入 /ops，统一走账号密码登录，运维码已废弃。
+    参数 code 保留只是为了不改动各 handler 的签名，不再参与鉴权。
+    """
+    account = accounts.resolve_session(token)
+    if account and account["role"] == "admin":
+        return account["username"]
+    raise HTTPException(status_code=401, detail="需要管理员登录")
+
+
+def _minimax_credentials(account: dict | None) -> tuple[str, str, str]:
+    """按账号解析上游凭证 → (api_key, llm_base, ws_host)。
+
+    高级帐户走 PREMIUM_API_KEY 及其所属区域；其余走全局配置。
+    区域与 Key 必须成对使用，打错区域会被 MiniMax 判为 invalid api key。
+    """
+    key, region = accounts.premium_credentials(account)
+    if not key:
+        return MINIMAX_API_KEY, MINIMAX_LLM_BASE, MINIMAX_HOST
+    host = _minimax_host(region) if region else MINIMAX_HOST
+    return key, f"https://{host}/v1", host
+
+
+def _require_creator_access(code: str | None, token: str | None) -> str:
+    """角色创建类接口的守卫 — 邀请码或高级/管理员会话二选一。
+
+    高级帐户的「全套服务」包含创建角色，所以新账号体系里的 premium/admin
+    不需要再单独配一个邀请码。
+    """
+    account = accounts.resolve_session(token)
+    if account and account["role"] in ("premium", "admin"):
+        return account["username"]
     return _require_user_code(code)
+
+
+def _require_data_access(code: str | None, token: str | None) -> str:
+    """对话记录与日志接口的守卫 — 只认管理员会话。
+
+    这些接口会返回访客 IP、对话原文和账号名，不能对匿名请求开放；
+    与运维接口一样统一走账号密码登录，运维码已废弃。
+    """
+    return _require_ops_access(code, token)
 
 
 def _effective_minimax_key(api_key: str | None = None) -> str:
@@ -431,11 +504,20 @@ def _effective_minimax_key(api_key: str | None = None) -> str:
     return (api_key or "").strip() or MINIMAX_API_KEY
 
 
-def _require_minimax_key(api_key: str | None = None) -> str:
-    key = _effective_minimax_key(api_key)
+def _creation_credentials(api_key: str | None, token: str | None) -> tuple[str, str]:
+    """创建流水线的上游凭证 → (api_key, llm_base)。
+
+    调用方自带 Key 时优先用它（走全局区域端点）；没带则按帐户回退到服务端
+    配置：高级/管理员用 PREMIUM_API_KEY 及其所属区域，其余用平台主 Key。
+    Key 只在服务端使用，任何响应都不会把它回传给前端。
+    """
+    supplied = (api_key or "").strip()
+    if supplied:
+        return supplied, MINIMAX_LLM_BASE
+    key, base, _ = _minimax_credentials(accounts.resolve_session(token))
     if not key:
         raise HTTPException(status_code=400, detail="MiniMax API Key required for character creation")
-    return key
+    return key, base
 
 
 def _safe_character_id(raw: str) -> str:
@@ -618,8 +700,12 @@ async def _search_web(query: str) -> list[dict]:
 
 
 class MiniMaxProvider:
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, llm_base: str | None = None):
         self.api_key = api_key
+        # 区域必须和 Key 配对，打错区域会被 MiniMax 判为 2049 invalid api key。
+        self.llm_base = (llm_base or "").strip() or MINIMAX_LLM_BASE
+        # 图像/视频与文本同源，跟随同一个区域端点。
+        self.api_base = self.llm_base
         self.headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
     async def improve_prompt(self, req: CreatePromptRequest) -> str:
@@ -646,7 +732,7 @@ class MiniMaxProvider:
         ]
         async with httpx.AsyncClient(timeout=120.0) as client:
             res = await client.post(
-                f"{MINIMAX_LLM_BASE}/text/chatcompletion_v2",
+                f"{self.llm_base}/text/chatcompletion_v2",
                 headers=self.headers,
                 json={
                     "model": "MiniMax-M2.7-highspeed",
@@ -668,7 +754,7 @@ class MiniMaxProvider:
     async def simple_text(self, system: str, user: str, max_tokens: int = 800, temperature: float = 0.3) -> str:
         async with httpx.AsyncClient(timeout=120.0) as client:
             res = await client.post(
-                f"{MINIMAX_LLM_BASE}/text/chatcompletion_v2",
+                f"{self.llm_base}/text/chatcompletion_v2",
                 headers=self.headers,
                 json={
                     "model": "MiniMax-M2.7-highspeed",
@@ -700,7 +786,7 @@ class MiniMaxProvider:
             "prompt_optimizer": True,
         }
         async with httpx.AsyncClient(timeout=180.0) as client:
-            res = await client.post(f"{MINIMAX_IMAGE_BASE}/image_generation", headers=self.headers, json=payload)
+            res = await client.post(f"{self.api_base}/image_generation", headers=self.headers, json=payload)
         if res.status_code >= 400:
             logger.error("MiniMax image API failed: %s", res.status_code)
             raise HTTPException(status_code=502, detail=f"MiniMax image API failed: {res.status_code}")
@@ -755,7 +841,7 @@ class MiniMaxProvider:
             "resolution": "768P",
         }
         async with httpx.AsyncClient(timeout=60.0) as client:
-            res = await client.post(f"{MINIMAX_VIDEO_BASE}/video_generation", headers=self.headers, json=payload)
+            res = await client.post(f"{self.api_base}/video_generation", headers=self.headers, json=payload)
         if res.status_code >= 400:
             logger.error("MiniMax video API failed: %s", res.status_code)
             raise HTTPException(status_code=502, detail=f"MiniMax video API failed: {res.status_code}")
@@ -784,7 +870,7 @@ class MiniMaxProvider:
                 await asyncio.sleep(5)
                 try:
                     q = await client.get(
-                        f"{MINIMAX_VIDEO_BASE}/query/video_generation",
+                        f"{self.api_base}/query/video_generation",
                         headers=self.headers,
                         params={"task_id": task_id},
                     )
@@ -803,7 +889,7 @@ class MiniMaxProvider:
                 if file_id:
                     try:
                         dl = await client.get(
-                            f"{MINIMAX_VIDEO_BASE}/files/retrieve",
+                            f"{self.api_base}/files/retrieve",
                             headers=self.headers,
                             params={"file_id": file_id},
                         )
@@ -822,9 +908,15 @@ class MiniMaxProvider:
 
 
 # ── MiniMax LLM ──────────────────────────────────────────
-async def minimax_llm_stream(query: str, history: list[dict] | None = None, system_prompt: str | None = None):
-    """Call MiniMax LLM with streaming, yield text chunks."""
-    if not MINIMAX_API_KEY:
+async def minimax_llm_stream(query: str, history: list[dict] | None = None, system_prompt: str | None = None,
+                             api_key: str | None = None, llm_base: str | None = None):
+    """Call MiniMax LLM with streaming, yield text chunks.
+
+    api_key / llm_base 留空则用全局配置；高级帐户会传入自己的 Key 与所属区域端点。
+    """
+    key = (api_key or "").strip() or MINIMAX_API_KEY
+    base = (llm_base or "").strip() or MINIMAX_LLM_BASE
+    if not key:
         yield "[ERROR] MINIMAX_API_KEY not configured"
         return
 
@@ -843,9 +935,9 @@ async def minimax_llm_stream(query: str, history: list[dict] | None = None, syst
         try:
             async with client.stream(
                 "POST",
-                f"{MINIMAX_LLM_BASE}/text/chatcompletion_v2",
+                f"{base}/text/chatcompletion_v2",
                 headers={
-                    "Authorization": f"Bearer {MINIMAX_API_KEY}",
+                    "Authorization": f"Bearer {key}",
                     "Content-Type": "application/json",
                 },
                 json={
@@ -886,14 +978,17 @@ async def minimax_llm_stream(query: str, history: list[dict] | None = None, syst
 
 
 # ── MiniMax TTS WebSocket Streaming ──────────────────────────────────────────
-async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
+async def minimax_tts_streaming(text: str, tts_config: dict | None = None,
+                                api_key: str | None = None, ws_host: str | None = None):
     """MiniMax TTS WebSocket streaming, yields audio chunks as they arrive.
 
     Args:
         text: Text to synthesize (truncated to TTS_TEXT_MAX).
         tts_config: Optional per-call overrides (voice_id, speed, vol, etc.).
     """
-    if not MINIMAX_API_KEY:
+    key = (api_key or "").strip() or MINIMAX_API_KEY
+    host = (ws_host or "").strip() or MINIMAX_HOST
+    if not key:
         return
 
     raw_text_len = len(text or "")
@@ -916,8 +1011,8 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
 
     logger.debug(f"TTS start: voice={cfg['voice_id']} lang={cfg['language_boost']} text_len={len(text)}")
 
-    url = "wss://api.minimaxi.com/ws/v1/t2a_v2"
-    headers = {"Authorization": f"Bearer {MINIMAX_API_KEY}"}
+    url = f"wss://{host}/ws/v1/t2a_v2"
+    headers = {"Authorization": f"Bearer {key}"}
 
     ws = None
     audio_chunk_count = 0
@@ -1022,26 +1117,39 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None):
 
 # ── POST /ask — Stream LLM response (HTTP SSE) ──────────
 @app.post("/ask")
-async def ask_endpoint(req: AskRequest):
+async def ask_endpoint(req: AskRequest, x_session_token: accounts.SessionHeader = None):
     """Stream MiniMax LLM response back to client via SSE."""
     if not MINIMAX_API_KEY:
         raise HTTPException(status_code=500, detail="MINIMAX_API_KEY not configured")
 
+    account = accounts.require_account(x_session_token)
+    # 推流前先原子占位：并发抢不出额度，客户端提前断线也已计费
+    allowed, _used = accounts.reserve_quota(account)
+    if not allowed:
+        raise HTTPException(status_code=402, detail="體驗次數已用完，請升級後繼續使用")
+
+    ask_key, ask_base, _ = _minimax_credentials(account)
     t0 = time.time()
-    logger.info(f"POST /ask: {req.query[:80]}...")
+    logger.info(f"POST /ask: user={account['username']} {req.query[:80]}...")
 
     async def stream_response():
         n = 0
         first_at = None
-        async for chunk in minimax_llm_stream(req.query, req.history):
-            if first_at is None:
-                first_at = time.time()
-            n += 1
-            yield f"data: {json.dumps({'content': chunk})}\n\n"
-        yield "data: [DONE]\n\n"
-        ttft = int(((first_at or t0) - t0) * 1000)
-        total = int((time.time() - t0) * 1000)
-        logger.info(f"POST /ask done: {n} chunks, ttft={ttft}ms, total={total}ms")
+        try:
+            async for chunk in minimax_llm_stream(req.query, req.history,
+                                                  api_key=ask_key, llm_base=ask_base):
+                if first_at is None:
+                    first_at = time.time()
+                n += 1
+                yield f"data: {json.dumps({'content': chunk})}\n\n"
+            yield "data: [DONE]\n\n"
+        finally:
+            # 一个字都没产出才退回占位，保持「失败不计费」
+            if n == 0:
+                accounts.refund_quota(account["username"])
+            ttft = int(((first_at or t0) - t0) * 1000)
+            total = int((time.time() - t0) * 1000)
+            logger.info(f"POST /ask done: {n} chunks, ttft={ttft}ms, total={total}ms")
 
     return StreamingResponse(
         stream_response(),
@@ -1055,8 +1163,11 @@ async def ask_endpoint(req: AskRequest):
 
 # ── POST /tts — Generate TTS audio (streaming) ─────────
 @app.post("/tts")
-async def tts_endpoint(req: TTSRequest):
+async def tts_endpoint(req: TTSRequest, x_session_token: accounts.SessionHeader = None):
     """Generate MiniMax TTS audio, stream response as mp3."""
+    # TTS 属于一轮对话的组成部分，只校验登录、不单独扣次数
+    tts_account = accounts.require_account(x_session_token)
+    tts_key, _, tts_ws_host = _minimax_credentials(tts_account)
     text = req.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="No text provided")
@@ -1065,7 +1176,7 @@ async def tts_endpoint(req: TTSRequest):
 
     async def stream_audio():
         chunk_count = 0
-        async for chunk in minimax_tts_streaming(text):
+        async for chunk in minimax_tts_streaming(text, api_key=tts_key, ws_host=tts_ws_host):
             chunk_count += 1
             yield chunk
         total_ms = int((time.time() - t0) * 1000)
@@ -1091,7 +1202,31 @@ async def websocket_endpoint(websocket: WebSocket):
     req_id = uuid.uuid4().hex[:8]
     socket_ip = websocket.client.host if websocket.client else "unknown"
     client_ip = _client_ip_from_headers(websocket.headers, socket_ip)
-    logger.info(f"[{req_id}] WS connected  char={char_id} ip={client_ip}")
+
+    # 浏览器无法给 WebSocket 设置请求头，令牌走查询参数
+    session_account = accounts.resolve_session(websocket.query_params.get("token", ""))
+    if not session_account:
+        logger.info(f"[{req_id}] WS rejected (未登录) ip={client_ip}")
+        await websocket.send_json({
+            "type": "auth_required",
+            "content": "请先登录后再开始对话",
+        })
+        await websocket.close(code=4401)
+        return
+
+    session_user = session_account["username"]
+    mm_key, mm_llm_base, mm_ws_host = _minimax_credentials(session_account)
+    logger.info(
+        f"[{req_id}] WS connected  char={char_id} ip={client_ip} "
+        f"user={session_user} role={session_account['role']}"
+    )
+    await websocket.send_json({
+        "type": "quota",
+        "role": session_account["role"],
+        "quota_limit": session_account["quota_limit"],
+        "quota_used": session_account["quota_used"],
+        "quota_left": session_account["quota_left"],
+    })
 
     # Per-connection state — no global mutation
     tts_config: dict = char_mgr.get_tts_defaults(char_id)
@@ -1140,7 +1275,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 effective["voice_id"] = diag_voice
                 try:
                     first_chunk = None
-                    async for chunk in minimax_tts_streaming("測試", effective):
+                    async for chunk in minimax_tts_streaming("測試", effective,
+                                                             api_key=mm_key, ws_host=mm_ws_host):
                         if chunk:
                             first_chunk = chunk
                             break
@@ -1175,6 +1311,28 @@ async def websocket_endpoint(websocket: WebSocket):
             if not user_text:
                 continue
 
+            # 每轮都重新读账号 — 管理员在后台的停用/升级/加额度要立即生效
+            live_account = accounts.get_account(session_user)
+            usable, reason = accounts.account_usable(live_account)
+            if not usable:
+                await websocket.send_json({"type": "auth_required", "content": reason})
+                await websocket.close(code=4403)
+                return
+            mm_key, mm_llm_base, mm_ws_host = _minimax_credentials(live_account)
+            # 出话前先原子占位：并发抢不出额度，拿到回复就断线也已计费
+            allowed, quota_used_now = accounts.reserve_quota(live_account)
+            if not allowed:
+                logger.info(f"[{req_id}] 额度用尽 user={session_user}")
+                await websocket.send_json({
+                    "type": "quota_exceeded",
+                    "role": live_account["role"],
+                    "quota_limit": live_account["quota_limit"],
+                    "quota_used": live_account["quota_used"],
+                    "content": "體驗次數已用完，升級後可繼續無限暢聊",
+                })
+                continue
+            quota_charged = live_account["quota_limit"] != accounts.UNLIMITED
+
             t_turn = time.time()
             turn_num = len(conversation_history) // 2 + 1
             logger.info(f"[{req_id}][turn-{turn_num}] {user_text[:60]}...")
@@ -1183,7 +1341,9 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.send_json({"type": "status", "content": "thinking"})
 
             ttft = None
-            async for chunk in minimax_llm_stream(user_text, conversation_history, base_system_prompt + _lang_instruction):
+            async for chunk in minimax_llm_stream(user_text, conversation_history,
+                                                 base_system_prompt + _lang_instruction,
+                                                 api_key=mm_key, llm_base=mm_llm_base):
                 if ttft is None:
                     ttft = int((time.time() - t_turn) * 1000)
                 if chunk.startswith("[ERROR]"):
@@ -1191,6 +1351,12 @@ async def websocket_endpoint(websocket: WebSocket):
                     break
                 full_response += chunk
                 await websocket.send_json({"type": "llm", "content": chunk})
+
+            if not (full_response and not full_response.startswith("[ERROR]")):
+                # 这一轮没能产出回复，退回出话前的占位，保持「失败不计费」
+                if quota_charged:
+                    accounts.refund_quota(session_user)
+                    logger.info(f"[{req_id}] 本轮无回复，已退回额度 user={session_user}")
 
             if full_response and not full_response.startswith("[ERROR]"):
                 conversation_history.append({"role": "user", "content": user_text})
@@ -1205,7 +1371,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json({"type": "status", "content": "tts"})
                 tts_chunks = 0
                 try:
-                    async for audio_chunk in minimax_tts_streaming(full_response, tts_config):
+                    async for audio_chunk in minimax_tts_streaming(full_response, tts_config,
+                                                                  api_key=mm_key, ws_host=mm_ws_host):
                         tts_chunks += 1
                         await websocket.send_bytes(audio_chunk)
                 except Exception as tts_err:
@@ -1223,7 +1390,19 @@ async def websocket_endpoint(websocket: WebSocket):
                     assistant_msg=full_response,
                     llm_ms=llm_total,
                     tts_ms=tts_ms,
+                    username=session_user,
                 )
+
+                # 额度已在出话前占位，这里只把最新用量同步给前端
+                if quota_charged:
+                    left = max(0, live_account["quota_limit"] - quota_used_now)
+                    await websocket.send_json({
+                        "type": "quota",
+                        "role": live_account["role"],
+                        "quota_limit": live_account["quota_limit"],
+                        "quota_used": quota_used_now,
+                        "quota_left": left,
+                    })
 
     except WebSocketDisconnect:
         elapsed = int(time.time() - ws_start)
@@ -1240,10 +1419,10 @@ async def websocket_endpoint(websocket: WebSocket):
 
 # ── Character Creation Pipeline API ─────────────────────
 @app.post("/api/create/test-key")
-async def create_test_key(x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None):
-    _require_user_code(x_user_code)
-    api_key = _require_minimax_key(x_minimax_api_key)
-    provider = MiniMaxProvider(api_key)
+async def create_test_key(x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
+    _require_creator_access(x_user_code, x_session_token)
+    api_key, llm_base = _creation_credentials(x_minimax_api_key, x_session_token)
+    provider = MiniMaxProvider(api_key, llm_base)
     t0 = time.time()
     text = await provider.simple_text(
         "You are a health check endpoint. Reply with exactly OK.",
@@ -1251,13 +1430,20 @@ async def create_test_key(x_minimax_api_key: ApiKeyHeader = None, x_user_code: U
         max_tokens=64,
         temperature=0.1,
     )
-    return {"ok": True, "latency_ms": int((time.time() - t0) * 1000), "sample": text[:20]}
+    # 只回连通性与延迟，绝不回传 Key 本身或它的任何片段。
+    return {
+        "ok": True,
+        "latency_ms": int((time.time() - t0) * 1000),
+        "sample": text[:20],
+        "server_key": not (x_minimax_api_key or "").strip(),
+    }
 
 
 @app.post("/api/create/knowledge")
-async def create_extract_knowledge(file: UploadFile = File(...), x_user_code: UserCodeHeader = None):
+async def create_extract_knowledge(file: UploadFile = File(...), x_user_code: UserCodeHeader = None,
+                     x_session_token: accounts.SessionHeader = None):
     """Extract plain text from txt/pdf/docx for the prompt builder."""
-    _require_user_code(x_user_code)
+    _require_creator_access(x_user_code, x_session_token)
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing filename")
     suffix = Path(file.filename).suffix.lower()
@@ -1292,9 +1478,9 @@ async def create_extract_knowledge(file: UploadFile = File(...), x_user_code: Us
 
 
 @app.post("/api/create/knowledge/search")
-async def create_search_knowledge(req: GenerateKnowledgeRequest, x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None):
-    _require_user_code(x_user_code)
-    api_key = _require_minimax_key(x_minimax_api_key)
+async def create_search_knowledge(req: GenerateKnowledgeRequest, x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
+    _require_creator_access(x_user_code, x_session_token)
+    api_key, llm_base = _creation_credentials(x_minimax_api_key, x_session_token)
     query = req.query.strip() or " ".join(x for x in [req.name, req.name_en, req.role, req.background[:120]] if x).strip()
     if not query:
         raise HTTPException(status_code=400, detail="Search query or role context is required")
@@ -1302,7 +1488,7 @@ async def create_search_knowledge(req: GenerateKnowledgeRequest, x_minimax_api_k
     if not results:
         raise HTTPException(status_code=502, detail="Web search returned no usable results")
 
-    provider = MiniMaxProvider(api_key)
+    provider = MiniMaxProvider(api_key, llm_base)
     result_text = "\n".join(f"- {r['title']} ({r['url']})" for r in results)
     text = await provider.simple_text(
         "你是数字人角色知识库整理员。根据搜索结果和角色设定，输出不超过6000字的事实型知识库文本。"
@@ -1318,10 +1504,10 @@ async def create_search_knowledge(req: GenerateKnowledgeRequest, x_minimax_api_k
 
 
 @app.post("/api/create/image-prompt")
-async def create_image_prompt(req: GenerateImagePromptRequest, x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None):
-    _require_user_code(x_user_code)
-    api_key = _require_minimax_key(x_minimax_api_key)
-    provider = MiniMaxProvider(api_key)
+async def create_image_prompt(req: GenerateImagePromptRequest, x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
+    _require_creator_access(x_user_code, x_session_token)
+    api_key, llm_base = _creation_credentials(x_minimax_api_key, x_session_token)
+    provider = MiniMaxProvider(api_key, llm_base)
     prompt = await provider.simple_text(
         "你是数字人角色视觉提示词设计师。输出一段可直接用于图像生成的中文 prompt。"
         "要求 3:4 半身肖像、正面或微侧脸、背景干净、电影级暖色调打光、适合作为后续视频 first frame。"
@@ -1337,13 +1523,13 @@ async def create_image_prompt(req: GenerateImagePromptRequest, x_minimax_api_key
 
 
 @app.post("/api/create/prompt")
-async def create_prompt(req: CreatePromptRequest, x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None):
-    _require_user_code(x_user_code)
-    api_key = _require_minimax_key(x_minimax_api_key)
+async def create_prompt(req: CreatePromptRequest, x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
+    _require_creator_access(x_user_code, x_session_token)
+    api_key, llm_base = _creation_credentials(x_minimax_api_key, x_session_token)
     if not req.name.strip() or not req.background.strip() or not req.speaking_style.strip():
         raise HTTPException(status_code=400, detail="Name, background, and speaking style are required")
 
-    provider = MiniMaxProvider(api_key)
+    provider = MiniMaxProvider(api_key, llm_base)
     prompt = await provider.improve_prompt(req)
     job_id = uuid.uuid4().hex
     _save_job(job_id, {
@@ -1360,12 +1546,12 @@ async def create_prompt(req: CreatePromptRequest, x_minimax_api_key: ApiKeyHeade
 
 
 @app.post("/api/create/images")
-async def create_images(req: CreateImagesRequest, x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None):
-    _require_user_code(x_user_code)
-    api_key = _require_minimax_key(x_minimax_api_key)
+async def create_images(req: CreateImagesRequest, x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
+    _require_creator_access(x_user_code, x_session_token)
+    api_key, llm_base = _creation_credentials(x_minimax_api_key, x_session_token)
     if not req.prompt.strip():
         raise HTTPException(status_code=400, detail="Image prompt is required")
-    provider = MiniMaxProvider(api_key)
+    provider = MiniMaxProvider(api_key, llm_base)
 
     # Reuse existing prompt job if provided, otherwise create a new one
     if req.job_id:
@@ -1390,16 +1576,16 @@ async def create_images(req: CreateImagesRequest, x_minimax_api_key: ApiKeyHeade
 
 
 @app.post("/api/create/videos")
-async def create_videos(req: CreateVideosRequest, x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None):
-    _require_user_code(x_user_code)
-    api_key = _require_minimax_key(x_minimax_api_key)
+async def create_videos(req: CreateVideosRequest, x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
+    _require_creator_access(x_user_code, x_session_token)
+    api_key, llm_base = _creation_credentials(x_minimax_api_key, x_session_token)
     job = _load_job(req.job_id)
     images = job.get("images") or []
     selected = next((img for img in images if img.get("id") == req.image_id), None)
     if not selected:
         raise HTTPException(status_code=400, detail="Selected image not found in creation job")
 
-    provider = MiniMaxProvider(api_key)
+    provider = MiniMaxProvider(api_key, llm_base)
 
     first_frame_url = selected.get("source_url", "")
     raw_dir = _job_dir(req.job_id) / "videos"
@@ -1439,8 +1625,8 @@ async def create_videos(req: CreateVideosRequest, x_minimax_api_key: ApiKeyHeade
 
 
 @app.post("/api/create/finalize")
-async def create_finalize(req: FinalizeCharacterRequest, x_user_code: UserCodeHeader = None):
-    username = _require_user_code(x_user_code)
+async def create_finalize(req: FinalizeCharacterRequest, x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
+    username = _require_creator_access(x_user_code, x_session_token)
     job = _load_job(req.job_id)
     if job.get("status") != "videos_ready":
         raise HTTPException(status_code=400, detail="Videos must be generated before finalizing the character")
@@ -1520,11 +1706,12 @@ async def get_character(char_id: str):
 
 
 @app.post("/api/characters/import")
-async def import_character(file: UploadFile = File(...), x_user_code: UserCodeHeader = None):
+async def import_character(file: UploadFile = File(...), x_user_code: UserCodeHeader = None,
+                     x_session_token: accounts.SessionHeader = None):
     """Import a character from a .zip file.
     Expected structure: char_id/character.json + resource files.
     """
-    username = _require_user_code(x_user_code)
+    username = _require_creator_access(x_user_code, x_session_token)
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="Only .zip files accepted")
 
@@ -1935,16 +2122,16 @@ def _diagnose(logs: str, resources: dict, services: list[dict]) -> list[dict]:
 
 
 @app.get("/api/ops/resources")
-async def ops_resources(x_user_code: UserCodeHeader = None):
+async def ops_resources(x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
     """Return system resource data for the ops console."""
-    _require_ops_access(x_user_code)
+    _require_ops_access(x_user_code, x_session_token)
     return {"ok": True, "resources": _system_resources()}
 
 
 @app.get("/api/ops/status")
-async def ops_status(x_user_code: UserCodeHeader = None):
+async def ops_status(x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
     """Return service and app status for the ops console."""
-    _require_ops_access(x_user_code)
+    _require_ops_access(x_user_code, x_session_token)
     chars = char_mgr.list_all()
     services = [_service_state("digitalhuman.service"), _service_state("nginx.service")]
     return {
@@ -1963,9 +2150,9 @@ async def ops_status(x_user_code: UserCodeHeader = None):
 
 
 @app.get("/api/ops/diagnostics")
-async def ops_diagnostics(lines: int = 300, x_user_code: UserCodeHeader = None):
+async def ops_diagnostics(lines: int = 300, x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
     """Return recent logs plus rule-based operational diagnostics."""
-    _require_ops_access(x_user_code)
+    _require_ops_access(x_user_code, x_session_token)
     lines = max(50, min(lines, 2000))
     resources = _system_resources()
     services = [_service_state("digitalhuman.service"), _service_state("nginx.service")]
@@ -1980,9 +2167,9 @@ async def ops_diagnostics(lines: int = 300, x_user_code: UserCodeHeader = None):
 
 
 @app.get("/api/ops/token-plan")
-async def ops_token_plan(response: Response, x_user_code: UserCodeHeader = None):
+async def ops_token_plan(response: Response, x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
     """Proxy MiniMax token plan usage without exposing the API key to the browser."""
-    _require_ops_access(x_user_code)
+    _require_ops_access(x_user_code, x_session_token)
     response.headers["Cache-Control"] = "no-store"
     api_key = (MINIMAX_TOKEN_PLAN_API_KEY or "").strip()
     if not api_key:
@@ -2071,9 +2258,9 @@ def _build_ops_chat_prompt(req: OpsChatRequest) -> tuple[str, str, list[dict]]:
 
 
 @app.post("/api/ops/chat")
-async def ops_chat(req: OpsChatRequest, x_user_code: UserCodeHeader = None):
+async def ops_chat(req: OpsChatRequest, x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
     """Simple read-only ops chatbot backed by the configured MiniMax API key."""
-    _require_ops_access(x_user_code)
+    _require_ops_access(x_user_code, x_session_token)
     if not MINIMAX_API_KEY:
         raise HTTPException(status_code=503, detail="MINIMAX_API_KEY not configured")
 
@@ -2084,9 +2271,9 @@ async def ops_chat(req: OpsChatRequest, x_user_code: UserCodeHeader = None):
 
 
 @app.post("/api/ops/chat/stream")
-async def ops_chat_stream(req: OpsChatRequest, x_user_code: UserCodeHeader = None):
+async def ops_chat_stream(req: OpsChatRequest, x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
     """Stream the read-only ops chatbot response as Server-Sent Events."""
-    _require_ops_access(x_user_code)
+    _require_ops_access(x_user_code, x_session_token)
     if not MINIMAX_API_KEY:
         raise HTTPException(status_code=503, detail="MINIMAX_API_KEY not configured")
 
@@ -2207,8 +2394,11 @@ def _conversation_analytics(char: str = "", start: str = "", end: str = "") -> d
 
 
 @app.get("/api/conversations")
-async def list_conversations(limit: int = 20, offset: int = 0, char: str = "", start: str = "", end: str = ""):
+async def list_conversations(limit: int = 20, offset: int = 0, char: str = "", start: str = "", end: str = "",
+                            x_user_code: UserCodeHeader = None,
+                            x_session_token: accounts.SessionHeader = None):
     """Return recent conversation records. Optionally filter by char_id/date."""
+    _require_data_access(x_user_code, x_session_token)
     try:
         total, rows = _fetch_conversations(limit, char, start, end, offset)
         return {"ok": True, "total": total, "limit": limit, "offset": offset, "conversations": rows}
@@ -2217,8 +2407,11 @@ async def list_conversations(limit: int = 20, offset: int = 0, char: str = "", s
 
 
 @app.get("/api/conversations/analytics")
-async def conversation_analytics(char: str = "", start: str = "", end: str = ""):
+async def conversation_analytics(char: str = "", start: str = "", end: str = "",
+                                 x_user_code: UserCodeHeader = None,
+                                 x_session_token: accounts.SessionHeader = None):
     """Return aggregate conversation metrics for dashboards without row sampling."""
+    _require_data_access(x_user_code, x_session_token)
     try:
         return {"ok": True, **_conversation_analytics(char, start, end)}
     except Exception as e:
@@ -2226,8 +2419,10 @@ async def conversation_analytics(char: str = "", start: str = "", end: str = "")
 
 
 @app.get("/api/conversations/stats")
-async def conversation_stats():
+async def conversation_stats(x_user_code: UserCodeHeader = None,
+                             x_session_token: accounts.SessionHeader = None):
     """Show simple stats about saved conversations."""
+    _require_data_access(x_user_code, x_session_token)
     try:
         with sqlite3.connect(str(DB_PATH)) as conn:
             total = conn.execute("SELECT COUNT(*) FROM conversations").fetchone()[0]
@@ -2246,9 +2441,9 @@ async def conversation_stats():
 
 
 @app.get("/api/ops/export/conversations")
-async def export_conversations(start: str = "", end: str = "", char: str = "", fmt: str = "csv", x_user_code: UserCodeHeader = None):
+async def export_conversations(start: str = "", end: str = "", char: str = "", fmt: str = "csv", x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
     """Export conversation records for the selected date range."""
-    _require_ops_access(x_user_code)
+    _require_ops_access(x_user_code, x_session_token)
     total, rows = _fetch_conversations(20000, char, start, end)
     stamp = datetime.datetime.now(OPS_TZ).strftime("%Y%m%d-%H%M%S")
     if fmt.lower() == "json":
@@ -2273,9 +2468,9 @@ async def export_conversations(start: str = "", end: str = "", char: str = "", f
 
 
 @app.get("/api/ops/export/logs")
-async def export_logs(lines: int = 8000, start: str = "", end: str = "", level: str = "all", q: str = "", x_user_code: UserCodeHeader = None):
+async def export_logs(lines: int = 8000, start: str = "", end: str = "", level: str = "all", q: str = "", x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
     """Export filtered service logs."""
-    _require_ops_access(x_user_code)
+    _require_ops_access(x_user_code, x_session_token)
     raw = _recent_journal(max(10, min(lines, 20000)))
     q_l = q.lower().strip()
     level_l = level.lower().strip()
@@ -2303,8 +2498,11 @@ async def export_logs(lines: int = 8000, start: str = "", end: str = "", level: 
 
 # ── Log Viewer ────────────────────────────────────────
 @app.get("/api/logs")
-async def api_logs(lines: int = 30):
+async def api_logs(lines: int = 30,
+                   x_user_code: UserCodeHeader = None,
+                   x_session_token: accounts.SessionHeader = None):
     """Return recent service logs (journalctl)."""
+    _require_data_access(x_user_code, x_session_token)
     try:
         lines = max(10, min(lines, 8000))
         return {"logs": _recent_journal(lines).strip(), "stderr": ""}

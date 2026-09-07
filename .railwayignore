@@ -1,0 +1,17 @@
+# 与数字人项目无关的目录/脚本，不随部署上传
+ss-deploy/
+static/ss-deploy
+ss-deploy.sh
+output/
+tmp/
+tests/
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+.claude/
+data/
+*.db
+*.log
+*.pem
+*.key

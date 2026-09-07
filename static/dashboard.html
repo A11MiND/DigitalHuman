@@ -230,6 +230,18 @@
   </div>
 
   <script>
+// ── 帳戶會話：看板讀的是受保護的對話／日誌接口 ──
+let DASH_TOKEN = '';
+try { DASH_TOKEN = localStorage.getItem('dh_session_token') || ''; } catch(_) {}
+
+function dashHeaders() {
+  return DASH_TOKEN ? { 'X-Session-Token': DASH_TOKEN } : {};
+}
+
+if (!DASH_TOKEN) {
+  location.replace('/login.html?next=' + encodeURIComponent(location.pathname));
+}
+
     const CHAR_MAP = {
       'maryknoll-teacher': { name: '小瑪老師', cls: 'tag-1' },
       'qin-shihuang':      { name: '秦始皇',     cls: 'tag-2' },
@@ -281,7 +293,7 @@
 
     async function fetchLogs(from, to) {
       try {
-        const r = await fetch('/api/logs?lines=8000');
+        const r = await fetch('/api/logs?lines=8000', { headers: dashHeaders() });
         const d = await r.json();
         return filterLogs(d.logs || '', from, to);
       } catch { return ''; }
@@ -315,10 +327,10 @@
     }
 
     async function fetchStats() {
-      try { const r=await fetch('/api/conversations/stats'); return await r.json(); } catch { return null; }
+      try { const r=await fetch('/api/conversations/stats', { headers: dashHeaders() }); return await r.json(); } catch { return null; }
     }
     async function fetchConvs(limit=30) {
-      try { const r=await fetch(`/api/conversations?limit=${limit}`); return await r.json(); } catch { return null; }
+      try { const r=await fetch(`/api/conversations?limit=${limit}`, { headers: dashHeaders() }); return await r.json(); } catch { return null; }
     }
 
     function renderStats(stats, parsed) {
@@ -408,7 +420,7 @@
       try {
         const[statsRes,convRes,raw]=await Promise.all([
           fetchStats(),fetchConvs(30),
-          fetch('/api/logs?lines=8000').then(r=>r.json()).then(d=>d.logs||'')
+          fetch('/api/logs?lines=8000', { headers: dashHeaders() }).then(r=>r.json()).then(d=>d.logs||'')
         ]);
         const parsed=parseLogs(filterLogs(raw,s,e));
         renderStats(statsRes,parsed);renderCharCht(parsed);renderDailyCht(parsed);

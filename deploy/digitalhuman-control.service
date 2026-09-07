@@ -1,0 +1,28 @@
+[Unit]
+Description=DigitalHuman independent operations control plane
+After=network.target nginx.service
+Wants=nginx.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/DigitalHuman
+EnvironmentFile=/etc/systemd/system/digitalhuman.env
+ExecStart=/usr/bin/python3 -m uvicorn ops_control:app --host 127.0.0.1 --port 8081 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=always
+RestartSec=3
+TimeoutStopSec=10
+UMask=0077
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/DigitalHuman/logs
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
+
