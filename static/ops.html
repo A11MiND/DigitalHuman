@@ -667,6 +667,7 @@
     <div class="ops-grid">
       <div class="box"><div class="box-hd"><svg class="icon"><use href="#i-server"></use></svg><span data-i18n="serviceStatus">服務狀態總覽</span></div><div id="svcBox"><div class="empty" data-i18n="waitingOps">載入中...</div></div></div>
       <div class="box"><div class="box-hd"><svg class="icon"><use href="#i-cpu"></use></svg><span data-i18n="resources">系統資源監控</span></div><div id="resBox"><div class="empty" data-i18n="waitingOps">載入中...</div></div></div>
+      <div class="box" id="deployBox" hidden></div>
       <div class="box token-box"><div class="box-hd"><svg class="icon"><use href="#i-token"></use></svg><span data-i18n="tokenPlan">Token Plan 用量</span><div class="box-tools"><button class="btn btn-ghost" id="refreshTokenPlan" data-i18n="queryToken">查詢</button></div></div><div id="tokenBox"><div class="empty" data-i18n="tokenPlanWaiting">點擊查詢 Token Plan 用量</div></div></div>
     </div>
 
@@ -978,12 +979,17 @@
     function authHeaders(extra) {
       return Object.assign({ 'X-Session-Token': SESSION_TOKEN }, extra || {});
     }
+    let sessionExpired = false;   // 认证请求 401 时置位，供 refreshAll 显示明确提示
     async function fetchJson(url, auth=false, noStore=false) {
       const init = {};
       if (auth) init.headers = headers();
       if (noStore) init.cache = 'no-store';
       const r = await fetch(url, init);
-      if (r.status === 401 || r.status === 503) return null;
+      if (r.status === 401) {
+        if (auth) sessionExpired = true;   // 未带认证的探测性请求（如 token-plan）不算会话失效
+        return null;
+      }
+      if (r.status === 503) return null;
       if (!r.ok) throw new Error(`${url}: ${r.status}`);
       return r.json();
     }
@@ -1162,6 +1168,28 @@
         if (opsStatus || opsDiag) renderOps(opsStatus, opsDiag);
       });
     }
+    // 自管机器与容器平台的运维手段不同，界面按平台调整
+    function applyPlatform(r) {
+      const isRailway = (r?.platform === 'railway');
+      const ctrl = document.querySelector('a[href="/control"]');
+      if (ctrl) ctrl.style.display = isRailway ? 'none' : '';
+      const d = r?.deployment;
+      const box = document.getElementById('deployBox');
+      if (box && isRailway && d) {
+        box.hidden = false;
+        box.innerHTML = `<div class="box-hd"><svg class="icon"><use href="#i-server"></use></svg><span>部署資訊</span></div>` +
+          `<div class="status-list">${statusCard('Railway', [
+            `<b>專案</b>${escapeHtml(d.project || '-')}`,
+            `<b>服務</b>${escapeHtml(d.service || '-')}`,
+            `<b>環境</b>${escapeHtml(d.environment || '-')}`,
+            `<b>區域</b>${escapeHtml(d.region || '-')}`,
+            `<b>版本</b>${escapeHtml(d.deployment || '-')}`,
+          ], 'active')}</div>`;
+      } else if (box) {
+        box.hidden = true;
+      }
+    }
+
     function renderOps(status, diag) {
       const svcBox = document.getElementById('svcBox'), resBox = document.getElementById('resBox'), diagBox = document.getElementById('diagBox');
       if (!status) {
@@ -1182,9 +1210,10 @@
       ));
       svcBox.innerHTML = `<div class="status-list">${serviceCards.join('')}</div>`;
       const r = status.resources;
+      applyPlatform(r);
       resBox.innerHTML = [
-        meter(t('cpu'), Math.round(r.cpu.load_percent), `load 1/5/15: ${r.cpu.load_1}, ${r.cpu.load_5}, ${r.cpu.load_15}`),
-        meter(t('memory'), Math.round(r.memory.percent), `${fmtBytes(r.memory.used)} / ${fmtBytes(r.memory.total)}`),
+        meter(t('cpu'), Math.round(r.cpu.load_percent), `${r.cpu.cores} ${r.cpu.scope === 'container' ? '核（容器配額）' : '核'} · load ${r.cpu.load_1} / ${r.cpu.load_5} / ${r.cpu.load_15}`),
+        meter(t('memory'), Math.round(r.memory.percent), `${fmtBytes(r.memory.used)} / ${fmtBytes(r.memory.total)}${r.memory.scope === 'container' ? '（容器）' : ''}`),
         meter(t('disk'), Math.round(r.disk.percent), `${fmtBytes(r.disk.used)} / ${fmtBytes(r.disk.total)}`),
         statusCard(t('uptime'), [`<b>Uptime</b>${escapeHtml(r.uptime)}`, `<b>${t('process')}</b>PID ${escapeHtml(r.process.pid)}`, `<b>${t('time')}</b>${escapeHtml(r.timezone)}`], 'ok'),
         statusCard(t('database'), [`<b>${t('path')}</b>${escapeHtml(r.database.path)}`, `<b>${t('size')}</b>${fmtBytes(r.database.size)}`], 'ok')
@@ -1709,14 +1738,29 @@
       const e = document.getElementById('endDate').value || today;
       const offset = (convPage - 1) * convPageSize;
       document.getElementById('updTime').textContent = lang === 'en' ? 'Refreshing...' : '刷新中...';
+      sessionExpired = false;
       try {
         const [convSampleRes, convPageRes, statsRes, statusRes, diagRes] = await Promise.all([
-          fetchJson(`/api/conversations?limit=2000&start=${encodeURIComponent(s)}&end=${encodeURIComponent(e)}`),
-          fetchJson(`/api/conversations?limit=${convPageSize}&offset=${offset}&start=${encodeURIComponent(s)}&end=${encodeURIComponent(e)}`),
-          fetchJson('/api/conversations/stats'),
+          fetchJson(`/api/conversations?limit=2000&start=${encodeURIComponent(s)}&end=${encodeURIComponent(e)}`, true),
+          fetchJson(`/api/conversations?limit=${convPageSize}&offset=${offset}&start=${encodeURIComponent(s)}&end=${encodeURIComponent(e)}`, true),
+          fetchJson('/api/conversations/stats', true),
           fetchJson('/api/ops/status', true),
           fetchJson('/api/ops/diagnostics?lines=900', true)
         ]);
+        if (sessionExpired) {
+          // 认证失败：不要把「取不到数据」画成「数据是空的」，两者对运维意义完全不同
+          document.getElementById('updTime').textContent = lang === 'en' ? 'Session expired' : '登入已過期';
+          const notice = lang === 'en'
+            ? 'Your session has expired. Data shown may be stale or missing — please sign in again.'
+            : '登入狀態已過期，以下數據可能是舊的或缺失，請重新整理頁面登入。';
+          [document.getElementById('svcBox'), document.getElementById('resBox'),
+           document.getElementById('diagBox')].forEach(el => {
+            if (el) el.innerHTML = `<div class="empty" style="color:var(--red)">${notice}</div>`;
+          });
+          document.getElementById('convTable').innerHTML = `<div class="empty" style="color:var(--red)">${notice}</div>`;
+          setTimeout(gotoLogin, 2500);
+          return;
+        }
         const totalPages = Math.max(1, Math.ceil((convPageRes?.total || 0) / convPageSize));
         if ((convPageRes?.total || 0) > 0 && convPage > totalPages) {
           convPage = totalPages;
@@ -1725,7 +1769,7 @@
         opsStatus = statusRes; opsDiag = diagRes; convStats = statsRes;
         rawLogs = diagRes?.logs || rawLogs || '';
         if (!rawLogs) {
-          const logsRes = await fetchJson('/api/logs?lines=1000');
+          const logsRes = await fetchJson('/api/logs?lines=1000', true);
           rawLogs = logsRes?.logs || '';
         }
         const logParsed = parseLogs(filterLogs(rawLogs, s, e));
@@ -1756,7 +1800,7 @@
           rawLogs = diagRes.logs || rawLogs;
           renderOps(opsStatus, opsDiag);
         } else {
-          const logsRes = await fetchJson('/api/logs?lines=1000');
+          const logsRes = await fetchJson('/api/logs?lines=1000', true);
           rawLogs = logsRes?.logs || rawLogs;
         }
         renderLogs();
@@ -2037,7 +2081,7 @@
         localStorage.removeItem('dh_session_token');
         localStorage.removeItem('dh_session_user');
       } catch (_) {}
-      location.replace('/login.html?next=' + encodeURIComponent(location.pathname));
+      location.replace('/staff-login.html?next=' + encodeURIComponent(location.pathname));
     }
 
     (async function initSession() {

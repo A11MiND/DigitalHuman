@@ -2,291 +2,317 @@
 <html lang="zh-HK">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>登入 — 數字人殿堂</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>數字人殿堂</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏛️</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@300;500;700&family=Noto+Sans+TC:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   :root {
-    --ink:        #3d3028;
-    --ink-soft:   #5a4a38;
-    --ink-mute:   #9a8a7a;
-    --paper:      #ece9e5;
-    --paper-warm: #f4f1ec;
-    --gold:       #c9a84c;
-    --bronze:     #8a6d3b;
-    --danger:     #c8322d;
-    --ok:         #5a9e4b;
+    --stage:  #08080f;
+    --gold:   #c9a84c;
+    --bronze: #8a6d3b;
+    --ink-pale: #d4c8b0;
+    --ink-mute: #6b6048;
+    --paper:  #ece9e5;
+    --danger: #c8322d;
+    --ok:     #5a9e4b;
   }
 
-  html {
-    min-height: 100%;
-    background: var(--paper);
+  html, body {
+    height: 100%;
+    background: var(--stage);
+    overflow: hidden;
   }
-
   body {
-    min-height: 100vh;
-    font-family: -apple-system, "PingFang HK", "Microsoft JhengHei", sans-serif;
-    background: var(--paper);
-    color: var(--ink);
+    font-family: "Noto Sans TC", -apple-system, sans-serif;
+    color: var(--ink-pale);
     -webkit-font-smoothing: antialiased;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
     position: relative;
-    overflow-x: hidden;
   }
 
-  /* 背景：宣纸质感 + 一层极淡的朱印色晕染 */
-  body::before {
-    content: '';
+  /* ── 舞台：纯 CSS 打底的深黑背景 + 人物阵列 ── */
+  /* 不再用 AI 生成的背景图——那张图的橄榄棕色调压不住，改成完全可控的黑金配色：
+     大面积干净的黑，金色只用在一束光和几个精确的点缀上。 */
+  .stage {
     position: fixed;
     inset: 0;
+    overflow: hidden;
     background:
-      radial-gradient(ellipse 60% 45% at 18% 12%, rgba(201,168,76,0.13), transparent 65%),
-      radial-gradient(ellipse 55% 50% at 85% 88%, rgba(138,109,59,0.10), transparent 65%),
-      linear-gradient(160deg, #f1eee9 0%, #e8e4de 100%);
-    z-index: -2;
+      /* 顶部一束克制的光，暖白而非饱和金色，避免整屏泛黄 */
+      radial-gradient(ellipse 26% 42% at 50% -6%, rgba(244,232,200,0.14), transparent 62%),
+      /* 极淡的星点氛围 */
+      radial-gradient(1.5px 1.5px at 12% 18%, rgba(255,255,255,0.5), transparent),
+      radial-gradient(1.5px 1.5px at 82% 12%, rgba(255,255,255,0.4), transparent),
+      radial-gradient(1px 1px at 30% 8%, rgba(255,255,255,0.35), transparent),
+      radial-gradient(1px 1px at 68% 22%, rgba(255,255,255,0.3), transparent),
+      radial-gradient(1.5px 1.5px at 92% 30%, rgba(255,255,255,0.3), transparent),
+      radial-gradient(1px 1px at 6% 34%, rgba(255,255,255,0.28), transparent),
+      linear-gradient(180deg, #060608 0%, #0a0a0d 45%, #050506 100%);
   }
-  /* 极细的纸纹 */
-  body::after {
-    content: '';
-    position: fixed;
+  .stage img {
+    position: absolute;
     inset: 0;
-    background-image:
-      repeating-linear-gradient(0deg, rgba(61,48,40,0.014) 0 1px, transparent 1px 3px),
-      repeating-linear-gradient(90deg, rgba(61,48,40,0.014) 0 1px, transparent 1px 3px);
-    z-index: -1;
-    pointer-events: none;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center 32%;
+    will-change: transform;
   }
+
+  .vignette {
+    position: fixed; inset: 0; pointer-events: none; z-index: 3;
+    background: linear-gradient(to bottom, rgba(5,5,6,0) 58%, rgba(5,5,6,.5) 84%, var(--stage) 100%);
+    box-shadow: inset 0 0 16vw rgba(0,0,0,.6);
+  }
+
+  /* ── 主视觉文字 ── */
+  .hero {
+    position: relative;
+    z-index: 4;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 7vh 24px 0;
+  }
+  .brand-mark {
+    width: 46px; height: 46px;
+    border-radius: 12px;
+    background: linear-gradient(145deg, var(--gold), var(--bronze));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 23px;
+    box-shadow: 0 8px 24px rgba(138,109,59,0.4);
+    margin-bottom: 18px;
+    opacity: 0; transform: translateY(-10px);
+    animation: dropIn .6s cubic-bezier(.2,.9,.3,1) .1s forwards;
+  }
+  h1.title {
+    font-family: "Noto Serif TC", serif;
+    font-weight: 500;
+    font-size: clamp(30px, 6vw, 46px);
+    letter-spacing: 10px;
+    color: #ecdfc0;
+    text-shadow: 0 0 46px rgba(180,140,90,0.35);
+    opacity: 0; transform: translateY(-10px);
+    animation: dropIn .6s cubic-bezier(.2,.9,.3,1) .22s forwards;
+  }
+  .subtitle {
+    font-size: 12.5px;
+    letter-spacing: 4px;
+    color: var(--ink-mute);
+    margin-top: 10px;
+    opacity: 0;
+    animation: fadeIn .6s ease .38s forwards;
+  }
+  @keyframes dropIn { to { opacity: 1; transform: none; } }
+  @keyframes fadeIn { to { opacity: 1; } }
+
+  .cta-wrap {
+    margin-top: 30px;
+    opacity: 0; transform: translateY(8px);
+    animation: dropIn .6s cubic-bezier(.2,.9,.3,1) .52s forwards;
+  }
+  .cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 15px 34px;
+    border-radius: 999px;
+    border: 1px solid rgba(201,168,76,0.45);
+    background: linear-gradient(180deg, rgba(30,26,18,0.55), rgba(14,12,9,0.7));
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    color: #f3e9cf;
+    font-family: "Noto Sans TC", sans-serif;
+    font-size: 15.5px;
+    font-weight: 500;
+    letter-spacing: 2px;
+    cursor: pointer;
+    box-shadow: 0 10px 30px rgba(0,0,0,.35), 0 0 0 0 rgba(201,168,76,0.35);
+    transition: transform .18s ease, box-shadow .25s ease, border-color .25s ease;
+  }
+  .cta:hover {
+    transform: translateY(-2px);
+    border-color: rgba(201,168,76,0.8);
+    box-shadow: 0 14px 38px rgba(0,0,0,.4), 0 0 0 6px rgba(201,168,76,0.1);
+  }
+  .cta:active { transform: translateY(0); }
+  .cta svg { width: 17px; height: 17px; stroke: #f3e9cf; fill: none; stroke-width: 1.8; }
+
+  .roster-hint {
+    margin-top: 16px;
+    font-size: 11.5px;
+    letter-spacing: 1.5px;
+    color: var(--ink-mute);
+    opacity: 0;
+    animation: fadeIn .6s ease .68s forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .brand-mark, h1.title, .subtitle, .cta-wrap, .roster-hint { animation: none; opacity: 1; transform: none; }
+  }
+
+  /* ── 登入彈窗（沿用殿堂帳號卡片樣式）── */
+  .modal-back {
+    position: fixed; inset: 0; z-index: 10;
+    background: rgba(4,4,7,0.62);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    display: none;
+    align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .modal-back.open { display: flex; animation: fadeIn .22s ease; }
 
   .card {
     width: 100%;
     max-width: 400px;
-    background: rgba(255,255,255,0.72);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255,255,255,0.75);
+    background: rgba(244,241,236,0.96);
+    border: 1px solid rgba(255,255,255,0.5);
     border-radius: 22px;
-    padding: 40px 32px 32px;
-    box-shadow:
-      0 20px 50px rgba(61,48,40,0.11),
-      0 2px 8px rgba(61,48,40,0.05);
-    animation: rise 0.5s cubic-bezier(0.2, 0.9, 0.3, 1);
+    padding: 36px 30px 28px;
+    color: #3d3028;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+    animation: rise .38s cubic-bezier(0.2, 0.9, 0.3, 1);
   }
-  @keyframes rise {
-    from { opacity: 0; transform: translateY(16px); }
-    to   { opacity: 1; transform: none; }
-  }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 
-  /* ── 标题 ── */
-  .brand { text-align: center; margin-bottom: 30px; }
-  .seal {
-    width: 54px; height: 54px;
-    margin: 0 auto 16px;
-    border-radius: 13px;
-    background: linear-gradient(145deg, var(--gold), var(--bronze));
+  .modal-close {
+    position: absolute; top: -14px; right: -14px;
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--paper); border: 1px solid rgba(61,48,40,0.12);
+    color: #5a4a38; font-size: 15px; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
-    font-size: 27px;
+  }
+  .card-wrap { position: relative; }
+
+  .brand { text-align: center; margin-bottom: 26px; }
+  .seal {
+    width: 48px; height: 48px; margin: 0 auto 14px; border-radius: 12px;
+    background: linear-gradient(145deg, var(--gold), var(--bronze));
+    display: flex; align-items: center; justify-content: center; font-size: 24px;
     box-shadow: 0 6px 18px rgba(138,109,59,0.32);
   }
-  .brand h1 {
-    font-size: 25px;
-    font-weight: 600;
-    letter-spacing: 3px;
-    margin-bottom: 7px;
-  }
-  .brand p {
-    font-size: 12.5px;
-    color: var(--ink-mute);
-    letter-spacing: 1.4px;
-  }
+  .brand h2 { font-size: 21px; font-weight: 600; letter-spacing: 2px; color: #3d3028; margin-bottom: 6px; }
+  .brand p { font-size: 11.5px; color: #9a8a7a; letter-spacing: 1.3px; }
 
-  /* ── 表单 ── */
-  .field { margin-bottom: 17px; }
-  .field label {
-    display: block;
-    font-size: 12px;
-    color: var(--ink-mute);
-    letter-spacing: 1.1px;
-    margin-bottom: 7px;
-  }
+  .field { margin-bottom: 15px; }
+  .field label { display: block; font-size: 11.5px; color: #9a8a7a; letter-spacing: 1px; margin-bottom: 6px; }
   .field input {
-    width: 100%;
-    padding: 13px 15px;
-    border: 1px solid rgba(61,48,40,0.13);
-    border-radius: 12px;
-    background: rgba(255,255,255,0.85);
-    font-size: 15px;
-    color: var(--ink);
-    font-family: inherit;
+    width: 100%; padding: 12px 14px; border: 1px solid rgba(61,48,40,0.13);
+    border-radius: 11px; background: rgba(255,255,255,0.85);
+    font-size: 14.5px; color: #3d3028; font-family: inherit;
     transition: border-color 0.2s, box-shadow 0.2s;
   }
-  .field input:focus {
-    outline: none;
-    border-color: var(--gold);
-    box-shadow: 0 0 0 3px rgba(201,168,76,0.16);
-  }
+  .field input:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(201,168,76,0.16); }
   .field input::placeholder { color: #bcb0a4; }
 
   .pw-wrap { position: relative; }
   .pw-toggle {
-    position: absolute;
-    right: 6px; top: 50%;
-    transform: translateY(-50%);
-    background: none; border: none;
-    padding: 8px 10px;
-    font-size: 15px;
-    cursor: pointer;
-    opacity: 0.5;
-    line-height: 1;
+    position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; padding: 7px 9px; font-size: 14px; cursor: pointer; opacity: 0.5;
   }
   .pw-toggle:hover { opacity: 0.85; }
 
   .btn-primary {
-    width: 100%;
-    padding: 14px;
-    margin-top: 8px;
-    border: none;
-    border-radius: 12px;
-    background: linear-gradient(145deg, #4a3828, var(--ink));
-    color: #f4f1ec;
-    font-size: 15px;
-    font-weight: 500;
-    letter-spacing: 2.5px;
-    font-family: inherit;
-    cursor: pointer;
-    transition: transform 0.15s, box-shadow 0.2s, opacity 0.2s;
+    width: 100%; padding: 13px; margin-top: 6px; border: none; border-radius: 11px;
+    background: linear-gradient(145deg, #4a3828, #3d3028); color: #f4f1ec;
+    font-size: 14.5px; font-weight: 500; letter-spacing: 2.2px; font-family: inherit;
+    cursor: pointer; transition: transform 0.15s, box-shadow 0.2s, opacity 0.2s;
     box-shadow: 0 5px 16px rgba(61,48,40,0.24);
   }
-  .btn-primary:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 8px 22px rgba(61,48,40,0.3);
-  }
+  .btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(61,48,40,0.3); }
   .btn-primary:active:not(:disabled) { transform: translateY(0); }
   .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
 
-  /* ── 提示条 ── */
-  .msg {
-    display: none;
-    padding: 11px 14px;
-    border-radius: 11px;
-    font-size: 13.5px;
-    line-height: 1.5;
-    margin-bottom: 17px;
-  }
+  .msg { display: none; padding: 10px 13px; border-radius: 10px; font-size: 13px; line-height: 1.5; margin-bottom: 15px; }
   .msg.show { display: block; animation: shake 0.32s; }
-  .msg.error {
-    background: rgba(200,50,45,0.09);
-    border: 1px solid rgba(200,50,45,0.22);
-    color: #9e2622;
-  }
-  .msg.ok {
-    background: rgba(90,158,75,0.11);
-    border: 1px solid rgba(90,158,75,0.26);
-    color: #3f7534;
-    animation: none;
-  }
-  @keyframes shake {
-    0%,100% { transform: translateX(0); }
-    25% { transform: translateX(-5px); }
-    75% { transform: translateX(5px); }
-  }
+  .msg.error { background: rgba(200,50,45,0.09); border: 1px solid rgba(200,50,45,0.22); color: #9e2622; }
+  .msg.ok { background: rgba(90,158,75,0.11); border: 1px solid rgba(90,158,75,0.26); color: #3f7534; animation: none; }
+  @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
 
-  /* ── 底部说明 ── */
-  .foot {
-    margin-top: 26px;
-    padding-top: 20px;
-    border-top: 1px solid rgba(61,48,40,0.09);
-    text-align: center;
-  }
-  .foot p {
-    font-size: 12.5px;
-    color: var(--ink-mute);
-    line-height: 1.75;
-  }
-  .foot .tiers {
-    display: flex;
-    gap: 9px;
-    margin-top: 14px;
-  }
-  .tier {
-    flex: 1;
-    padding: 11px 8px;
-    border-radius: 11px;
-    background: rgba(61,48,40,0.035);
-    border: 1px solid rgba(61,48,40,0.06);
-  }
-  .tier .t-name {
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.8px;
-    margin-bottom: 3px;
-  }
-  .tier .t-desc { font-size: 11px; color: var(--ink-mute); line-height: 1.5; }
+  .foot { margin-top: 22px; padding-top: 18px; border-top: 1px solid rgba(61,48,40,0.09); text-align: center; }
+  .foot p { font-size: 12px; color: #9a8a7a; line-height: 1.7; }
+  .foot .tiers { display: flex; gap: 8px; margin-top: 12px; }
+  .tier { flex: 1; padding: 10px 7px; border-radius: 10px; background: rgba(61,48,40,0.035); border: 1px solid rgba(61,48,40,0.06); }
+  .tier .t-name { font-size: 11.5px; font-weight: 600; letter-spacing: 0.6px; margin-bottom: 3px; }
+  .tier .t-desc { font-size: 10.5px; color: #9a8a7a; line-height: 1.5; }
   .tier.trial .t-name { color: var(--bronze); }
   .tier.premium .t-name { color: var(--gold); }
 
   .spin {
-    display: inline-block;
-    width: 13px; height: 13px;
-    border: 2px solid rgba(244,241,236,0.35);
-    border-top-color: #f4f1ec;
-    border-radius: 50%;
-    animation: spin 0.65s linear infinite;
-    vertical-align: -2px;
-    margin-right: 7px;
+    display: inline-block; width: 13px; height: 13px;
+    border: 2px solid rgba(244,241,236,0.35); border-top-color: #f4f1ec;
+    border-radius: 50%; animation: spin 0.65s linear infinite; vertical-align: -2px; margin-right: 7px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
   @media (max-width: 420px) {
-    .card { padding: 32px 22px 26px; border-radius: 18px; }
-    .brand h1 { font-size: 22px; }
+    .card { padding: 30px 22px 24px; border-radius: 18px; }
+    h1.title { letter-spacing: 6px; }
+    .cta { padding: 13px 26px; font-size: 14.5px; }
   }
 </style>
 </head>
 <body>
 
-<div class="card">
-  <div class="brand">
-    <div class="seal">🏛️</div>
-    <h1>數字人殿堂</h1>
-    <p>DIGITAL HUMAN PALACE</p>
+<div class="stage" id="stage">
+  <img class="l-ensemble" src="/images/cover/ensemble.webp" alt="秦始皇、李白、杜甫、Queen Elizabeth I 與小瑪老師等歷史人物">
+</div>
+<div class="vignette"></div>
+
+<div class="hero">
+  <div class="brand-mark">🏛️</div>
+  <h1 class="title">數字人殿堂</h1>
+  <div class="subtitle">DIGITAL HUMAN PALACE</div>
+  <div class="cta-wrap">
+    <button class="cta" id="btnOpenLogin">
+      <svg viewBox="0 0 24 24"><path d="M8 12h8M12 8v8"/><circle cx="12" cy="12" r="9"/></svg>
+      開始對話
+    </button>
   </div>
+  <div class="roster-hint">與歷史人物實時對話 · 語音互動</div>
+</div>
 
-  <div class="msg" id="msg"></div>
-
-  <form id="loginForm" autocomplete="on">
-    <div class="field">
-      <label for="username">帳號</label>
-      <input type="text" id="username" name="username" placeholder="請輸入帳號"
-             autocomplete="username" autocapitalize="none" spellcheck="false" required>
-    </div>
-
-    <div class="field">
-      <label for="password">密碼</label>
-      <div class="pw-wrap">
-        <input type="password" id="password" name="password" placeholder="請輸入密碼"
-               autocomplete="current-password" required>
-        <button type="button" class="pw-toggle" id="pwToggle" aria-label="顯示密碼">👁</button>
+<div class="modal-back" id="modalBack">
+  <div class="card-wrap">
+    <button class="modal-close" id="modalClose" aria-label="關閉">×</button>
+    <div class="card">
+      <div class="brand">
+        <div class="seal">🏛️</div>
+        <h2>登入殿堂</h2>
+        <p>DIGITAL HUMAN PALACE</p>
       </div>
-    </div>
 
-    <button type="submit" class="btn-primary" id="submitBtn">登 入</button>
-  </form>
+      <div class="msg" id="msg"></div>
 
-  <div class="foot">
-    <p>帳號由管理員統一開通，如需開通請聯繫管理員</p>
-    <div class="tiers">
-      <div class="tier trial">
-        <div class="t-name">體驗帳戶</div>
-        <div class="t-desc">20 次對話</div>
-      </div>
-      <div class="tier premium">
-        <div class="t-name">高級帳戶</div>
-        <div class="t-desc">全套服務 · 不限次數</div>
+      <form id="loginForm" autocomplete="on">
+        <div class="field">
+          <label for="username">帳號</label>
+          <input type="text" id="username" name="username" placeholder="請輸入帳號"
+                 autocomplete="username" autocapitalize="none" spellcheck="false" required>
+        </div>
+        <div class="field">
+          <label for="password">密碼</label>
+          <div class="pw-wrap">
+            <input type="password" id="password" name="password" placeholder="請輸入密碼"
+                   autocomplete="current-password" required>
+            <button type="button" class="pw-toggle" id="pwToggle" aria-label="顯示密碼">👁</button>
+          </div>
+        </div>
+        <button type="submit" class="btn-primary" id="submitBtn">登 入</button>
+      </form>
+
+      <div class="foot">
+        <p>帳號由管理員統一開通，如需開通請聯繫管理員</p>
+        <div class="tiers">
+          <div class="tier trial"><div class="t-name">體驗帳戶</div><div class="t-desc">20 次對話</div></div>
+          <div class="tier premium"><div class="t-name">高級帳戶</div><div class="t-desc">全套服務 · 不限次數</div></div>
+        </div>
       </div>
     </div>
   </div>
@@ -295,14 +321,23 @@
 <script>
 const $ = id => document.getElementById(id);
 const msgEl = $('msg');
+const modalBack = $('modalBack');
 
-function showMsg(text, kind = 'error') {
-  msgEl.textContent = text;
-  msgEl.className = `msg show ${kind}`;
-}
+function showMsg(text, kind = 'error') { msgEl.textContent = text; msgEl.className = `msg show ${kind}`; }
 function clearMsg() { msgEl.className = 'msg'; }
 
-// 已登录就直接进主站，不用重复登录
+function openModal() {
+  modalBack.classList.add('open');
+  setTimeout(() => $('username').focus(), 60);
+}
+function closeModal() { modalBack.classList.remove('open'); clearMsg(); }
+
+$('btnOpenLogin').addEventListener('click', openModal);
+$('modalClose').addEventListener('click', closeModal);
+modalBack.addEventListener('click', e => { if (e.target === modalBack) closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && modalBack.classList.contains('open')) closeModal(); });
+
+// 已登录的一般用户直接进殿堂；已登录的管理员不导入消费端，留在封面（管理平台走独立網址）
 (async function checkExisting() {
   let token = '';
   try { token = localStorage.getItem('dh_session_token') || ''; } catch (_) {}
@@ -310,17 +345,15 @@ function clearMsg() { msgEl.className = 'msg'; }
   try {
     const r = await fetch('/api/auth/session', { headers: { 'X-Session-Token': token } });
     const d = await r.json();
-    if (d.authenticated) location.replace(nextTarget(d));
+    if (d.authenticated && d.role !== 'admin') location.replace(nextTarget(d));
   } catch (_) {}
 })();
 
 function nextTarget(session) {
   const params = new URLSearchParams(location.search);
   const next = params.get('next');
-  // 只接受站内相对路径，避免开放重定向
   if (next && next.startsWith('/') && !next.startsWith('//')) return next;
-  // 管理员直接进管理平台（运维 + 用户管理），普通用户进殿堂
-  return session.role === 'admin' ? '/ops.html' : '/index.html';
+  return '/index.html';
 }
 
 $('pwToggle').addEventListener('click', () => {
@@ -353,18 +386,22 @@ $('loginForm').addEventListener('submit', async e => {
 
     if (!r.ok) {
       showMsg(typeof d.detail === 'string' ? d.detail : '登入失敗，請重試');
-      btn.disabled = false;
-      btn.textContent = '登 入';
+      btn.disabled = false; btn.textContent = '登 入';
+      return;
+    }
+
+    // 殿堂只接待一般用戶——管理員帳戶就算密碼正確也不在這裡放行
+    if (d.role === 'admin') {
+      try { await fetch('/api/auth/logout', { method: 'POST', headers: { 'X-Session-Token': d.token } }); } catch (_) {}
+      showMsg('管理員帳戶請前往管理平台登入');
+      btn.disabled = false; btn.textContent = '登 入';
       return;
     }
 
     try {
       localStorage.setItem('dh_session_token', d.token);
       localStorage.setItem('dh_session_user', JSON.stringify({
-        username: d.username,
-        display_name: d.display_name,
-        role: d.role,
-        features: d.features
+        username: d.username, display_name: d.display_name, role: d.role, features: d.features
       }));
     } catch (_) {}
 
@@ -374,12 +411,23 @@ $('loginForm').addEventListener('submit', async e => {
 
   } catch (err) {
     showMsg('無法連接伺服器，請檢查網絡');
-    btn.disabled = false;
-    btn.textContent = '登 入';
+    btn.disabled = false; btn.textContent = '登 入';
   }
 });
 
-$('username').focus();
+// 輕微視差 —— 只在桌面、非降低動態效果偏好時啟用
+if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && !('ontouchstart' in window)) {
+  const ensemble = document.querySelector('.l-ensemble');
+  let raf = null;
+  window.addEventListener('mousemove', e => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      const x = (e.clientX / window.innerWidth - 0.5), y = (e.clientY / window.innerHeight - 0.5);
+      ensemble.style.transform = `translate(${x * -14}px, ${y * -6}px) scale(1.02)`;
+      raf = null;
+    });
+  });
+}
 </script>
 
 </body>

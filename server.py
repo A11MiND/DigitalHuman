@@ -12,9 +12,11 @@ import asyncio
 import base64
 import csv
 import json
+import collections
 import logging
 import re
 import subprocess
+import socket
 import time
 from copy import deepcopy
 from html.parser import HTMLParser
@@ -198,6 +200,39 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("digital-human")
+
+
+# ── 运行平台识别 ────────────────────────────────────────
+# systemd / journalctl 只存在于自管服务器；容器平台（Railway）需要另一套采集方式。
+RAILWAY_ENV = os.getenv("RAILWAY_ENVIRONMENT_NAME") or os.getenv("RAILWAY_ENVIRONMENT", "")
+IS_RAILWAY = bool(RAILWAY_ENV)
+PLATFORM = "railway" if IS_RAILWAY else "systemd"
+PROCESS_STARTED_AT = time.time()
+
+
+class _RingLogHandler(logging.Handler):
+    """把日志留在内存里，供容器环境的 /api/logs 读取（无 journalctl 可用）。"""
+
+    def __init__(self, capacity: int = 4000):
+        super().__init__()
+        self.capacity = capacity
+        self.buf: collections.deque = collections.deque(maxlen=capacity)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            ts = datetime.datetime.fromtimestamp(record.created, OPS_TZ).isoformat(timespec="seconds")
+            self.buf.append(f"{ts} {record.levelname:<5} {record.getMessage()}")
+        except Exception:
+            pass
+
+    def dump(self, lines: int) -> str:
+        items = list(self.buf)
+        return "\n".join(items[-lines:]) if items else ""
+
+
+RING_LOGS = _RingLogHandler()
+RING_LOGS.setLevel(logging.INFO)
+logging.getLogger().addHandler(RING_LOGS)
 
 # ── System Prompt (Qin Shi Huang persona) ───────────────
 SYSTEM_PROMPT = """你是秦始皇嬴政，生活在公元前259年至公元前210年。你现在正在与中小学生对话。
@@ -909,10 +944,12 @@ class MiniMaxProvider:
 
 # ── MiniMax LLM ──────────────────────────────────────────
 async def minimax_llm_stream(query: str, history: list[dict] | None = None, system_prompt: str | None = None,
-                             api_key: str | None = None, llm_base: str | None = None):
+                             api_key: str | None = None, llm_base: str | None = None, history_window: int = 20):
     """Call MiniMax LLM with streaming, yield text chunks.
 
     api_key / llm_base 留空则用全局配置；高级帐户会传入自己的 Key 与所属区域端点。
+    history_window: 实际传给模型的最近消息条数（默认20条=10轮）。角色可在 character.json
+    用 "history_window" 覆写，用于需要更长记忆的场景（例如销售培训陪练角色）。
     """
     key = (api_key or "").strip() or MINIMAX_API_KEY
     base = (llm_base or "").strip() or MINIMAX_LLM_BASE
@@ -923,7 +960,8 @@ async def minimax_llm_stream(query: str, history: list[dict] | None = None, syst
     messages = [{"role": "system", "content": _with_global_output_rules(system_prompt or SYSTEM_PROMPT)}]
 
     history = history or []
-    for msg in history[-20:]:
+    window = max(1, int(history_window or 20))
+    for msg in history[-window:]:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             if role in ("user", "assistant") and content:
@@ -1233,6 +1271,10 @@ async def websocket_endpoint(websocket: WebSocket):
     conversation_history: list[dict[str, str]] = []
     base_system_prompt: str = char_mgr.get_system_prompt(char_id)
     _lang_instruction: str = _build_lang_instruction(tts_config["language_boost"])
+    # 角色可在 character.json 用 "history_window" 覆写送去模型嘅最近消息条数（默认20=10轮）
+    _char_cfg = char_mgr.get(char_id) or {}
+    history_window: int = int(_char_cfg.get("history_window") or 20)
+    history_keep: int = max(50, history_window)
 
     try:
         while True:
@@ -1343,7 +1385,8 @@ async def websocket_endpoint(websocket: WebSocket):
             ttft = None
             async for chunk in minimax_llm_stream(user_text, conversation_history,
                                                  base_system_prompt + _lang_instruction,
-                                                 api_key=mm_key, llm_base=mm_llm_base):
+                                                 api_key=mm_key, llm_base=mm_llm_base,
+                                                 history_window=history_window):
                 if ttft is None:
                     ttft = int((time.time() - t_turn) * 1000)
                 if chunk.startswith("[ERROR]"):
@@ -1361,8 +1404,8 @@ async def websocket_endpoint(websocket: WebSocket):
             if full_response and not full_response.startswith("[ERROR]"):
                 conversation_history.append({"role": "user", "content": user_text})
                 conversation_history.append({"role": "assistant", "content": full_response})
-                if len(conversation_history) > 50:
-                    conversation_history = conversation_history[-50:]
+                if len(conversation_history) > history_keep:
+                    conversation_history = conversation_history[-history_keep:]
 
                 llm_total = int((time.time() - t_turn) * 1000)
                 logger.info(f"[{req_id}] LLM done: {len(full_response)}chars, ttft={ttft or 0}ms, total={llm_total}ms")
@@ -1865,19 +1908,76 @@ def _human_duration(seconds: float) -> str:
     return f"{minutes}m"
 
 
+def _read_cgroup_int(path: str) -> int | None:
+    """读 cgroup 数值文件；"max"（无限制）与读取失败都返回 None。"""
+    try:
+        raw = Path(path).read_text(encoding="utf-8").strip()
+    except Exception:
+        return None
+    if raw in ("max", ""):
+        return None
+    try:
+        return int(raw.split()[0])
+    except (ValueError, IndexError):
+        return None
+
+
+def _container_memory() -> dict | None:
+    """容器自身的内存额度与用量（cgroup v2 优先，回退 v1）。
+
+    容器里读 /proc/meminfo 拿到的是宿主机数据，对运维毫无意义，
+    所以这里优先按 cgroup 限额统计。
+    """
+    limit = _read_cgroup_int("/sys/fs/cgroup/memory.max")
+    current = _read_cgroup_int("/sys/fs/cgroup/memory.current")
+    if limit is None:
+        limit = _read_cgroup_int("/sys/fs/cgroup/memory/memory.limit_in_bytes")
+        current = _read_cgroup_int("/sys/fs/cgroup/memory/memory.usage_in_bytes")
+    # v1 无限制时会给一个接近 2^63 的哨兵值
+    if limit and limit > (1 << 62):
+        limit = None
+    if not limit or current is None:
+        return None
+    return {
+        "total": limit,
+        "available": max(limit - current, 0),
+        "used": current,
+        "percent": round((current / limit) * 100, 1) if limit else 0,
+        "scope": "container",
+    }
+
+
+def _container_cpu_quota() -> float | None:
+    """容器可用的 CPU 核数（cpu.max = "quota period"）。"""
+    try:
+        raw = Path("/sys/fs/cgroup/cpu.max").read_text(encoding="utf-8").strip().split()
+        if len(raw) == 2 and raw[0] != "max":
+            return round(int(raw[0]) / int(raw[1]), 2)
+    except Exception:
+        pass
+    quota = _read_cgroup_int("/sys/fs/cgroup/cpu/cpu.cfs_quota_us")
+    period = _read_cgroup_int("/sys/fs/cgroup/cpu/cpu.cfs_period_us")
+    if quota and period and quota > 0:
+        return round(quota / period, 2)
+    return None
+
+
 def _read_meminfo() -> dict:
+    container = _container_memory()
+    if container:
+        return container
     data: dict[str, int] = {}
     try:
         for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
             key, raw = line.split(":", 1)
             data[key] = int(raw.strip().split()[0]) * 1024
     except Exception:
-        return {"total": 0, "available": 0, "used": 0, "percent": 0}
+        return {"total": 0, "available": 0, "used": 0, "percent": 0, "scope": "host"}
     total = data.get("MemTotal", 0)
     available = data.get("MemAvailable", 0)
     used = max(total - available, 0)
     percent = round((used / total) * 100, 1) if total else 0
-    return {"total": total, "available": available, "used": used, "percent": percent}
+    return {"total": total, "available": available, "used": used, "percent": percent, "scope": "host"}
 
 
 def _system_resources() -> dict:
@@ -1889,23 +1989,35 @@ def _system_resources() -> dict:
         load1, load5, load15 = os.getloadavg()
     except Exception:
         load1 = load5 = load15 = 0
-    cores = os.cpu_count() or 1
-    disk = shutil.disk_usage("/")
+    host_cores = os.cpu_count() or 1
+    quota = _container_cpu_quota()
+    cores = quota or host_cores
+    # 容器里 / 是镜像层，运维真正关心的是数据卷所在的挂载点
+    disk_path = str(DB_PATH.parent) if DB_PATH.parent.exists() else "/"
+    disk = shutil.disk_usage(disk_path)
     db_size = DB_PATH.stat().st_size if DB_PATH.exists() else 0
+    # 容器内 /proc/uptime 是宿主机的，改用本进程存活时长
+    proc_uptime = max(time.time() - PROCESS_STARTED_AT, 0)
+    if IS_RAILWAY:
+        uptime_seconds = proc_uptime
     return {
         "time": datetime.datetime.now(OPS_TZ).isoformat(),
         "timezone": "UTC+8",
+        "platform": PLATFORM,
         "uptime_seconds": int(uptime_seconds),
         "uptime": _human_duration(uptime_seconds),
+        "uptime_scope": "process" if IS_RAILWAY else "host",
         "cpu": {
             "cores": cores,
+            "scope": "container" if quota else "host",
             "load_1": round(load1, 2),
             "load_5": round(load5, 2),
             "load_15": round(load15, 2),
-            "load_percent": round(min((load1 / cores) * 100, 999), 1),
+            "load_percent": round(min((load1 / max(cores, 0.1)) * 100, 999), 1),
         },
         "memory": _read_meminfo(),
         "disk": {
+            "mount": disk_path,
             "total": disk.total,
             "used": disk.used,
             "free": disk.free,
@@ -1921,6 +2033,23 @@ def _system_resources() -> dict:
             "cwd": str(Path.cwd()),
             "python": ".".join(map(str, os.sys.version_info[:3])),
         },
+        "deployment": _deployment_info(),
+    }
+
+
+def _deployment_info() -> dict:
+    """当前部署的身份信息。Railway 通过环境变量注入这些值。"""
+    if not IS_RAILWAY:
+        return {"platform": "systemd", "host": socket.gethostname()}
+    return {
+        "platform": "railway",
+        "project": os.getenv("RAILWAY_PROJECT_NAME", ""),
+        "service": os.getenv("RAILWAY_SERVICE_NAME", ""),
+        "environment": RAILWAY_ENV,
+        "region": os.getenv("RAILWAY_REPLICA_REGION", ""),
+        "replica": os.getenv("RAILWAY_REPLICA_ID", "")[:12],
+        "deployment": os.getenv("RAILWAY_DEPLOYMENT_ID", "")[:12],
+        "url": os.getenv("RAILWAY_PUBLIC_DOMAIN", ""),
     }
 
 
@@ -1934,6 +2063,34 @@ def _service_state(name: str) -> dict:
         "enabled": enabled["stdout"] or "unknown",
         "status": status,
     }
+
+
+def _service_list() -> list[dict]:
+    """按运行平台给出有意义的服务清单。
+
+    容器平台没有 systemd —— 去问 systemctl 只会得到一串假的「未运行」告警。
+    Railway 上真正能反映健康度的是进程自身与平台注入的部署信息。
+    """
+    if not IS_RAILWAY:
+        return [_service_state("digitalhuman.service"), _service_state("nginx.service")]
+    dep = _deployment_info()
+    detail = " · ".join(x for x in (dep.get("service"), dep.get("environment"), dep.get("region")) if x)
+    return [
+        {
+            "name": "digitalhuman (Railway)",
+            "active": "active",
+            "enabled": detail or "railway",
+            "status": "ok",
+            "managed": "railway",
+        },
+        {
+            "name": "Railway Edge / TLS",
+            "active": "active" if dep.get("url") else "unknown",
+            "enabled": dep.get("url") or "platform-managed",
+            "status": "ok",
+            "managed": "railway",
+        },
+    ]
 
 
 _JOURNAL_TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:\d{2}|Z))(\s+)(.*)$")
@@ -1958,13 +2115,18 @@ def _journal_to_hkt(text: str) -> str:
 
 
 def _recent_journal(lines: int = 200) -> str:
+    """最近日志。容器平台没有 journalctl，改用进程内的环形缓冲。"""
+    if IS_RAILWAY:
+        return RING_LOGS.dump(lines)
     result = _run_ops_cmd(
         ["journalctl", "-u", "digitalhuman.service", "--no-pager", "-n", str(lines), "-o", "short-iso"],
         timeout=6,
     )
     if result["ok"] or result["stdout"]:
         return _journal_to_hkt(result["stdout"])
-    return _journal_to_hkt(result["stderr"])
+    # 自管机器上 journalctl 不可用时，退回内存缓冲而不是把报错当日志显示
+    fallback = RING_LOGS.dump(lines)
+    return fallback or _journal_to_hkt(result["stderr"])
 
 
 def _conversation_summary() -> dict:
@@ -2020,9 +2182,12 @@ def _diagnose(logs: str, resources: dict, services: list[dict]) -> list[dict]:
                 "status": "error",
                 "code": f"service-{service['name']}",
                 "title": f"{service['name']} is not active",
-                "description": f"systemctl reports {service['active']}.",
+                "description": (f"Railway reports {service['active']}." if IS_RAILWAY
+                                else f"systemctl reports {service['active']}."),
                 "root_cause": "The process may have crashed, failed during boot, or been stopped manually.",
-                "advice": f"Run journalctl -u {service['name']} -n 100 before restarting.",
+                "advice": ("Check the deployment logs in the Railway dashboard before redeploying."
+                           if IS_RAILWAY
+                           else f"Run journalctl -u {service['name']} -n 100 before restarting."),
                 "log": "",
             })
 
@@ -2133,7 +2298,7 @@ async def ops_status(x_user_code: UserCodeHeader = None, x_session_token: accoun
     """Return service and app status for the ops console."""
     _require_ops_access(x_user_code, x_session_token)
     chars = char_mgr.list_all()
-    services = [_service_state("digitalhuman.service"), _service_state("nginx.service")]
+    services = _service_list()
     return {
         "ok": True,
         "app": {
@@ -2155,7 +2320,7 @@ async def ops_diagnostics(lines: int = 300, x_user_code: UserCodeHeader = None, 
     _require_ops_access(x_user_code, x_session_token)
     lines = max(50, min(lines, 2000))
     resources = _system_resources()
-    services = [_service_state("digitalhuman.service"), _service_state("nginx.service")]
+    services = _service_list()
     logs = _recent_journal(lines)
     return {
         "ok": True,
@@ -2206,7 +2371,7 @@ def _build_ops_chat_prompt(req: OpsChatRequest) -> tuple[str, str, list[dict]]:
         raise HTTPException(status_code=400, detail="message is required")
 
     resources = _system_resources()
-    services = [_service_state("digitalhuman.service"), _service_state("nginx.service")]
+    services = _service_list()
     logs = _recent_journal(180)
     diagnostics = _diagnose(logs, resources, services)
     conversations = _conversation_summary()

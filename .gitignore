@@ -20,3 +20,4 @@ README_SERVERS.md
 static/report_gen.py
 stress_test_output.log
 test_*_results.json
+.assets-archive/
