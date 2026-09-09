@@ -1151,7 +1151,8 @@ function refreshThumbnails() {
 
 async function loadCharacter(id) {
   try {
-    const res = await fetch(`/api/characters/${id}`);
+    const res = await fetch(`/api/characters/${id}`, { headers: authHeaders() });
+    if (res.status === 403) throw new Error('你的帳號未獲授權使用呢個數字人角色，請聯絡管理員');
     if (!res.ok) throw new Error(`Character '${id}' not found`);
     charConfig = await res.json();
     console.log('[Char] loaded:', charConfig);
@@ -1177,7 +1178,7 @@ async function loadCharacter(id) {
     return true;
   } catch(e) {
     console.error('[Char] load failed:', e);
-    alert(`角色「${id}」加載失敗`);
+    alert(e && e.message && e.message.includes('未獲授權') ? e.message : `角色「${id}」加載失敗`);
     return false;
   }
 }

@@ -686,7 +686,9 @@ function _hoverOut() {
 
 async function loadCharacters() {
   try {
-    const res = await fetch('/api/characters');
+    const res = await fetch('/api/characters', {
+      headers: SESSION_TOKEN ? { 'X-Session-Token': SESSION_TOKEN } : {},
+    });
     const chars = await res.json();
     grid.innerHTML = '';
 

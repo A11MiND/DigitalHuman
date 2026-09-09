@@ -1915,24 +1915,28 @@
               <div class="qbar${out ? ' full' : ''}"><i style="width:${pct}%"></i></div>`;
     }
 
+    let lastAccounts = [];
     function renderAccounts(list) {
+      lastAccounts = list;
       const box = document.getElementById('acctTable');
       if (!list.length) { box.innerHTML = '<div class="empty">沒有匹配的帳號</div>'; return; }
       box.innerHTML = `<table class="acct-tbl">
         <thead><tr>
-          <th>帳號</th><th>角色</th><th>狀態</th><th>對話額度</th><th>最後登錄</th><th>備註</th><th style="text-align:right">操作</th>
+          <th>帳號</th><th>角色</th><th>狀態</th><th>對話額度</th><th>數字人權限</th><th>最後登錄</th><th>備註</th><th style="text-align:right">操作</th>
         </tr></thead><tbody>${list.map(a => `
           <tr>
             <td><div class="acct-name">${escapeHtml(a.username)}</div>${a.display_name ? `<div class="acct-sub">${escapeHtml(a.display_name)}</div>` : ''}</td>
             <td><span class="pill ${ROLE_PILL[a.role] || 'pill-trial'}">${ROLE_TEXT[a.role] || escapeHtml(a.role)}</span></td>
             <td><span class="pill ${a.status === 'active' ? 'pill-on' : 'pill-off'}">${a.status === 'active' ? '啓用' : '停用'}</span></td>
             <td>${quotaCell(a)}</td>
+            <td class="qtext" style="color:var(--text2)">${(a.allowed_characters && a.allowed_characters.length) ? `🔒 限 ${a.allowed_characters.length} 個` : '不限'}</td>
             <td class="qtext" style="color:var(--text2)">${a.last_login_at ? fmtRecordTime(a.last_login_at) : '—'}</td>
             <td style="color:var(--text3);font-size:12.5px">${escapeHtml(a.note || '—')}</td>
             <td><div class="row-acts">
               ${a.role === 'trial' ? `<button class="btn-mini go" data-act="upgrade" data-u="${escapeHtml(a.username)}">升級</button>` : ''}
               ${a.role === 'premium' ? `<button class="btn-mini" data-act="downgrade" data-u="${escapeHtml(a.username)}">降回體驗</button>` : ''}
               ${a.quota_limit !== -1 ? `<button class="btn-mini" data-act="reset" data-u="${escapeHtml(a.username)}">清零</button>` : ''}
+              ${a.role !== 'admin' ? `<button class="btn-mini" data-act="chars" data-u="${escapeHtml(a.username)}">數字人權限</button>` : ''}
               <button class="btn-mini" data-act="pw" data-u="${escapeHtml(a.username)}">密碼</button>
               <button class="btn-mini" data-act="toggle" data-u="${escapeHtml(a.username)}" data-s="${a.status}">${a.status === 'active' ? '停用' : '啓用'}</button>
               <button class="btn-mini danger" data-act="del" data-u="${escapeHtml(a.username)}">刪除</button>
@@ -2066,6 +2070,38 @@
               quota_limit: parseInt(document.getElementById('mDownQuota').value, 10),
               quota_used: parseInt(document.getElementById('mDownUsed').value, 10),
             }) }));
+        return;
+      }
+      if (act === 'chars') {
+        const acct = lastAccounts.find(x => x.username === username) || {};
+        const allowed = acct.allowed_characters || [];
+        let allChars = [];
+        try { allChars = await acctFetch('/api/characters'); }
+        catch (e) { alert('讀取角色列表失敗：' + e.message); return; }
+        const unrestricted = allowed.length === 0;
+        openModal(`數字人權限 — ${username}`, `
+          <div class="fld"><label style="display:flex;align-items:center;gap:6px;font-weight:normal">
+            <input type="checkbox" id="mCharsAll" ${unrestricted ? 'checked' : ''}> 不限制（可用全部數字人，包括未來新增角色）
+          </label></div>
+          <div id="mCharsList" style="${unrestricted ? 'display:none' : ''};max-height:260px;overflow-y:auto;margin-top:4px">
+            ${allChars.map(ch => `<label style="display:flex;align-items:center;gap:6px;padding:4px 0;font-weight:normal">
+              <input type="checkbox" class="mCharChk" value="${escapeHtml(ch.id)}" ${allowed.includes(ch.id) ? 'checked' : ''}> ${escapeHtml(ch.name)} <span class="hint">(${escapeHtml(ch.id)})</span>
+            </label>`).join('')}
+          </div>`,
+          async () => {
+            if (document.getElementById('mCharsAll').checked) {
+              return acctFetch(`/api/admin/accounts/${encodeURIComponent(username)}`, {
+                method: 'PATCH', body: JSON.stringify({ allowed_characters: [] }) });
+            }
+            const checked = Array.from(document.querySelectorAll('.mCharChk:checked')).map(x => x.value);
+            if (checked.length === 0) throw new Error('請至少選擇一個角色，或勾選「不限制」');
+            return acctFetch(`/api/admin/accounts/${encodeURIComponent(username)}`, {
+              method: 'PATCH', body: JSON.stringify({ allowed_characters: checked }) });
+          });
+        const allBox = document.getElementById('mCharsAll');
+        allBox.addEventListener('change', () => {
+          document.getElementById('mCharsList').style.display = allBox.checked ? 'none' : 'block';
+        });
         return;
       }
       try {

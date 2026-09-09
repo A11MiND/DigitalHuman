@@ -1252,6 +1252,15 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close(code=4401)
         return
 
+    if not accounts.character_allowed(session_account, char_id):
+        logger.info(f"[{req_id}] WS rejected (无权限) char={char_id} user={session_account['username']} ip={client_ip}")
+        await websocket.send_json({
+            "type": "auth_required",
+            "content": "你的帳號未獲授權使用呢個數字人角色",
+        })
+        await websocket.close(code=4403)
+        return
+
     session_user = session_account["username"]
     mm_key, mm_llm_base, mm_ws_host = _minimax_credentials(session_account)
     logger.info(
@@ -1723,17 +1732,29 @@ async def create_finalize(req: FinalizeCharacterRequest, x_user_code: UserCodeHe
 
 # ── Character API ───────────────────────────────────────
 @app.get("/api/characters")
-async def list_characters():
-    """List all available characters for the lobby page."""
-    return char_mgr.list_all()
+async def list_characters(x_session_token: accounts.SessionHeader = None):
+    """List all available characters for the lobby page.
+
+    已登录且账号设有 allowed_characters 白名单时，只返回名单内的角色；
+    未登录或账号不受限时返回完整列表（保持向后兼容）。
+    """
+    all_chars = char_mgr.list_all()
+    account = accounts.resolve_session(x_session_token)
+    if account and account.get("allowed_characters"):
+        allowed = set(account["allowed_characters"])
+        return [c for c in all_chars if c["id"] in allowed]
+    return all_chars
 
 
 @app.get("/api/characters/{char_id}")
-async def get_character(char_id: str):
+async def get_character(char_id: str, x_session_token: accounts.SessionHeader = None):
     """Get full character config (without system_prompt)."""
     ch = char_mgr.get(char_id)
     if not ch:
         raise HTTPException(status_code=404, detail=f"Character '{char_id}' not found")
+    account = accounts.resolve_session(x_session_token)
+    if account and not accounts.character_allowed(account, char_id):
+        raise HTTPException(status_code=403, detail="你的帳號未獲授權使用呢個數字人角色")
     # Return config without system_prompt (only sent via WS)
     return {
         "id": ch["id"],

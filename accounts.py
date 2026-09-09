@@ -13,6 +13,7 @@ import os
 import base64
 import hashlib
 import hmac
+import json
 import logging
 import secrets
 import sqlite3
@@ -99,7 +100,8 @@ def init_accounts_db() -> None:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 last_login_at TEXT DEFAULT '',
-                expires_at TEXT DEFAULT ''
+                expires_at TEXT DEFAULT '',
+                allowed_characters TEXT DEFAULT ''
             )
         """)
         conn.execute("""
@@ -132,6 +134,11 @@ def init_accounts_db() -> None:
         if cols and "username" not in cols:
             conn.execute("ALTER TABLE conversations ADD COLUMN username TEXT DEFAULT ''")
             logger.info("conversations 表已添加 username 列")
+        # accounts 加 allowed_characters 列，控制账号可见/可用的数字人角色（旧库安全迁移）
+        acct_cols = {r["name"] for r in conn.execute("PRAGMA table_info(accounts)")}
+        if acct_cols and "allowed_characters" not in acct_cols:
+            conn.execute("ALTER TABLE accounts ADD COLUMN allowed_characters TEXT DEFAULT ''")
+            logger.info("accounts 表已添加 allowed_characters 列")
     _bootstrap_admin()
     logger.info("Accounts DB ready: %s", DB_PATH)
 
@@ -164,6 +171,17 @@ def _bootstrap_admin() -> None:
         logger.info("已创建管理员账号 %s（密码来自 ADMIN_PASSWORD）", username)
 
 
+def _parse_allowed_characters(raw: str | None) -> list[str]:
+    """空字符串/无法解析 = 不限制（可用全部角色）。"""
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+        return [str(x) for x in parsed] if isinstance(parsed, list) else []
+    except Exception:
+        return []
+
+
 # ── 账号查询 ────────────────────────────────────────────
 def _row_to_account(row: sqlite3.Row) -> dict:
     return {
@@ -183,7 +201,18 @@ def _row_to_account(row: sqlite3.Row) -> dict:
         "updated_at": row["updated_at"],
         "last_login_at": row["last_login_at"] or "",
         "expires_at": row["expires_at"] or "",
+        "allowed_characters": _parse_allowed_characters(row["allowed_characters"]),
     }
+
+
+def character_allowed(account: dict | None, char_id: str) -> bool:
+    """账号是否可以使用某个数字人角色。allowed_characters 为空列表 = 不限制。"""
+    if not account:
+        return True
+    allowed = account.get("allowed_characters") or []
+    if not allowed:
+        return True
+    return char_id in allowed
 
 
 def get_account(username: str) -> dict | None:
@@ -405,6 +434,7 @@ class AccountCreateBody(BaseModel):
     quota_limit: int | None = None
     note: str = Field(default="", max_length=200)
     expires_at: str = Field(default="", max_length=40)
+    allowed_characters: list[str] | None = None
 
 
 class AccountUpdateBody(BaseModel):
@@ -415,6 +445,7 @@ class AccountUpdateBody(BaseModel):
     quota_used: int | None = None
     note: str | None = Field(default=None, max_length=200)
     expires_at: str | None = Field(default=None, max_length=40)
+    allowed_characters: list[str] | None = None
 
 
 class PasswordBody(BaseModel):
@@ -587,10 +618,11 @@ async def admin_create_account(body: AccountCreateBody, x_session_token: Session
     with _connect() as conn:
         conn.execute(
             "INSERT INTO accounts (username, password_hash, display_name, role, status, quota_limit, "
-            "quota_used, note, created_at, updated_at, expires_at) "
-            "VALUES (?, ?, ?, ?, 'active', ?, 0, ?, ?, ?, ?)",
+            "quota_used, note, created_at, updated_at, expires_at, allowed_characters) "
+            "VALUES (?, ?, ?, ?, 'active', ?, 0, ?, ?, ?, ?, ?)",
             (username, hash_password(body.password), body.display_name.strip(), body.role,
-             quota, body.note.strip(), ts, ts, body.expires_at.strip()),
+             quota, body.note.strip(), ts, ts, body.expires_at.strip(),
+             json.dumps(body.allowed_characters) if body.allowed_characters else ""),
         )
     logger.info("管理员创建账号 user=%s role=%s quota=%s", username, body.role, quota)
     return {"ok": True, "account": get_account(username)}
@@ -631,6 +663,8 @@ async def admin_update_account(
         updates["note"] = body.note.strip()
     if body.expires_at is not None:
         updates["expires_at"] = body.expires_at.strip()
+    if body.allowed_characters is not None:
+        updates["allowed_characters"] = json.dumps(body.allowed_characters) if body.allowed_characters else ""
 
     if not updates:
         return {"ok": True, "account": account}
