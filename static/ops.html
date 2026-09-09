@@ -1931,6 +1931,7 @@
             <td style="color:var(--text3);font-size:12.5px">${escapeHtml(a.note || '—')}</td>
             <td><div class="row-acts">
               ${a.role === 'trial' ? `<button class="btn-mini go" data-act="upgrade" data-u="${escapeHtml(a.username)}">升級</button>` : ''}
+              ${a.role === 'premium' ? `<button class="btn-mini" data-act="downgrade" data-u="${escapeHtml(a.username)}">降回體驗</button>` : ''}
               ${a.quota_limit !== -1 ? `<button class="btn-mini" data-act="reset" data-u="${escapeHtml(a.username)}">清零</button>` : ''}
               <button class="btn-mini" data-act="pw" data-u="${escapeHtml(a.username)}">密碼</button>
               <button class="btn-mini" data-act="toggle" data-u="${escapeHtml(a.username)}" data-s="${a.status}">${a.status === 'active' ? '停用' : '啓用'}</button>
@@ -2051,6 +2052,18 @@
         if (!confirm(`確定刪除帳號 ${username}？此操作不可撤銷。`)) return;
         try { await acctFetch(`/api/admin/accounts/${encodeURIComponent(username)}`, { method: 'DELETE' }); loadAccounts(); }
         catch (e) { alert('刪除失敗：' + e.message); }
+        return;
+      }
+      if (act === 'downgrade') {
+        openModal(`降回體驗帳戶 — ${username}`, `
+          <div class="fld"><label>對話額度</label><input id="mDownQuota" type="number" value="20" min="0">
+            <span class="hint">會將角色改為「體驗」，並將已用次數重設為 0</span></div>`,
+          async () => acctFetch(`/api/admin/accounts/${encodeURIComponent(username)}`, {
+            method: 'PATCH', body: JSON.stringify({
+              role: 'trial',
+              quota_limit: parseInt(document.getElementById('mDownQuota').value, 10),
+              quota_used: 0,
+            }) }));
         return;
       }
       try {
