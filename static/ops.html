@@ -2057,12 +2057,14 @@
       if (act === 'downgrade') {
         openModal(`降回體驗帳戶 — ${username}`, `
           <div class="fld"><label>對話額度</label><input id="mDownQuota" type="number" value="20" min="0">
-            <span class="hint">會將角色改為「體驗」，並將已用次數重設為 0</span></div>`,
+            <span class="hint">會將角色改為「體驗」</span></div>
+          <div class="fld"><label>已用次數</label><input id="mDownUsed" type="number" value="0" min="0">
+            <span class="hint">預設 0，可自行設定成任意已用次數</span></div>`,
           async () => acctFetch(`/api/admin/accounts/${encodeURIComponent(username)}`, {
             method: 'PATCH', body: JSON.stringify({
               role: 'trial',
               quota_limit: parseInt(document.getElementById('mDownQuota').value, 10),
-              quota_used: 0,
+              quota_used: parseInt(document.getElementById('mDownUsed').value, 10),
             }) }));
         return;
       }
