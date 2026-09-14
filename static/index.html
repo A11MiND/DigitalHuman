@@ -1213,6 +1213,7 @@ let _turnSources = [];      // 呢一轮全部已排程嘅 source node（用嚟�
 let _scheduledSegments = 0; // 呢一轮已排程咗几多句
 let _endedSegments = 0;     // 呢一轮已经播完几多句
 let _allSegmentsReceived = false; // 后端已经送完 status:done（冇更多句会到）
+let _pendingRevealTimers = []; // 未到播放时间、仲未显示嘅字幕计时器
 let ws = null;
 let wsOk = false;
 let authFailed = false;
@@ -1360,6 +1361,13 @@ function _stopAllTurnAudio() {
   _turnSources = [];
   currentAudio = null;
   _audioSource = null;
+  // 中断/切走呢一轮：未到播放时间嘅字幕唔好静静地消失——即刻补显示出嚟，
+  // 净係停返個計時器，唔好連文字都無咗
+  for (const entry of _pendingRevealTimers) {
+    clearTimeout(entry.timerId);
+    if (!entry.revealed) appendLLM(entry.text);
+  }
+  _pendingRevealTimers = [];
 }
 
 function _resetTurnAudioState() {
@@ -1386,14 +1394,17 @@ function _concatArrayBuffers(buffers) {
 }
 
 // 解碼並排程一句嘅音频，保证按到达顺序背靠背播放（用 audioCtx 时间轴排程，
-// 唔使等上一句真正播完先解碼下一句，所以句与句之间冇声音空隙）。
-async function _scheduleSegment(bytes) {
+// 唔使等上一句真正播完先解碼下一句，所以句与句之间冇声音空隙）。字幕文字
+// 亦跟住呢一句真正开始播放嘅时间点先显示，唔再係一收到 llm delta 就即刻
+// 显示晒（嗰阵声音仲未合成好），避免「字先出、声先至慢慢跟上」嘅错位。
+async function _scheduleSegment(bytes, text) {
   if (!audioOn || !_audioCtx) return;
   let audioBuffer;
   try {
     audioBuffer = await _audioCtx.decodeAudioData(bytes);
   } catch (e) {
     console.warn('[Audio] segment decode failed:', e.message);
+    if (text) appendLLM(text); // 呢句冇得播声，都唔好连字幕都吞埋
     return;
   }
   if (_audioCtx.state === 'suspended') {
@@ -1413,6 +1424,15 @@ async function _scheduleSegment(bytes) {
     // 第一句真正开始播放嘅一刻先切 talk 视频，唔再提早喺收到 status:tts 就切
     switchVideo('talk');
   }
+  if (text) {
+    const revealDelayMs = Math.max(0, (startAt - _audioCtx.currentTime) * 1000);
+    const revealEntry = { timerId: null, text, revealed: false };
+    revealEntry.timerId = setTimeout(() => {
+      revealEntry.revealed = true;
+      appendLLM(text);
+    }, revealDelayMs);
+    _pendingRevealTimers.push(revealEntry);
+  }
   source.onended = () => {
     _endedSegments++;
     if (_allSegmentsReceived && _endedSegments >= _scheduledSegments) {
@@ -1423,9 +1443,9 @@ async function _scheduleSegment(bytes) {
   };
 }
 
-function _enqueueSegment(bytes) {
+function _enqueueSegment(bytes, text) {
   _decodeChain = _decodeChain
-    .then(() => _scheduleSegment(bytes))
+    .then(() => _scheduleSegment(bytes, text))
     .catch(e => console.warn('[Audio] segment schedule error:', e));
 }
 
@@ -1492,7 +1512,10 @@ function handleMsg(msg) {
         _msEnd();
         if (_segmentedAudio) {
           if (_segBytes.length > 0) {
-            _enqueueSegment(_concatArrayBuffers(_segBytes));
+            // 正常流程唔会行到呢度——后端每段音频后面实一定跟一个带 text 嘅
+            // tts_segment_end。呢度净係防守：如果真係有漏网嘅尾段声音冇标
+            // 记跟住，都要播出嚟，只不过冇字幕文字可以对齐
+            _enqueueSegment(_concatArrayBuffers(_segBytes), '');
             _segBytes = [];
           }
           _finishTurnAudio();
@@ -1509,11 +1532,20 @@ function handleMsg(msg) {
 
     case 'tts_segment_end':
       if (_segmentedAudio && _segBytes.length > 0) {
-        _enqueueSegment(_concatArrayBuffers(_segBytes));
+        _enqueueSegment(_concatArrayBuffers(_segBytes), msg.text || '');
         _segBytes = [];
       }
       break;
-    case 'llm': appendLLM(msg.content); break;
+    case 'llm':
+      // 按句流式播放开住嗰阵，字幕改为跟住 tts_segment_end 嘅原文（内容同呢
+      // 度嘅 delta 拼埋一样），喺嗰句声音真正开始播放嗰一刻先显示（睇
+      // _scheduleSegment），呢度嘅 delta 净係做“有嘢生成緊”嘅内部信号，唔
+      // 好即刻 append，否则会同 tts_segment_end 嗰边重复显示。冇声音可以
+      // 对齐（静音或者冇 AudioContext）就维持即时显示。
+      if (!(_segmentedAudio && audioOn)) {
+        appendLLM(msg.content);
+      }
+      break;
 
     case 'quota':
       SESSION = { ...(SESSION || {}), ...msg };
