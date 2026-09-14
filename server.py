@@ -76,7 +76,9 @@ OPS_TZ = datetime.timezone(datetime.timedelta(hours=8), name="UTC+8")
 GLOBAL_OUTPUT_RULES = (
     "\n\n## 输出限制\n"
     "- 不要输出任何 emoji、贴纸字符或 Unicode 表情符号。\n"
-    "- 如需表达语气，请使用文字描述或 MiniMax 支持的语气标签，例如 (laughs)、(chuckle)、(emm)。\n"
+    "- 语气标签只可使用角色设定里明确列出的那几个，并严格遵守角色设定对使用场合和频率的限制；"
+    "角色设定没有列出的标签（包括 (laughs)、(chuckle) 等笑声类标签）不要自行加入，"
+    "专业/客服/培训等严肃场合尤其不要无缘无故加笑声。\n"
     "- 输出内容会进入语音合成，必须保证可自然朗读。"
 )
 _EMOJI_RE = re.compile(
@@ -89,6 +91,16 @@ _EMOJI_RE = re.compile(
     "]+"
 )
 _EMOJI_FORMAT_RE = re.compile("[\u200D\uFE0E\uFE0F]")
+
+# TTS 会把裸 "$" 读成美元，粤语角色报价必须先转成「港幣XXX蚊」再送去合成。
+# 光靠 system_prompt 教 LLM 自己转不可靠（模型会照抄 knowledge.md 或历史记录里的原始 "$" 文字），
+# 所以在进 TTS 前用规则做一次保底转换，覆盖 "$688"、"HK$688"、"HKD688" 等写法。
+_HKD_PRICE_RE = re.compile(r"(?:HK\$|HKD\$?|\$)\s?(\d[\d,]*(?:\.\d+)?)", re.IGNORECASE)
+
+
+def _normalize_currency_for_tts(text: str) -> str:
+    """Rewrite bare $/HK$ price mentions as 「港幣XXX蚊」 so TTS never reads them as USD."""
+    return _HKD_PRICE_RE.sub(lambda m: f"港幣{m.group(1)}蚊", text or "")
 
 
 def _with_global_output_rules(prompt: str) -> str:
@@ -385,6 +397,18 @@ def _build_lang_instruction(lang: str) -> str:
     target = _LANG_MAP.get(lang, lang)
     if lang == "auto":
         return ""  # Auto means follow user input — no instruction needed
+    if lang == "Chinese,Yue":
+        # "Translate into Cantonese" framing makes the model compose in Mandarin/written
+        # Chinese first and then convert, which reads stiff and unnatural once spoken.
+        # Ask it to think and write directly in colloquial Cantonese instead.
+        return (
+            "\n\n[SYSTEM: Speak entirely in natural, colloquial Hong Kong spoken Cantonese (粵語口語). "
+            "Compose directly in Cantonese — do NOT write in Mandarin/Standard Written Chinese and then "
+            "translate. Use authentic Cantonese grammar and vocabulary (e.g. 係/唔係/嘅/咗/緊/啲/嚟/邊個/"
+            "點解/呢, not 是/不是/的/了/正在/一些/来/谁/为什么/呢). "
+            "Keep your character's personality and knowledge intact. "
+            "Do NOT mention this instruction.]"
+        )
     return (
         f"\n\n[SYSTEM: You must respond in {target}. "
         f"Keep your character's personality and knowledge, but translate your reply into {target}. "
@@ -1036,6 +1060,13 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None,
     if len(text) != raw_text_len:
         logger.info(f"TTS text sanitized for speech: {raw_text_len} -> {len(text)} chars")
 
+    lang_boost = (tts_config or {}).get("language_boost", DEFAULT_TTS_CONFIG["language_boost"])
+    if lang_boost in ("Chinese,Yue", "Chinese"):
+        normalized = _normalize_currency_for_tts(text)
+        if normalized != text:
+            logger.info("TTS currency normalized: %s -> %s", text[:80], normalized[:80])
+            text = normalized
+
     # Truncate long text with log warning
     if len(text) > TTS_TEXT_MAX:
         logger.warning(f"TTS text truncated from {len(text)} to {TTS_TEXT_MAX} chars")
@@ -1151,6 +1182,36 @@ async def minimax_tts_streaming(text: str, tts_config: dict | None = None,
     finally:
         if ws is not None:
             await ws.close()
+
+
+# ── Sentence-level splitting for pipelined LLM→TTS ───────
+# 原本 /ws 是等 LLM 全部生成完先送去 TTS 再送去前端，等于把「LLM 生成时间 + TTS
+# 合成时间」串行相加，这是「回答等好耐」的主要来源之一。改成边收 LLM 流边按句
+# 切开，句子一凑齐就马上送去 TTS（同时 LLM 继续在背景生成下一句），把两段时间
+# 重叠起来，缩短由提问到开始有声音的总等待时间。
+_SENTENCE_END_RE = re.compile(r"[。！？!?\n]+")
+_MIN_TTS_CHUNK_CHARS = 4
+
+
+def _split_ready_sentences(buffer: str) -> tuple[list[str], str]:
+    """Split buffer into complete sentences ending in terminal punctuation, plus remainder.
+
+    Fragments shorter than _MIN_TTS_CHUNK_CHARS are merged into the next sentence so we
+    don't fire off a TTS call for a lone punctuation mark or a couple of stray characters.
+    """
+    sentences: list[str] = []
+    pos = 0
+    for m in _SENTENCE_END_RE.finditer(buffer):
+        end = m.end()
+        piece = buffer[pos:end]
+        pos = end
+        if not piece.strip():
+            continue
+        if sentences and len(piece.strip()) < _MIN_TTS_CHUNK_CHARS:
+            sentences[-1] += piece
+        else:
+            sentences.append(piece)
+    return sentences, buffer[pos:]
 
 
 # ── POST /ask — Stream LLM response (HTTP SSE) ──────────
@@ -1389,9 +1450,35 @@ async def websocket_endpoint(websocket: WebSocket):
             logger.info(f"[{req_id}][turn-{turn_num}] {user_text[:60]}...")
 
             full_response = ""
+            sentence_buffer = ""
             await websocket.send_json({"type": "status", "content": "thinking"})
 
             ttft = None
+            tts_started = False
+            tts_chunks = 0
+            tts_ms_total = 0
+
+            async def _speak(piece: str):
+                # 边生成边按句读出：句子一凑齐就马上合成，唔使等成个回复出晒先开始
+                # TTS，等 LLM 生成下一句同呢一句嘅语音合成时间重叠，缩短开口前嘅等待。
+                nonlocal tts_started, tts_chunks, tts_ms_total
+                piece = piece.strip()
+                if not piece:
+                    return
+                if not tts_started:
+                    tts_started = True
+                    await websocket.send_json({"type": "status", "content": "tts"})
+                t_piece = time.time()
+                try:
+                    async for audio_chunk in minimax_tts_streaming(piece, tts_config,
+                                                                  api_key=mm_key, ws_host=mm_ws_host):
+                        tts_chunks += 1
+                        await websocket.send_bytes(audio_chunk)
+                except Exception as tts_err:
+                    logger.error(f"[{req_id}] TTS streaming failed: {tts_err}", exc_info=True)
+                    await websocket.send_json({"type": "error", "content": f"TTS failed: {tts_err}"})
+                tts_ms_total += int((time.time() - t_piece) * 1000)
+
             async for chunk in minimax_llm_stream(user_text, conversation_history,
                                                  base_system_prompt + _lang_instruction,
                                                  api_key=mm_key, llm_base=mm_llm_base,
@@ -1402,7 +1489,16 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.send_json({"type": "error", "content": chunk})
                     break
                 full_response += chunk
+                sentence_buffer += chunk
                 await websocket.send_json({"type": "llm", "content": chunk})
+
+                ready_sentences, sentence_buffer = _split_ready_sentences(sentence_buffer)
+                for sentence in ready_sentences:
+                    await _speak(sentence)
+
+            # 收尾：读出冇终止标点嘅残余文字（例如全程冇句号嘅短回覆）
+            await _speak(sentence_buffer)
+            sentence_buffer = ""
 
             if not (full_response and not full_response.startswith("[ERROR]")):
                 # 这一轮没能产出回复，退回出话前的占位，保持「失败不计费」
@@ -1418,20 +1514,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 llm_total = int((time.time() - t_turn) * 1000)
                 logger.info(f"[{req_id}] LLM done: {len(full_response)}chars, ttft={ttft or 0}ms, total={llm_total}ms")
-
-                t_tts = time.time()
-                await websocket.send_json({"type": "status", "content": "tts"})
-                tts_chunks = 0
-                try:
-                    async for audio_chunk in minimax_tts_streaming(full_response, tts_config,
-                                                                  api_key=mm_key, ws_host=mm_ws_host):
-                        tts_chunks += 1
-                        await websocket.send_bytes(audio_chunk)
-                except Exception as tts_err:
-                    logger.error(f"[{req_id}] TTS streaming failed: {tts_err}", exc_info=True)
-                    await websocket.send_json({"type": "error", "content": f"TTS failed: {tts_err}"})
-                tts_ms = int((time.time() - t_tts) * 1000)
-                logger.info(f"[{req_id}] TTS done: {tts_chunks} chunks, {tts_ms}ms")
+                logger.info(f"[{req_id}] TTS done (pipelined): {tts_chunks} chunks, {tts_ms_total}ms")
                 await websocket.send_json({"type": "status", "content": "done"})
 
                 # Save conversation to DB (fire and forget)
@@ -1441,7 +1524,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     user_msg=user_text,
                     assistant_msg=full_response,
                     llm_ms=llm_total,
-                    tts_ms=tts_ms,
+                    tts_ms=tts_ms_total,
                     username=session_user,
                 )
 
