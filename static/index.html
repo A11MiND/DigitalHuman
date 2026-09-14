@@ -1197,8 +1197,22 @@ let currentAudio = null;
 let audioUnlocked = false;
 let _audioEl = null;       // Pre-created &lt;audio&gt; element (activated during user gesture)
 let _audioCtx = null;     // Web Audio API context (mobile-safe)
-let _audioBufs = [];      // pending audio chunks for AudioContext mode
-let _audioSource = null;  // current playing source node
+let _audioBufs = [];      // pending audio chunks — only used by the no-AudioContext fallback path
+let _audioSource = null;  // most recently scheduled source node (current turn)
+
+// ── 按句流式播放 ──
+// 后端现在按句子合成 TTS，每句结束会送一个 tts_segment_end 标记。前端收到标记
+// 就把这一句的音频字节解码、排队播放，唔使等成个回覆嘅音频全部到齐先播，
+// 明显缩短「开始有声音」嘅等待时间；talk 视频亦改为绑喺第一句真正开始播放嘅
+// 一刻，唔再绑喺收到 status:tts 嘅一刻（嗰阵仲未有声音）。
+let _segmentedAudio = true; // 呢一轮系咪用按句播放（无 AudioContext 先会跌落 fallback）
+let _segBytes = [];         // 当前句仲未收到 tts_segment_end 嘅音频 chunk
+let _decodeChain = Promise.resolve(); // 保证解碼+排程按到达顺序处理
+let _playCursor = 0;        // audioCtx.currentTime 轴上，下一句应该开始播放嘅时间点
+let _turnSources = [];      // 呢一轮全部已排程嘅 source node（用嚟中断时统一 stop）
+let _scheduledSegments = 0; // 呢一轮已排程咗几多句
+let _endedSegments = 0;     // 呢一轮已经播完几多句
+let _allSegmentsReceived = false; // 后端已经送完 status:done（冇更多句会到）
 let ws = null;
 let wsOk = false;
 let authFailed = false;
@@ -1238,18 +1252,6 @@ function _msEnd() {
     drain();
   }
   _msBuf = null;
-}
-
-function _startStreamingAudio() {
-  if (currentAudio) { try { currentAudio.stop(); } catch(e) {}; currentAudio = null; _audioSource = null; }
-  _msEnd();
-  _ms = null; _msBuf = null; _msQueue = []; _msUpdating = false;
-  _audioBufs = [];
-
-  // Always use AudioContext buffer mode - most reliable across all platforms
-  // (MediaSource + audio.play() is blocked by mobile autoplay policies)
-  console.log('[Audio] using AudioContext buffer mode');
-  return false;
 }
 
 // ── AudioContext lifecycle ──────────────────────────────────────
@@ -1350,6 +1352,97 @@ async function _playBlobViaAudioContext(blob) {
   switchVideo('idle');
 }
 
+// ── 按句流式播放：停止/重置 ──────────────────────────────
+function _stopAllTurnAudio() {
+  for (const src of _turnSources) {
+    try { src.onended = null; src.stop(); src.disconnect(); } catch (e) {}
+  }
+  _turnSources = [];
+  currentAudio = null;
+  _audioSource = null;
+}
+
+function _resetTurnAudioState() {
+  _stopAllTurnAudio();
+  _segBytes = [];
+  _audioBufs = [];
+  _decodeChain = Promise.resolve();
+  _playCursor = 0;
+  _scheduledSegments = 0;
+  _endedSegments = 0;
+  _allSegmentsReceived = false;
+  _segmentedAudio = !!_audioCtx;
+}
+
+function _concatArrayBuffers(buffers) {
+  const total = buffers.reduce((sum, b) => sum + b.byteLength, 0);
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const b of buffers) {
+    merged.set(new Uint8Array(b), offset);
+    offset += b.byteLength;
+  }
+  return merged.buffer;
+}
+
+// 解碼並排程一句嘅音频，保证按到达顺序背靠背播放（用 audioCtx 时间轴排程，
+// 唔使等上一句真正播完先解碼下一句，所以句与句之间冇声音空隙）。
+async function _scheduleSegment(bytes) {
+  if (!audioOn || !_audioCtx) return;
+  let audioBuffer;
+  try {
+    audioBuffer = await _audioCtx.decodeAudioData(bytes);
+  } catch (e) {
+    console.warn('[Audio] segment decode failed:', e.message);
+    return;
+  }
+  if (_audioCtx.state === 'suspended') {
+    await _audioCtx.resume().catch(() => {});
+  }
+  const source = _audioCtx.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(_audioCtx.destination);
+  const startAt = Math.max(_audioCtx.currentTime + 0.03, _playCursor);
+  source.start(startAt);
+  _playCursor = startAt + audioBuffer.duration;
+  _turnSources.push(source);
+  currentAudio = source;
+  _audioSource = source;
+  _scheduledSegments++;
+  if (_scheduledSegments === 1) {
+    // 第一句真正开始播放嘅一刻先切 talk 视频，唔再提早喺收到 status:tts 就切
+    switchVideo('talk');
+  }
+  source.onended = () => {
+    _endedSegments++;
+    if (_allSegmentsReceived && _endedSegments >= _scheduledSegments) {
+      currentAudio = null;
+      _audioSource = null;
+      switchVideo('idle');
+    }
+  };
+}
+
+function _enqueueSegment(bytes) {
+  _decodeChain = _decodeChain
+    .then(() => _scheduleSegment(bytes))
+    .catch(e => console.warn('[Audio] segment schedule error:', e));
+}
+
+// 后端已确定唔会再有更多句（status:done）；等排程队列处理完再判断是否
+// 已经全部播完——如果係，即刻切返 idle；如果仲有句喺度播紧，交返上面
+// _scheduleSegment 嘅 onended 嚟切。
+function _finishTurnAudio() {
+  _decodeChain = _decodeChain.then(() => {
+    _allSegmentsReceived = true;
+    if (_scheduledSegments === 0 || _endedSegments >= _scheduledSegments) {
+      currentAudio = null;
+      _audioSource = null;
+      switchVideo('idle');
+    }
+  }).catch(() => {});
+}
+
 // WebSocket
 let _wsDelay = 1000;
 function ensureConnected() {
@@ -1366,7 +1459,7 @@ function connect() {
   ws.onopen = () => { wsOk = true; _wsDelay = 1000; updateStatus('在線'); syncTtsToServer(); };
   ws.onclose = () => {
     wsOk = false;
-    if (processing) { processing = false; _msEnd(); }
+    if (processing) { processing = false; _msEnd(); _stopAllTurnAudio(); }
     updateStatus('離線');
     switchVideo('idle');
     // 鑑權失敗不重連，否則會無限撞牆
@@ -1390,22 +1483,34 @@ function handleMsg(msg) {
     case 'status':
       if (msg.content === 'thinking') updateStatus('思考中', 'thinking');
       else if (msg.content === 'tts') {
+        // 呢度只更新文字状态，唔再喺呢度切 talk 视频——第一句音频真正开始
+        // 播放先切（睇 _scheduleSegment），否则视频会喺仲未出声嗰阵就郁嘴。
         updateStatus('說話中', 'speaking');
-        window._audioBuffer = [];
-        _startStreamingAudio();
-        switchVideo('talk');
       }
       else if (msg.content === 'done') {
         processing = false; updateStatus('在線');
         _msEnd();
-        // Buffer mode: all audio chunks were collected in _audioBufs
-        if (_audioBufs.length > 0) {
+        if (_segmentedAudio) {
+          if (_segBytes.length > 0) {
+            _enqueueSegment(_concatArrayBuffers(_segBytes));
+            _segBytes = [];
+          }
+          _finishTurnAudio();
+        } else if (_audioBufs.length > 0) {
+          // Fallback：冇 AudioContext 先会行呢条路，等成个回覆音频到齐先播
           const blob = new Blob(_audioBufs, { type: 'audio/mpeg' });
           _playBlobViaAudioContext(blob);
         } else if (!currentAudio) {
           currentAudio = null;
           switchVideo('idle');
         }
+      }
+      break;
+
+    case 'tts_segment_end':
+      if (_segmentedAudio && _segBytes.length > 0) {
+        _enqueueSegment(_concatArrayBuffers(_segBytes));
+        _segBytes = [];
       }
       break;
     case 'llm': appendLLM(msg.content); break;
@@ -1439,7 +1544,11 @@ function send(text) {
 
 function playAudio(data) {
   if (!audioOn || !_audioCtx) return;
-  _audioBufs.push(data);
+  if (_segmentedAudio) {
+    _segBytes.push(data);
+  } else {
+    _audioBufs.push(data);
+  }
 }
 
 function appendLLM(delta) {
@@ -1563,20 +1672,16 @@ function sendQuery(text) {
     return;
   }
   processing = true;
-  // Stop current audio if playing (AudioBufferSourceNode uses .stop(), Audio element uses .pause())
-  if (currentAudio) {
-    try { currentAudio.stop(); } catch(e) {}
-    currentAudio = null; _audioSource = null;
-  }
-  if (_audioEl) { _audioEl.pause(); _audioEl.src = ''; }
   // Ensure AudioContext is created/resumed during this user gesture (critical for mobile)
   _ensureAudioContext();
   _activateAudioEl();
+  // Stop whatever the previous turn was still playing and reset per-turn audio state
+  // (also decides _segmentedAudio based on whether _audioCtx is actually available)
+  _resetTurnAudioState();
+  if (_audioEl) { _audioEl.pause(); _audioEl.src = ''; }
   // 通话模式：按钮变黄（思考中）
   if (callActive) btnTalk.classList.add('busy');
   _msEnd(); _ms = null; _msBuf = null; _msQueue = []; _msUpdating = false;
-  window._audioBuffer = [];
-  _audioBufs = [];
 
 
   addBubble('user', text);
@@ -1728,7 +1833,7 @@ btnMic.onclick = () => {
 btnVoice.onclick = () => {
   audioOn = !audioOn;
   btnVoice.classList.toggle('active', audioOn);
-  if (!audioOn && currentAudio) { try { currentAudio.stop(); _audioSource?.disconnect(); } catch(e) {}; currentAudio = null; _audioSource = null; }
+  if (!audioOn) { _stopAllTurnAudio(); }
   if (!audioOn && _audioEl) { _audioEl.pause(); _audioEl.src = ''; }
 };
 
@@ -2046,7 +2151,7 @@ $('setVoice').onclick = () => {
   audioOn = !audioOn;
   toggleVoice.classList.toggle('on', audioOn);
   btnVoice.classList.toggle('active', audioOn);
-  if (!audioOn && currentAudio) { try { currentAudio.stop(); _audioSource?.disconnect(); } catch(e) {}; currentAudio = null; _audioSource = null; }
+  if (!audioOn) { _stopAllTurnAudio(); }
   if (!audioOn && _audioEl) { _audioEl.pause(); _audioEl.src = ''; }
 };
 

@@ -1469,14 +1469,19 @@ async def websocket_endpoint(websocket: WebSocket):
                     tts_started = True
                     await websocket.send_json({"type": "status", "content": "tts"})
                 t_piece = time.time()
+                piece_chunks = 0
                 try:
                     async for audio_chunk in minimax_tts_streaming(piece, tts_config,
                                                                   api_key=mm_key, ws_host=mm_ws_host):
                         tts_chunks += 1
+                        piece_chunks += 1
                         await websocket.send_bytes(audio_chunk)
                 except Exception as tts_err:
                     logger.error(f"[{req_id}] TTS streaming failed: {tts_err}", exc_info=True)
                     await websocket.send_json({"type": "error", "content": f"TTS failed: {tts_err}"})
+                if piece_chunks:
+                    # 呢句嘅音頻 bytes 已經全部送晒，前端可以將呢一段完整解碼播放
+                    await websocket.send_json({"type": "tts_segment_end"})
                 tts_ms_total += int((time.time() - t_piece) * 1000)
 
             async for chunk in minimax_llm_stream(user_text, conversation_history,
