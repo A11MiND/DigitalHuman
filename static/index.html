@@ -57,9 +57,17 @@
   }
 
   .character-video {
+    position: absolute;
+    top: 0; left: 0;
     width: 100%; height: 100%;
     object-fit: cover;
     transform-origin: center center;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+    will-change: opacity;
+  }
+  .character-video.visible {
+    opacity: 1;
   }
 
   /* ── 顶部控制栏（毛玻璃浮层）── */
@@ -734,8 +742,8 @@
 
 <!-- 全屏角色背景 -->
 <div class="scene">
-  <video class="character-video" id="vidIdle" loop muted playsinline style="display:block"></video>
-  <video class="character-video" id="vidTalk" loop muted playsinline style="display:none"></video>
+  <video class="character-video visible" id="vidIdle" loop muted playsinline></video>
+  <video class="character-video" id="vidTalk" loop muted playsinline></video>
 </div>
 
 <!-- 顶部控制栏 -->
@@ -1672,25 +1680,31 @@ function updateStatus(text, cls = '') {
   statusDot.className = 'status-dot ' + cls;
 }
 
-/* 切换视频并保持画面位置 */
+/* 切换视频并保持画面位置 — 用 opacity 交叉淡化，避免硬切 */
+let _switchFadeTimer = null;
 function switchVideo(type) {
   const vidIdle = document.getElementById('vidIdle');
   const vidTalk = document.getElementById('vidTalk');
+  const [showEl, hideEl] = type === 'talk' ? [vidTalk, vidIdle] : [vidIdle, vidTalk];
+
   if (type === 'talk') {
-    vidIdle.style.display = 'none';
-    vidTalk.style.display = 'block';
     vidTalk.style.objectPosition = _videoPos.talkPosX + '% ' + _videoPos.talkPosY + '%';
     vidTalk.style.transform = 'scale(' + (_videoPos.talkScale / 100) + ')';
-    vidTalk.play().catch(() => {});
-    vidIdle.pause();
   } else {
-    vidTalk.style.display = 'none';
-    vidIdle.style.display = 'block';
     vidIdle.style.objectPosition = _videoPos.idlePosX + '% ' + _videoPos.idlePosY + '%';
     vidIdle.style.transform = 'scale(' + (_videoPos.idleScale / 100) + ')';
-    vidIdle.play().catch(() => {});
-    vidTalk.pause();
   }
+
+  // 目标视频先在幕后播放，淡入的一刻已经在动，不会出现开头静止的跳帧
+  showEl.play().catch(() => {});
+  showEl.classList.add('visible');
+  hideEl.classList.remove('visible');
+
+  // 等 opacity transition 播完先暂停淡出嗰个，唔好中途截停
+  if (_switchFadeTimer) clearTimeout(_switchFadeTimer);
+  _switchFadeTimer = setTimeout(() => {
+    if (!hideEl.classList.contains('visible')) hideEl.pause();
+  }, 520);
 }
 
 function sendQuery(text) {
