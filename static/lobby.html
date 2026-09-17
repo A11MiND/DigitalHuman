@@ -1,263 +1,26 @@
 <!DOCTYPE html>
-<html lang="zh-HK">
+<html lang="zh-Hant" data-locale="zh-Hant" data-title-key="brand">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>數字人殿堂</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏛️</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2226%22 fill=%22%23FFD60A%22/><path d=%22M26 30h48a6 6 0 0 1 6 6v26a6 6 0 0 1-6 6H48L32 80V68h-6a6 6 0 0 1-6-6V36a6 6 0 0 1 6-6z%22 fill=%22%23101012%22/><circle cx=%2240%22 cy=%2249%22 r=%224.5%22 fill=%22%23FFD60A%22/><circle cx=%2256%22 cy=%2249%22 r=%224.5%22 fill=%22%23FFD60A%22/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@300;500;700&family=Noto+Sans+TC:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+TC:wght@400;500;700;900&family=Noto+Sans+SC:wght@400;500;700;900&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/palace.css">
+<script src="/js/i18n.js"></script>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-
-  body {
-    font-family: "Noto Sans TC", -apple-system, sans-serif;
-    background: #08080f;
-    color: #d4c8b0;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    overflow-x: hidden;
-  }
-
-  /* ── Background ambient glow ── */
-  body::before {
-    content: '';
-    position: fixed;
-    top: -30%;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 600px;
-    height: 600px;
-    background: radial-gradient(circle, rgba(138,109,59,0.08) 0%, transparent 70%);
-    pointer-events: none;
-    z-index: 0;
-  }
-
-  /* ── Header ── */
-  .header {
-    position: relative;
-    z-index: 1;
-    padding: 50px 24px 10px;
-    text-align: center;
-  }
-  .header h1 {
-    font-family: "Noto Serif TC", serif;
-    font-size: 32px;
-    font-weight: 500;
-    letter-spacing: 6px;
-    color: #c8b888;
-    text-shadow: 0 0 40px rgba(180,140,90,0.15);
-  }
-  .header .subtitle {
-    font-size: 13px;
-    font-weight: 300;
-    color: #6b6048;
-    margin-top: 10px;
-    letter-spacing: 2px;
-  }
-
-  /* ── Grid ── */
-  .grid {
-    position: relative;
-    z-index: 1;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 26px;
-    padding: 32px 24px 60px;
-    max-width: 780px;
-    width: 100%;
-  }
-
-  /* ── Character Card ── */
-  .card {
-    background: linear-gradient(145deg, rgba(30,26,18,0.9), rgba(18,16,12,0.95));
-    border: 1px solid rgba(180,140,90,0.2);
-    border-radius: 18px;
-    overflow: hidden;
-    cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1.2);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    -webkit-tap-highlight-color: transparent;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.3), 0 0 12px rgba(138,109,59,0.06);
-  }
-  .card:focus-visible {
-    outline: 2px solid rgba(180,140,90,0.5);
-    outline-offset: 2px;
-    border-radius: 20px;
-  }
-  .card:hover {
-    transform: translateY(-6px);
-    border-color: rgba(180,140,90,0.5);
-    box-shadow: 0 16px 48px rgba(0,0,0,0.5), 0 0 28px rgba(138,109,59,0.15);
-  }
-  .card:active { transform: scale(0.97); }
-
-  .card-media {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 3/4;
-    overflow: hidden;
-    background: linear-gradient(135deg, rgba(30,25,15,0.8), rgba(10,10,15,0.9));
-  }
-  .card-media img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    transform: scale(1.08);
-    transition: transform 0.6s ease;
-  }
-  .card:hover .card-media img { transform: scale(1.14); }
-
-  /* ── Hover video preview ── */
-  .card-media .hover-video {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    transform: scale(1.08);
-    opacity: 0;
-    transition: opacity 0.3s ease, transform 0.6s ease;
-    pointer-events: none;
-    z-index: 2;
-  }
-  .card:hover .card-media .hover-video { opacity: 1; transform: scale(1.14); }
-
-  .card-media .gradient-overlay {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 50%;
-    background: linear-gradient(to top, rgba(8,8,15,0.9), transparent);
-    pointer-events: none;
-  }
-
-  .card-body {
-    padding: 18px 16px;
-    text-align: center;
-  }
-  .card-name {
-    font-family: "Noto Serif TC", serif;
-    font-size: 18px;
-    font-weight: 500;
-    color: #e8dcc8;
-    letter-spacing: 2px;
-    text-shadow: 0 1px 4px rgba(0,0,0,0.3);
-  }
-  .card-role {
-    font-size: 12px;
-    font-weight: 400;
-    color: #a09070;
-    margin-top: 5px;
-    letter-spacing: 1px;
-  }
-
-  /* ── Import Card ── */
-  .card-import {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 320px;
-    background: rgba(25,22,15,0.6);
-    border: 2px dashed rgba(180,140,90,0.2);
-    border-radius: 18px;
-    cursor: pointer;
-    backdrop-filter: blur(4px);
-    transition: all 0.25s ease;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-  }
-  .card-import:hover {
-    border-color: rgba(180,140,90,0.5);
-    background: rgba(35,30,20,0.8);
-    transform: translateY(-3px);
-    box-shadow: 0 8px 28px rgba(0,0,0,0.3), 0 0 16px rgba(138,109,59,0.1);
-  }
-  .card-import .icon-circle {
-    width: 52px;
-    height: 52px;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.04);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 14px;
-  }
-  .card-import .icon-circle svg { width: 22px; height: 22px; stroke: #6b6048; }
-  .card-import span {
-    font-size: 13px;
-    color: #6b6048;
-    font-weight: 300;
-    letter-spacing: 1px;
-  }
-  .card-dev-tag {
-    font-size: 10px;
-    color: #8a7b5a;
-    margin-top: 6px;
-    letter-spacing: 1px;
-  }
-
-  /* ── States ── */
-  .loading, .empty {
-    grid-column: 1 / -1;
-    text-align: center;
-    padding: 60px 20px;
-    color: #4a4030;
-    font-size: 14px;
-    font-weight: 300;
-  }
-  .empty-inner {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-  }
-  .empty-icon {
-    width: 52px; height: 52px;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.03);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
-    opacity: 0.35;
-  }
-  .empty-text { font-size: 14px; color: #6b6048; letter-spacing: 1px; }
-  .empty-hint { font-size: 11px; color: #3a3028; }
-
-  @media (prefers-reduced-motion: reduce) {
-    .card { transition: none; }
-    .card:hover { transform: none; }
-    .card-media img { transition: none; }
-    .card:hover .card-media img { transform: scale(1.08); }
-    .card-media .hover-video { transition: none; }
-  }
-
-  #fileInput { display: none; }
-
-  /* ── Footer ── */
-  .footer {
-    position: relative;
-    z-index: 1;
-    padding: 0 20px 30px;
-    font-size: 11px;
-    color: #3a3028;
-    letter-spacing: 1px;
-  }
-
-  /* ── Creation Wizard ── */
+  /* ── Creation wizard ──────────────────────────────────────────
+     Same flow and same element ids as before, relit for the light
+     theme so it no longer reads as a different product.           */
   .wizard-overlay {
     position: fixed;
     inset: 0;
-    z-index: 50;
-    background: rgba(6,6,12,0.88);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    z-index: 90;
+    background: rgba(16,24,40,.34);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     display: none;
     align-items: center;
     justify-content: center;
@@ -265,110 +28,101 @@
   }
   .wizard-overlay.open { display: flex; }
   .wizard {
-    width: min(760px, 100%);
+    width: min(780px, 100%);
     max-height: 92vh;
     overflow: auto;
-    background: rgba(18,17,15,0.96);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 16px;
-    box-shadow: 0 24px 80px rgba(0,0,0,0.45);
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    box-shadow: 0 40px 90px -30px rgba(16,24,40,.45);
   }
   .wizard-head {
     position: sticky;
     top: 0;
     z-index: 2;
-    background: rgba(18,17,15,0.98);
-    border-bottom: 1px solid rgba(255,255,255,0.07);
-    padding: 18px 20px 14px;
+    background: rgba(255,255,255,.96);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line-2);
+    padding: 20px 22px 16px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 16px;
   }
-  .wizard-title {
-    font-family: "Noto Serif TC", serif;
-    color: #d4c8b0;
-    font-size: 20px;
-    letter-spacing: 2px;
-  }
+  .wizard-title { font-size: 20px; font-weight: 800; letter-spacing: -0.015em; }
   .wizard-close {
-    width: 34px;
-    height: 34px;
+    width: 34px; height: 34px;
     border-radius: 50%;
-    border: 1px solid rgba(255,255,255,0.1);
-    background: rgba(255,255,255,0.04);
-    color: #d4c8b0;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink-soft);
     cursor: pointer;
-    font-size: 22px;
+    font-size: 21px;
     line-height: 1;
+    flex-shrink: 0;
   }
-  .wizard-body { padding: 20px; }
+  .wizard-close:hover { background: #F5F6F8; }
+  .wizard-body { padding: 22px; }
   .wizard-steps {
     display: grid;
     grid-template-columns: repeat(6, 1fr);
     gap: 6px;
-    margin-bottom: 20px;
+    margin-bottom: 22px;
   }
-  .step-dot {
-    height: 5px;
-    border-radius: 999px;
-    background: rgba(255,255,255,0.08);
-  }
-  .step-dot.on { background: #a8874f; }
+  .step-dot { height: 5px; border-radius: 999px; background: #E9EBEF; }
+  .step-dot.on { background: var(--yellow); }
   .wizard-panel { display: none; }
   .wizard-panel.active { display: block; }
-  .field { margin-bottom: 14px; }
+  .field { margin-bottom: 15px; }
   .field label {
     display: block;
-    font-size: 12px;
-    color: #8a7b5a;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--muted);
     margin-bottom: 7px;
-    letter-spacing: 1px;
   }
   .field input, .field textarea, .field select {
     width: 100%;
-    border: 1px solid rgba(255,255,255,0.1);
-    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--line);
+    background: #FCFDFD;
     border-radius: 10px;
-    color: #e7decc;
+    color: var(--ink);
     padding: 11px 12px;
-    font: 14px/1.5 "Noto Sans TC", -apple-system, sans-serif;
+    font: 14px/1.5 var(--font-sans);
     outline: none;
+    transition: border-color .15s ease, box-shadow .15s ease;
   }
-  .field textarea { min-height: 110px; resize: vertical; }
-  .two-col {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
+  .field input:focus, .field textarea:focus, .field select:focus {
+    border-color: var(--yellow-deep);
+    box-shadow: 0 0 0 3px rgba(255,214,10,.28);
+    background: #fff;
   }
-  .wizard-actions {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    margin-top: 18px;
-  }
+  .field textarea { min-height: 112px; resize: vertical; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .wizard-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 20px; }
   .wiz-btn {
-    border: 1px solid rgba(255,255,255,0.1);
-    background: rgba(255,255,255,0.06);
-    color: #d4c8b0;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink);
     border-radius: 10px;
-    padding: 10px 16px;
+    padding: 11px 17px;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
     cursor: pointer;
-    min-width: 96px;
+    min-width: 98px;
   }
+  .wiz-btn:hover { background: #F5F6F8; }
   .wiz-btn.primary {
-    background: rgba(168,135,79,0.75);
-    border-color: rgba(168,135,79,0.45);
-    color: #fff;
+    background: var(--yellow);
+    border-color: var(--yellow);
+    color: var(--ink);
+    font-weight: 700;
   }
-  .wiz-btn:disabled { opacity: 0.45; cursor: wait; }
-  .status-line {
-    min-height: 20px;
-    margin-top: 10px;
-    color: #8a7b5a;
-    font-size: 12px;
-  }
-  .status-line.error { color: #d87070; }
+  .wiz-btn.primary:hover { background: var(--yellow-deep); border-color: var(--yellow-deep); }
+  .wiz-btn:disabled { opacity: .5; cursor: wait; }
+  .status-line { min-height: 20px; margin-top: 10px; color: var(--muted); font-size: 12.5px; }
+  .status-line.error { color: #C8322D; }
   .image-choice-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
@@ -379,50 +133,90 @@
     border: 2px solid transparent;
     border-radius: 12px;
     overflow: hidden;
-    background: rgba(255,255,255,0.04);
+    background: #F2F4F6;
     cursor: pointer;
   }
-  .image-choice.selected { border-color: #a8874f; }
-  .image-choice img {
-    width: 100%;
-    aspect-ratio: 3/4;
-    display: block;
-    object-fit: cover;
-  }
-  .preview-video-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    margin-top: 12px;
-  }
+  .image-choice.selected { border-color: var(--yellow-deep); }
+  .image-choice img { width: 100%; aspect-ratio: 3/4; display: block; object-fit: cover; }
+  .preview-video-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
   .preview-video-grid video {
     width: 100%;
     aspect-ratio: 3/4;
     object-fit: cover;
-    background: #000;
+    background: #111;
     border-radius: 12px;
   }
+  #fileInput, #knowledgeInput { display: none; }
+
   @media (max-width: 620px) {
     .two-col, .preview-video-grid { grid-template-columns: 1fr; }
-    .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 18px; padding: 24px 16px 50px; }
-    .card-import { min-height: 260px; }
+    .wizard-body { padding: 18px; }
   }
 </style>
 </head>
 <body>
 
-<div class="header">
-  <h1>數 字 人 殿 堂</h1>
-  <p class="subtitle">與歷史對話</p>
+<div class="shell">
+
+  <header class="site-header">
+    <a class="brand" href="/lobby.html">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M4.6 4.9h14.8a2 2 0 0 1 2 2v7.6a2 2 0 0 1-2 2h-7.1l-4.6 3.9v-3.9H4.6a2 2 0 0 1-2-2V6.9a2 2 0 0 1 2-2z" fill="#101012"/>
+          <circle cx="9.4" cy="10.7" r="1.35" fill="#FFD60A"/>
+          <circle cx="14.6" cy="10.7" r="1.35" fill="#FFD60A"/>
+        </svg>
+      </span>
+      <span class="brand-name" data-i18n="brand">數字人殿堂</span>
+    </a>
+
+    <div class="header-tools">
+      <div class="session-chip" id="sessionChip" hidden></div>
+      <div id="langSwitch"></div>
+      <button type="button" class="btn-yellow" id="btnHeaderStart">
+        <span data-i18n="nav.start">開始對話</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M7 17L17 7M9 7h8v8"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="hero-copy">
+      <h1 data-i18n-headline></h1>
+      <p class="lede" data-i18n="hero.lede">與歷史人物即時對話 · 語音互動</p>
+      <div class="hero-cta">
+        <button type="button" class="btn-dark" id="btnHeroStart">
+          <span data-i18n="hero.cta">開始對話</span>
+          <span class="go" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#101012" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M7 17L17 7M9 7h8v8"/>
+            </svg>
+          </span>
+        </button>
+        <p class="support" data-i18n="hero.support">和偉大的靈魂，聊聊今天的你</p>
+      </div>
+    </div>
+
+    <aside class="hero-note" aria-hidden="true">
+      <p data-i18n="hero.note">好的對話，讓過去與現在相遇。</p>
+      <svg class="swoosh" viewBox="0 0 220 20" fill="none" preserveAspectRatio="none">
+        <path d="M3 14C48 4 112 2 172 7c18 1.5 33 4 45 7" stroke="var(--note-accent)" stroke-width="2.2" stroke-linecap="round" opacity=".62"/>
+      </svg>
+      <svg class="ticks" viewBox="0 0 26 26" fill="none">
+        <path d="M4 16L8 6M13 14L15 3M21 15l4-8" stroke="var(--note-accent)" stroke-width="2.2" stroke-linecap="round" opacity=".75"/>
+      </svg>
+    </aside>
+  </section>
+
+  <main class="roster" id="roster"></main>
+
+  <footer class="site-foot"><span data-i18n="foot.build">內部測試版本</span> v 0.9.27</footer>
 </div>
 
-<div class="grid" id="grid">
-  <div class="loading">靜候先賢降臨…</div>
-</div>
-
-<div class="footer">內部測試版本 v 0.9.27</div>
 <input type="file" id="fileInput" accept=".zip">
-<input type="file" id="knowledgeInput" accept=".txt,.pdf,.docx" style="display:none">
+<input type="file" id="knowledgeInput" accept=".txt,.pdf,.docx">
 
 <div class="wizard-overlay" id="wizardOverlay">
   <div class="wizard">
@@ -556,7 +350,7 @@
 </div>
 
 <script>
-const grid = document.getElementById('grid');
+const roster = document.getElementById('roster');
 const fileInput = document.getElementById('fileInput');
 const knowledgeInput = document.getElementById('knowledgeInput');
 
@@ -592,34 +386,41 @@ if (!SESSION_TOKEN) gotoLogin();
     if (d.features && d.features.create_character) {
       userName = d.display_name || d.username;
     }
-    renderSessionBar(d);
+    renderSessionChip();
   } catch(_) {}
 })();
 
-function renderSessionBar(d) {
-  let bar = document.getElementById('sessionBar');
-  if (!bar) {
-    bar = document.createElement('div');
-    bar.id = 'sessionBar';
-    bar.style.cssText = 'position:fixed;top:12px;right:14px;z-index:400;display:flex;gap:8px;align-items:center;' +
-      'background:rgba(255,255,255,0.62);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);' +
-      'border:1px solid rgba(255,255,255,0.4);border-radius:20px;padding:6px 13px;font-size:12px;color:#4a3828;';
-    document.body.appendChild(bar);
-  }
+// ── Header session chip ──────────────────────────────────────────
+const sessionChip = document.getElementById('sessionChip');
+
+function renderSessionChip() {
+  const d = SESSION;
+  if (!d) { sessionChip.hidden = true; return; }
+  sessionChip.hidden = false;
+
   const quota = d.quota_limit === -1
-    ? '<span style="color:#8a6a13;font-weight:600">✦ 高級帳戶</span>'
-    : `體驗 <b style="color:${d.quota_left <= 5 ? '#c8322d' : '#4a3828'}">${d.quota_left}</b>/${d.quota_limit}`;
-  bar.innerHTML =
-    `<span>${d.display_name || d.username}</span><span style="opacity:.35">·</span>${quota}` +
+    ? `<span class="quota-premium">${I18N.t('session.premium')}</span>`
+    : `${I18N.t('session.trial')} <b class="${d.quota_left <= 5 ? 'quota-low' : ''}">${d.quota_left}</b>/${d.quota_limit}`;
+
+  sessionChip.innerHTML =
+    `<span class="who">${escapeHtml(d.display_name || d.username)}</span>` +
+    `<span class="sep">·</span>${quota}` +
     (d.features && d.features.admin_console
-      ? '<a href="/ops.html" style="color:#8a6d3b;text-decoration:none;margin-left:4px">後台</a>' : '') +
-    '<a href="#" id="sbLogout" style="color:#9a8a7a;text-decoration:none;margin-left:4px">登出</a>';
+      ? `<a href="/ops.html">${I18N.t('session.console')}</a>` : '') +
+    `<a href="#" id="sbLogout">${I18N.t('session.logout')}</a>`;
+
   const lo = document.getElementById('sbLogout');
   if (lo) lo.onclick = async e => {
     e.preventDefault();
     try { await fetch('/api/auth/logout', { method: 'POST', headers: { 'X-Session-Token': SESSION_TOKEN } }); } catch(_) {}
     gotoLogin();
   };
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
 }
 
 async function verifyCode(code) {
@@ -633,38 +434,14 @@ async function verifyCode(code) {
   return data.username;
 }
 
-function promptLogin() {
-  const code = prompt('請輸入邀請碼：\n（沒有邀請碼也能體驗對話，但不能創建角色）');
-  if (!code) return;
-  verifyCode(code).then(username => {
-    if (!username) { alert('邀請碼無效'); return; }
-    userCode = code;
-    userName = username;
-    localStorage.setItem('dh_user_code', code);
-    localStorage.setItem('dh_user_name', username);
-    loadCharacters();
-  });
-}
-
-function logout() {
-  userCode = '';
-  userName = '';
-  localStorage.removeItem('dh_user_code');
-  localStorage.removeItem('dh_user_name');
-  loadCharacters();
-}
-
 // Video preview memory management: only one playing at a time
-let _hoverCard = null;
 let _hoverVideo = null;
 
 function _hoverIn(card, videoUrl) {
-  // Clean up any existing hover video first
   _hoverOut();
-  _hoverCard = card;
   const media = card.querySelector('.card-media');
+  if (!media || !videoUrl) return;
   const vid = document.createElement('video');
-  vid.className = 'hover-video';
   vid.src = videoUrl;
   vid.loop = true;
   vid.muted = true;
@@ -681,99 +458,189 @@ function _hoverOut() {
     _hoverVideo.remove();
     _hoverVideo = null;
   }
-  _hoverCard = null;
+}
+
+// ── Roster ───────────────────────────────────────────────────────
+let CHARS = [];
+
+const ARROW_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="#101012" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M4 12h15M13 6l6 6-6 6"/></svg>';
+
+const PLUS_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="#101012" stroke-width="2.6" stroke-linecap="round" aria-hidden="true">' +
+  '<path d="M12 5v14M5 12h14"/></svg>';
+
+// Soft-blurred head-and-shoulders field for the "create your own" card.
+const SILHOUETTE_SVG =
+  '<svg class="silhouette" viewBox="0 0 200 217" preserveAspectRatio="xMidYMid slice" aria-hidden="true">' +
+    '<defs><filter id="soft" x="-30%" y="-30%" width="160%" height="160%">' +
+      '<feGaussianBlur stdDeviation="9"/></filter></defs>' +
+    '<g filter="url(#soft)" fill="#9BA3AC" opacity=".62">' +
+      '<circle cx="100" cy="88" r="42"/>' +
+      '<path d="M100 137c-38 0-66 25-72 60v40h144v-40c-6-35-34-60-72-60z"/>' +
+    '</g>' +
+  '</svg>';
+
+function showSkeletons(n) {
+  roster.innerHTML = '';
+  for (let i = 0; i < n; i++) {
+    const sk = document.createElement('div');
+    sk.className = 'card-skeleton';
+    sk.innerHTML = '<div class="sk-media"></div><div class="sk-foot"><div class="sk-line"></div><div class="sk-line"></div></div>';
+    roster.appendChild(sk);
+  }
+}
+
+function showState(key, isError) {
+  roster.innerHTML = '';
+  const el = document.createElement('div');
+  el.className = 'state' + (isError ? ' error' : '');
+  el.dataset.i18n = key;
+  el.textContent = I18N.t(key);
+  roster.appendChild(el);
+}
+
+function buildCard(ch, index) {
+  const meta = I18N.character(ch, index);
+
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'card';
+  card._ch = ch;
+  card._i = index;
+  card.setAttribute('aria-label', I18N.t('card.aria', { name: meta.name }));
+  card.onclick = () => { location.href = `/?char=${encodeURIComponent(ch.id)}`; };
+  card.addEventListener('mouseenter', () => _hoverIn(card, ch.avatar_idle));
+  card.addEventListener('mouseleave', _hoverOut);
+
+  const media = document.createElement('div');
+  media.className = 'card-media';
+  media.style.setProperty('--tint', meta.tint);
+
+  const img = document.createElement('img');
+  img.src = meta.art;
+  img.alt = '';
+  img.loading = 'lazy';
+  // Fall back to the character's own portrait if a card cutout is missing.
+  img.onerror = () => {
+    if (img.dataset.fellBack || !ch.icon || img.src.endsWith(ch.icon)) { img.remove(); return; }
+    img.dataset.fellBack = '1';
+    img.src = ch.icon;
+  };
+  media.appendChild(img);
+  card.appendChild(media);
+
+  const foot = document.createElement('div');
+  foot.className = 'card-foot';
+  foot.innerHTML =
+    `<div class="card-text">` +
+      `<div class="card-name">${escapeHtml(meta.name)}</div>` +
+      `<div class="card-sub">${escapeHtml(meta.sub)}</div>` +
+    `</div>` +
+    `<span class="card-go">${ARROW_SVG}</span>`;
+  card.appendChild(foot);
+
+  return card;
+}
+
+function buildCreateCard() {
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'card-create';
+  card.setAttribute('aria-label', I18N.t('create.name'));
+  card.onclick = async () => {
+    // 高級／管理員帳戶的「全套服務」已含創建角色，不再要求邀請碼
+    if (canCreateWithSession() || userCode) { openWizard(); return; }
+    const code = prompt('請輸入邀請碼：');
+    if (!code) return;
+    const username = await verifyCode(code);
+    if (!username) { alert('邀請碼無效'); return; }
+    userCode = code;
+    userName = username;
+    localStorage.setItem('dh_user_code', code);
+    localStorage.setItem('dh_user_name', username);
+    openWizard();
+  };
+
+  card.innerHTML =
+    `<div class="card-media">${SILHOUETTE_SVG}<div class="qmark" aria-hidden="true">?</div></div>` +
+    `<div class="card-foot">` +
+      `<div class="card-text">` +
+        `<div class="card-name">${escapeHtml(I18N.t('create.name'))}</div>` +
+        `<div class="card-sub">${escapeHtml(I18N.t('create.sub'))}</div>` +
+      `</div>` +
+      `<span class="card-go">${PLUS_SVG}</span>` +
+    `</div>`;
+
+  return card;
+}
+
+function renderRoster() {
+  roster.innerHTML = '';
+  // An account whose whitelist matches nothing would otherwise see a
+  // lone create-card and no explanation.
+  if (!CHARS.length) {
+    const note = document.createElement('div');
+    note.className = 'state';
+    note.dataset.i18n = 'roster.empty';
+    note.textContent = I18N.t('roster.empty');
+    roster.appendChild(note);
+  }
+  CHARS.forEach((ch, i) => roster.appendChild(buildCard(ch, i)));
+  roster.appendChild(buildCreateCard());
+}
+
+// Language changes only swap text — rebuilding would reload every portrait.
+function relabelRoster() {
+  roster.querySelectorAll('.card').forEach(card => {
+    if (!card._ch) return;
+    const meta = I18N.character(card._ch, card._i);
+    card.querySelector('.card-name').textContent = meta.name;
+    card.querySelector('.card-sub').textContent = meta.sub;
+    card.querySelector('.card-media').style.setProperty('--tint', meta.tint);
+    card.setAttribute('aria-label', I18N.t('card.aria', { name: meta.name }));
+  });
+
+  const create = roster.querySelector('.card-create');
+  if (create) {
+    create.setAttribute('aria-label', I18N.t('create.name'));
+    create.querySelector('.card-name').textContent = I18N.t('create.name');
+    create.querySelector('.card-sub').textContent = I18N.t('create.sub');
+  }
 }
 
 async function loadCharacters() {
+  showSkeletons(4);
   try {
     const res = await fetch('/api/characters', {
       headers: SESSION_TOKEN ? { 'X-Session-Token': SESSION_TOKEN } : {},
     });
-    const chars = await res.json();
-    grid.innerHTML = '';
-
-    if (chars.length === 0) {
-      grid.innerHTML = '<div class="empty"><div class="empty-inner"><div class="empty-icon">+</div><div class="empty-text">尚無角色</div><div class="empty-hint">點擊 + 按鈕導入 .zip 檔案</div></div></div>';
-    }
-
-    chars.forEach(ch => {
-      const card = document.createElement('div');
-      card.className = 'card';
-      card.onclick = () => { location.href = `/?char=${encodeURIComponent(ch.id)}`; };
-      card.addEventListener('mouseenter', () => _hoverIn(card, ch.avatar_idle));
-      card.addEventListener('mouseleave', () => _hoverOut());
-
-      const media = document.createElement('div');
-      media.className = 'card-media';
-      const img = document.createElement('img');
-      img.src = ch.icon;
-      img.alt = ch.name;
-      img.onerror = () => { img.style.display = 'none'; };
-      media.appendChild(img);
-      const overlay = document.createElement('div');
-      overlay.className = 'gradient-overlay';
-      media.appendChild(overlay);
-      card.appendChild(media);
-
-      const body = document.createElement('div');
-      body.className = 'card-body';
-      const nameEl = document.createElement('div');
-      nameEl.className = 'card-name';
-      nameEl.textContent = ch.name;
-      body.appendChild(nameEl);
-      const roleEl = document.createElement('div');
-      roleEl.className = 'card-role';
-      roleEl.textContent = ch.name_en || '歷史人物';
-      body.appendChild(roleEl);
-      card.appendChild(body);
-
-      grid.appendChild(card);
-    });
-
-    // Create card — always visible, prompts for code if needed
-    const imp = document.createElement('div');
-    imp.className = 'card-import';
-    imp.onclick = async () => {
-      // 高級／管理員帳戶的「全套服務」已含創建角色，不再要求邀請碼
-      if (canCreateWithSession() || userCode) {
-        openWizard();
-      } else {
-        const code = prompt('請輸入邀請碼：');
-        if (!code) return;
-        const username = await verifyCode(code);
-        if (!username) { alert('邀請碼無效'); return; }
-        userCode = code;
-        userName = username;
-        localStorage.setItem('dh_user_code', code);
-        localStorage.setItem('dh_user_name', username);
-        loadCharacters();
-        openWizard();
-      }
-    };
-    imp.innerHTML = `
-      <div class="icon-circle">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      </div>
-      <span>創建角色</span>
-      <div class="card-dev-tag">AI 生成流水線</div>`;
-    grid.appendChild(imp);
-
-    // Show logged-in user tag
-    if (userName) {
-      const userTag = document.createElement('div');
-      userTag.className = 'card-import';
-      userTag.style.cssText = 'min-height:auto;padding:16px;cursor:default;opacity:0.6;';
-      userTag.onclick = () => { if (confirm('登出？')) logout(); };
-      userTag.innerHTML = `
-        <span style="font-size:12px;color:#a09070;">👤 ${userName}</span>
-        <div class="card-dev-tag">點擊登出</div>`;
-      grid.appendChild(userTag);
-    }
-
-  } catch(e) {
-    grid.innerHTML = '<div class="loading">無法連接伺服器</div>';
+    CHARS = await res.json();
+    renderRoster();
+  } catch (e) {
+    showState('roster.error', true);
   }
 }
+
+// Both "start chatting" buttons open the first character available.
+function startChatting() {
+  if (CHARS.length) {
+    location.href = `/?char=${encodeURIComponent(CHARS[0].id)}`;
+  } else {
+    roster.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+document.getElementById('btnHeaderStart').onclick = startChatting;
+document.getElementById('btnHeroStart').onclick = startChatting;
+
+// ── Localization ─────────────────────────────────────────────────
+I18N.mountSwitcher(document.getElementById('langSwitch'));
+I18N.apply();
+I18N.onChange(() => {
+  relabelRoster();
+  renderSessionChip();
+});
 
 // ── Creation Wizard ───────────────────────────────────
 const wizardOverlay = document.getElementById('wizardOverlay');
@@ -1005,7 +872,7 @@ knowledgeInput.onchange = async () => {
   try {
     const h = {};
     if (userCode) h['X-User-Code'] = userCode;
-  if (SESSION_TOKEN) h['X-Session-Token'] = SESSION_TOKEN;
+    if (SESSION_TOKEN) h['X-Session-Token'] = SESSION_TOKEN;
     const res = await fetch('/api/create/knowledge', { method: 'POST', body: form, headers: h });
     const data = await res.json();
     if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || '知識庫提取失敗'));
@@ -1208,7 +1075,7 @@ fileInput.onchange = async () => {
   try {
     const h = {};
     if (userCode) h['X-User-Code'] = userCode;
-  if (SESSION_TOKEN) h['X-Session-Token'] = SESSION_TOKEN;
+    if (SESSION_TOKEN) h['X-Session-Token'] = SESSION_TOKEN;
     const res = await fetch('/api/characters/import', { method: 'POST', body: form, headers: h });
     if (res.ok) { loadCharacters(); }
     else { const e = await res.json(); alert('導入失敗: ' + (e.detail || '未知錯誤')); }
