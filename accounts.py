@@ -4,13 +4,14 @@
   - 账号全部由管理员后台创建，前台没有注册入口。
   - trial 角色带对话额度（默认 20 次），用尽后锁定并提示购买，可提交追加申请。
   - premium / admin 不限额度，走 PREMIUM_API_KEY 配置的完整服务。
-  - 会话令牌存库，HTTP 走 X-Session-Token 头，WebSocket 走 ?token= 查询参数。
+  - 会话令牌存库，HTTP 走 X-Session-Token 头，WebSocket 走连接后首帧传送。
 
 表结构与 conversations 共用 data/conversations.db，方便后台按账号统计用量。
 """
 
 import os
 import base64
+import collections
 import hashlib
 import hmac
 import json
@@ -18,6 +19,8 @@ import logging
 import secrets
 import sqlite3
 import datetime
+import threading
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Header, Request
@@ -129,6 +132,17 @@ def init_accounts_db() -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_quota_requests_status ON quota_requests(status, requested_at DESC)"
         )
+        # 创作管线（生图/生视频/网络搜索知识库）用平台共享 Key 时嘅每日用量，
+        # 防止一个邀请码无限烧平台额度。自带 Key 嘅调用唔计入呢度。
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS creation_usage (
+                username TEXT NOT NULL,
+                action TEXT NOT NULL,
+                day TEXT NOT NULL,
+                count INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (username, action, day)
+            )
+        """)
         # conversations 加 username 列，便于后台按账号看用量（旧库安全迁移）
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(conversations)")}
         if cols and "username" not in cols:
@@ -281,6 +295,43 @@ def reserve_quota(account: dict) -> tuple[bool, int]:
             "SELECT quota_used FROM accounts WHERE username = ?", (account["username"],)
         ).fetchone()
     return True, (row["quota_used"] if row else 0)
+
+
+# 创作管线用平台共享 Key 时嘅每日限额——自带 Key 嘅调用（用户自己出钱）唔受限
+CREATION_DAILY_LIMITS = {
+    "image": 30,
+    "video": 10,
+    "knowledge_search": 20,
+}
+
+
+def reserve_creation_action(username: str, action: str) -> tuple[bool, int]:
+    """创作类接口（生图/生视频/网络搜索知识库）按用户+日限额占位。
+
+    只喺调用方冇自带 MiniMax Key、实际烧平台共享 Key 嗰阵先应该调用呢个
+    函数（睇 server.py 嘅 used_platform_key）。同 reserve_quota 一样用
+    一条 UPDATE 做原子检查+自增，避免并发请求集体放行。
+    """
+    limit = CREATION_DAILY_LIMITS.get(action)
+    if not limit:
+        return True, 0
+    day = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+    with _connect() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO creation_usage (username, action, day, count) VALUES (?, ?, ?, 0)",
+            (username, action, day),
+        )
+        cur = conn.execute(
+            "UPDATE creation_usage SET count = count + 1 "
+            "WHERE username = ? AND action = ? AND day = ? AND count < ?",
+            (username, action, day, limit),
+        )
+        row = conn.execute(
+            "SELECT count FROM creation_usage WHERE username = ? AND action = ? AND day = ?",
+            (username, action, day),
+        ).fetchone()
+    used = row["count"] if row else limit
+    return cur.rowcount > 0, used
 
 
 def refund_quota(username: str) -> None:
@@ -474,9 +525,42 @@ def _client_ip(request: Request) -> str:
 
 
 # ── 登录相关 ────────────────────────────────────────────
+# 同 ops_control.py 一样嘅滑动窗口锁定：防止暴力破解，亦都防止 PBKDF2（20万次
+# 迭代）畀人拿嚟做廉价 CPU DoS —— 命中锁定要喺算密码 hash 之前拦截先有意义。
+_LOGIN_WINDOW_SECONDS = 300
+_LOGIN_MAX_FAILURES = 5
+_login_failures: dict[str, collections.deque[float]] = {}
+_login_lock = threading.Lock()
+
+
+def _login_locked(key: str) -> bool:
+    now = time.monotonic()
+    with _login_lock:
+        failures = _login_failures.setdefault(key, collections.deque())
+        while failures and now - failures[0] > _LOGIN_WINDOW_SECONDS:
+            failures.popleft()
+        return len(failures) >= _LOGIN_MAX_FAILURES
+
+
+def _login_record_failure(key: str) -> None:
+    with _login_lock:
+        _login_failures.setdefault(key, collections.deque()).append(time.monotonic())
+
+
+def _login_clear(key: str) -> None:
+    with _login_lock:
+        _login_failures.pop(key, None)
+
+
 @router.post("/api/auth/login")
 async def login(body: LoginBody, request: Request):
     username = body.username.strip()
+    client_ip = _client_ip(request)
+    # 用户名+IP 组合做锁定键：单一帐号被扫码撞库时唔会连累同网段其他人登录
+    lock_key = f"{username.lower()}|{client_ip}"
+    if _login_locked(lock_key):
+        raise HTTPException(status_code=429, detail="登录失败次数过多，请稍后再试")
+
     account = get_account(username)
     # 恒定代价的密码校验，避免用响应时间区分「用户不存在」和「密码错误」
     stored = ""
@@ -489,15 +573,18 @@ async def login(body: LoginBody, request: Request):
     password_ok = verify_password(body.password, stored) if stored else False
 
     if not account or not password_ok:
-        logger.info("登录失败 user=%s ip=%s", username[:40], _client_ip(request))
+        _login_record_failure(lock_key)
+        logger.info("登录失败 user=%s ip=%s", username[:40], client_ip)
         raise HTTPException(status_code=401, detail="用户名或密码错误")
+
+    _login_clear(lock_key)
 
     ok, reason = account_usable(account)
     if not ok:
         raise HTTPException(status_code=403, detail=reason)
 
-    token, expires = create_session(username, _client_ip(request))
-    logger.info("登录成功 user=%s role=%s ip=%s", username, account["role"], _client_ip(request))
+    token, expires = create_session(username, client_ip)
+    logger.info("登录成功 user=%s role=%s ip=%s", username, account["role"], client_ip)
     payload = session_payload(get_account(username))
     payload["token"] = token
     payload["token_expires_at"] = expires

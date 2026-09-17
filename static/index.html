@@ -1473,10 +1473,16 @@ function ensureConnected() {
 
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(`${protocol}//${location.host}/ws?char=${encodeURIComponent(charId)}&token=${encodeURIComponent(SESSION_TOKEN)}`);
+  // token 唔再放喺 URL query——避免明文入晒 uvicorn access log（仲可以被
+  // 日誌導出功能攞走），改為連接後首個訊息傳送
+  ws = new WebSocket(`${protocol}//${location.host}/ws?char=${encodeURIComponent(charId)}`);
   ws.binaryType = 'arraybuffer';
 
-  ws.onopen = () => { wsOk = true; _wsDelay = 1000; updateStatus('在線'); syncTtsToServer(); };
+  ws.onopen = () => {
+    wsOk = true; _wsDelay = 1000; updateStatus('在線');
+    ws.send(JSON.stringify({ type: 'auth', token: SESSION_TOKEN }));
+    syncTtsToServer();
+  };
   ws.onclose = () => {
     wsOk = false;
     if (processing) { processing = false; _msEnd(); _stopAllTurnAudio(); }
@@ -1609,10 +1615,11 @@ let typingEl = null;
 function getRoleLabel() { return charConfig ? charConfig.name : 'AI'; }
 
 function addBubble(role, text) {
+  // roleLabel 来自角色名（可由帐户自建角色时自行填写），插入 innerHTML 前必须转义
   const roleLabel = role === 'user' ? '你' : getRoleLabel();
   const div = document.createElement('div');
   div.className = `bubble ${role}`;
-  div.innerHTML = `<div class="label">${roleLabel}</div><div class="text">${escapeHtml(text)}</div>`;
+  div.innerHTML = `<div class="label">${escapeHtml(roleLabel)}</div><div class="text">${escapeHtml(text)}</div>`;
   $('messagesInner').appendChild(div);
   scrollBottom();
   return div;

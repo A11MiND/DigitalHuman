@@ -38,9 +38,9 @@ CONTROL_HELPER = os.getenv(
 OPS_TZ = datetime.timezone(datetime.timedelta(hours=8), name="UTC+8")
 
 
-def _load_user_codes() -> dict[str, str]:
+def _load_operator_codes() -> dict[str, str]:
     codes: dict[str, str] = {}
-    for item in os.getenv("USER_CODES", "").split(","):
+    for item in os.getenv("OPS_CONTROL_CODES", "").split(","):
         if ":" not in item:
             continue
         name, code = item.split(":", 1)
@@ -49,7 +49,11 @@ def _load_user_codes() -> dict[str, str]:
     return codes
 
 
-USER_CODES = _load_user_codes()
+# 獨立於主站 USER_CODES（聊天邀請碼）——那組碼是給訪客/學生用嚟開通對話，
+# 之前 ops_control 誤用同一組碼做服務控制鑒權，等於邀請碼洩露就能
+# start/stop/restart 生產服務。OPS_CONTROL_CODES 必須另外喺
+# /etc/systemd/system/digitalhuman.env 配置，兩者不可混用。
+OPERATOR_CODES = _load_operator_codes()
 UserCodeHeader = Annotated[str | None, Header(alias="X-User-Code")]
 _AUTH_WINDOW_SECONDS = 300
 _AUTH_MAX_FAILURES = 5
@@ -69,7 +73,7 @@ class ControlAction(BaseModel):
 
 
 def _require_operator(code: str | None, request: Request) -> str:
-    if not USER_CODES:
+    if not OPERATOR_CODES:
         raise HTTPException(status_code=503, detail="ops_code_not_configured")
     client_ip = request.client.host if request.client else "unknown"
     now = time.monotonic()
@@ -80,7 +84,7 @@ def _require_operator(code: str | None, request: Request) -> str:
         if len(failures) >= _AUTH_MAX_FAILURES:
             raise HTTPException(status_code=429, detail="too_many_auth_attempts")
     candidate = (code or "").strip()
-    for saved_code, username in USER_CODES.items():
+    for saved_code, username in OPERATOR_CODES.items():
         if hmac.compare_digest(candidate, saved_code):
             with _auth_lock:
                 _auth_failures.pop(client_ip, None)

@@ -563,20 +563,23 @@ def _effective_minimax_key(api_key: str | None = None) -> str:
     return (api_key or "").strip() or MINIMAX_API_KEY
 
 
-def _creation_credentials(api_key: str | None, token: str | None) -> tuple[str, str]:
-    """创建流水线的上游凭证 → (api_key, llm_base)。
+def _creation_credentials(api_key: str | None, token: str | None) -> tuple[str, str, bool]:
+    """创建流水线的上游凭证 → (api_key, llm_base, used_platform_key)。
 
     调用方自带 Key 时优先用它（走全局区域端点）；没带则按帐户回退到服务端
     配置：高级/管理员用 PREMIUM_API_KEY 及其所属区域，其余用平台主 Key。
     Key 只在服务端使用，任何响应都不会把它回传给前端。
+    used_platform_key=True 表示烧嘅係平台自己嘅 Key（而唔係调用方自带），
+    呢啲请求先需要计入 accounts.reserve_creation_action 嘅每日限额，
+    否则一个邀请码可以无限生图/生视频/用平台 Key 做 web search。
     """
     supplied = (api_key or "").strip()
     if supplied:
-        return supplied, MINIMAX_LLM_BASE
+        return supplied, MINIMAX_LLM_BASE, False
     key, base, _ = _minimax_credentials(accounts.resolve_session(token))
     if not key:
         raise HTTPException(status_code=400, detail="MiniMax API Key required for character creation")
-    return key, base
+    return key, base, True
 
 
 def _safe_character_id(raw: str) -> str:
@@ -590,6 +593,17 @@ def _safe_job_id(raw: str) -> str:
     if not re.fullmatch(r"[a-f0-9]{32}", raw or ""):
         raise HTTPException(status_code=400, detail="Invalid job_id")
     return raw
+
+
+def _safe_display_text(raw: str, max_len: int = 80) -> str:
+    """Strip HTML angle brackets from a user-supplied display field.
+
+    Frontend templates escape on render, but a custom character's name/role
+    is echoed into several pages (chat bubble label, lobby cards) — stripping
+    '<'/'>' at creation time is defense in depth in case any render path
+    ever forgets to escape.
+    """
+    return (raw or "").replace("<", "").replace(">", "").strip()[:max_len]
 
 
 def _job_dir(job_id: str) -> Path:
@@ -1302,8 +1316,19 @@ async def websocket_endpoint(websocket: WebSocket):
     socket_ip = websocket.client.host if websocket.client else "unknown"
     client_ip = _client_ip_from_headers(websocket.headers, socket_ip)
 
-    # 浏览器无法给 WebSocket 设置请求头，令牌走查询参数
-    session_account = accounts.resolve_session(websocket.query_params.get("token", ""))
+    # 令牌改行首帧传输，唔再喺 URL query——query 会原样进 uvicorn access
+    # log，而日志本身可以被 /api/ops/export/logs 导出，等于 token 明文外泄
+    try:
+        first_msg = await asyncio.wait_for(websocket.receive_json(), timeout=10)
+    except Exception:
+        logger.info(f"[{req_id}] WS rejected (未收到鑑權首帧) ip={client_ip}")
+        await websocket.close(code=4401)
+        return
+    if first_msg.get("type") != "auth":
+        logger.info(f"[{req_id}] WS rejected (首帧非 auth) ip={client_ip}")
+        await websocket.close(code=4401)
+        return
+    session_account = accounts.resolve_session(first_msg.get("token", ""))
     if not session_account:
         logger.info(f"[{req_id}] WS rejected (未登录) ip={client_ip}")
         await websocket.send_json({
@@ -1563,7 +1588,7 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.post("/api/create/test-key")
 async def create_test_key(x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
     _require_creator_access(x_user_code, x_session_token)
-    api_key, llm_base = _creation_credentials(x_minimax_api_key, x_session_token)
+    api_key, llm_base, _used_platform_key = _creation_credentials(x_minimax_api_key, x_session_token)
     provider = MiniMaxProvider(api_key, llm_base)
     t0 = time.time()
     text = await provider.simple_text(
@@ -1621,8 +1646,12 @@ async def create_extract_knowledge(file: UploadFile = File(...), x_user_code: Us
 
 @app.post("/api/create/knowledge/search")
 async def create_search_knowledge(req: GenerateKnowledgeRequest, x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
-    _require_creator_access(x_user_code, x_session_token)
-    api_key, llm_base = _creation_credentials(x_minimax_api_key, x_session_token)
+    username = _require_creator_access(x_user_code, x_session_token)
+    api_key, llm_base, used_platform_key = _creation_credentials(x_minimax_api_key, x_session_token)
+    if used_platform_key:
+        allowed, used = accounts.reserve_creation_action(username, "knowledge_search")
+        if not allowed:
+            raise HTTPException(status_code=429, detail="今日使用平台服務生成知識庫次數已達上限，請稍後再試或改用自己嘅 MiniMax Key")
     query = req.query.strip() or " ".join(x for x in [req.name, req.name_en, req.role, req.background[:120]] if x).strip()
     if not query:
         raise HTTPException(status_code=400, detail="Search query or role context is required")
@@ -1648,7 +1677,7 @@ async def create_search_knowledge(req: GenerateKnowledgeRequest, x_minimax_api_k
 @app.post("/api/create/image-prompt")
 async def create_image_prompt(req: GenerateImagePromptRequest, x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
     _require_creator_access(x_user_code, x_session_token)
-    api_key, llm_base = _creation_credentials(x_minimax_api_key, x_session_token)
+    api_key, llm_base, _used_platform_key = _creation_credentials(x_minimax_api_key, x_session_token)
     provider = MiniMaxProvider(api_key, llm_base)
     prompt = await provider.simple_text(
         "你是数字人角色视觉提示词设计师。输出一段可直接用于图像生成的中文 prompt。"
@@ -1667,7 +1696,7 @@ async def create_image_prompt(req: GenerateImagePromptRequest, x_minimax_api_key
 @app.post("/api/create/prompt")
 async def create_prompt(req: CreatePromptRequest, x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
     _require_creator_access(x_user_code, x_session_token)
-    api_key, llm_base = _creation_credentials(x_minimax_api_key, x_session_token)
+    api_key, llm_base, _used_platform_key = _creation_credentials(x_minimax_api_key, x_session_token)
     if not req.name.strip() or not req.background.strip() or not req.speaking_style.strip():
         raise HTTPException(status_code=400, detail="Name, background, and speaking style are required")
 
@@ -1689,8 +1718,12 @@ async def create_prompt(req: CreatePromptRequest, x_minimax_api_key: ApiKeyHeade
 
 @app.post("/api/create/images")
 async def create_images(req: CreateImagesRequest, x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
-    _require_creator_access(x_user_code, x_session_token)
-    api_key, llm_base = _creation_credentials(x_minimax_api_key, x_session_token)
+    username = _require_creator_access(x_user_code, x_session_token)
+    api_key, llm_base, used_platform_key = _creation_credentials(x_minimax_api_key, x_session_token)
+    if used_platform_key:
+        allowed, used = accounts.reserve_creation_action(username, "image")
+        if not allowed:
+            raise HTTPException(status_code=429, detail="今日使用平台服務生成圖片次數已達上限，請稍後再試或改用自己嘅 MiniMax Key")
     if not req.prompt.strip():
         raise HTTPException(status_code=400, detail="Image prompt is required")
     provider = MiniMaxProvider(api_key, llm_base)
@@ -1719,8 +1752,12 @@ async def create_images(req: CreateImagesRequest, x_minimax_api_key: ApiKeyHeade
 
 @app.post("/api/create/videos")
 async def create_videos(req: CreateVideosRequest, x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
-    _require_creator_access(x_user_code, x_session_token)
-    api_key, llm_base = _creation_credentials(x_minimax_api_key, x_session_token)
+    username = _require_creator_access(x_user_code, x_session_token)
+    api_key, llm_base, used_platform_key = _creation_credentials(x_minimax_api_key, x_session_token)
+    if used_platform_key:
+        allowed, used = accounts.reserve_creation_action(username, "video")
+        if not allowed:
+            raise HTTPException(status_code=429, detail="今日使用平台服務生成視頻次數已達上限，請稍後再試或改用自己嘅 MiniMax Key")
     job = _load_job(req.job_id)
     images = job.get("images") or []
     selected = next((img for img in images if img.get("id") == req.image_id), None)
@@ -1795,9 +1832,9 @@ async def create_finalize(req: FinalizeCharacterRequest, x_user_code: UserCodeHe
         shutil.copy2(talk_src, tmp_dest / "talk.mp4")
         cfg = {
             "id": char_id,
-            "name": req.name.strip(),
-            "name_en": req.name_en.strip(),
-            "role": req.role.strip(),
+            "name": _safe_display_text(req.name),
+            "name_en": _safe_display_text(req.name_en),
+            "role": _safe_display_text(req.role, max_len=160),
             "icon": "portrait.jpg",
             "avatar_idle": "idle.mp4",
             "avatar_talk": "talk.mp4",
@@ -1936,8 +1973,15 @@ async def import_character(file: UploadFile = File(...), x_user_code: UserCodeHe
 
 
 @app.get("/api/characters/{char_id}/export")
-async def export_character(char_id: str):
-    """Export a character as a .zip file."""
+async def export_character(char_id: str, x_user_code: UserCodeHeader = None,
+                            x_session_token: accounts.SessionHeader = None):
+    """Export a character as a .zip file.
+
+    The archive includes character.json (system_prompt, TTS config) and the
+    knowledge base, so this needs the same guard as character creation —
+    invite code or a premium/admin session — not anonymous access.
+    """
+    _require_creator_access(x_user_code, x_session_token)
     ch = char_mgr.get(char_id)
     if not ch:
         raise HTTPException(status_code=404, detail=f"Character '{char_id}' not found")
@@ -2822,16 +2866,22 @@ async def log_viewer():
 <pre id="out">載入中...</pre>
 <script>
 let timer = null;
+// /api/logs 現在只認管理員會話，帶上 token 否則會一直 401
+let SESSION_TOKEN = '';
+try { SESSION_TOKEN = localStorage.getItem('dh_session_token') || ''; } catch(_) {}
+// 日誌原文可能含使用者輸入（對話內容等），塞入 innerHTML 前必須轉義
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function highlight(line) {
-  if (/ERROR|CRITICAL|FATAL/.test(line)) return '<span class="e">'+line+'</span>';
-  if (/WARNING/.test(line)) return '<span class="w">'+line+'</span>';
-  if (/INFO/.test(line)) return '<span class="i">'+line+'</span>';
-  return '<span class="m">'+line+'</span>';
+  const safe = escapeHtml(line);
+  if (/ERROR|CRITICAL|FATAL/.test(line)) return '<span class="e">'+safe+'</span>';
+  if (/WARNING/.test(line)) return '<span class="w">'+safe+'</span>';
+  if (/INFO/.test(line)) return '<span class="i">'+safe+'</span>';
+  return '<span class="m">'+safe+'</span>';
 }
 async function fetchLogs() {
   const n = document.getElementById('lines').value;
   try {
-    const r = await fetch('/api/logs?lines='+n);
+    const r = await fetch('/api/logs?lines='+n, { headers: SESSION_TOKEN ? {'X-Session-Token': SESSION_TOKEN} : {} });
     const d = await r.json();
     document.getElementById('out').innerHTML = d.logs.split('\\n').map(highlight).join('\\n') || '(no logs)';
     document.getElementById('ts').textContent = new Date().toLocaleTimeString();
