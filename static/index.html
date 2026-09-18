@@ -844,6 +844,7 @@
         <option value="Chinese,Yue">粵語</option>
         <option value="Chinese">普通話</option>
         <option value="English">English</option>
+        <option value="German">Deutsch</option>
         <option value="auto">自動</option>
       </select>
     </div>
@@ -881,6 +882,11 @@
         <optgroup label="English Male" data-lang="English">
           <option value="English_Persuasive_Man">Persuasive Man</option>
           <option value="English_Lucky_Robot">Lucky Robot</option>
+        </optgroup>
+        <optgroup label="Deutsch" data-lang="German">
+          <option value="German_FriendlyMan">Friendly Man</option>
+          <option value="German_PlayfulMan">Playful Man</option>
+          <option value="German_SweetLady">Sweet Lady</option>
         </optgroup>
       </select>
     </div>
@@ -2053,11 +2059,15 @@ $('btnRefresh').onclick = () => location.reload();
 function filterVoiceGroups(preserveVoiceId = false) {
   const opts = $('ttsVoice').querySelectorAll('optgroup');
   const currentLang = $('ttsLang').value;
+  // "auto" 唔對應單一語言嘅音色分組——冇呢個分支嘅話所有 optgroup 都會
+  // 被隱藏晒，令音色下拉選單完全空白（慕尼黑/維也納機場角色 tts_language
+  // 都係 "auto"，一開 Settings 就中招）。呢種情況下顯示晒全部分組畀用戶揀。
+  const showAll = currentLang === 'auto';
   let firstVisible = null;
   let currentVoiceExists = false;
-  
+
   opts.forEach(g => {
-    if (g.dataset.lang === currentLang) {
+    if (showAll || g.dataset.lang === currentLang) {
       g.style.display = '';
       if (!firstVisible) firstVisible = g.querySelector('option');
       // Check if current voice exists in this group

@@ -3,6 +3,7 @@ ss-deploy/
 static/ss-deploy
 ss-deploy.sh
 output/
+.git/
 tmp/
 tests/
 __pycache__/
