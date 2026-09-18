@@ -9,6 +9,7 @@
   "theme_color": "#0F4C81",
   "tts_voice_id": "German_FriendlyMan",
   "tts_language": "auto",
+  "asr_lang": "de-DE",
   "tts_speed": 1.0,
   "tts_vol": 1.0,
   "tts_pitch": 0,

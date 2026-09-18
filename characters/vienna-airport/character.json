@@ -9,6 +9,7 @@
   "theme_color": "#C8102E",
   "tts_voice_id": "German_SweetLady",
   "tts_language": "auto",
+  "asr_lang": "de-AT",
   "tts_speed": 1.0,
   "tts_vol": 1.0,
   "tts_pitch": 0,

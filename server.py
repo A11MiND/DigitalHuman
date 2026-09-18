@@ -1893,6 +1893,7 @@ async def get_character(char_id: str, x_session_token: accounts.SessionHeader = 
         "theme_color": ch.get("theme_color", "#8A6D3B"),
         "tts_voice_id": ch.get("tts_voice_id", DEFAULT_TTS_CONFIG["voice_id"]),
         "tts_language": ch.get("tts_language", DEFAULT_TTS_CONFIG["language_boost"]),
+        "asr_lang": ch.get("asr_lang", ""),
     }
 
 
