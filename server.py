@@ -503,6 +503,7 @@ class GenerateImagePromptRequest(BaseModel):
     background: str = ""
     speaking_style: str = ""
     system_prompt: str = ""
+    language: str = ""
 
 class CreateImagesRequest(BaseModel):
     prompt: str
@@ -1711,9 +1712,14 @@ async def create_image_prompt(req: GenerateImagePromptRequest, x_minimax_api_key
     _require_creator_access(x_user_code, x_session_token)
     api_key, llm_base, _used_platform_key = _creation_credentials(x_minimax_api_key, x_session_token)
     provider = MiniMaxProvider(api_key, llm_base)
+    lang_key = (req.language or "").strip().lower()
+    target_lang = "中文" if (not lang_key or lang_key.startswith("chinese")) else req.language.strip()
     prompt = await provider.simple_text(
         "你是数字人角色视觉提示词设计师，为 MiniMax image-01 文生图模型撰写 prompt。"
-        "输出一段可以直接用于图像生成的中文 prompt，长度控制在 1500 字以内"
+        f"请用{target_lang}撰写这段 prompt（如果目标语言不是中文，就完全不要使用中文，"
+        "全部用该语言撰写，包括所有描述词汇）；这个语言应该跟角色设定阶段用户输入内容的语言"
+        "保持一致，方便用户后续自行检查和编辑这段 prompt。"
+        "输出一段可以直接用于图像生成的 prompt，长度控制在 1500 字以内"
         "（image-01 的 prompt 长度上限就是 1500 字符，超长会被截断）。\n\n"
         "结合 image-01 实际能力来写：这个模型擅长逼真人像和精细光影，对具体、"
         "可视化的描述还原度很高（衣着材质、发型细节、镜头角度、光源方向），"
