@@ -19,10 +19,8 @@ import subprocess
 import socket
 import time
 from copy import deepcopy
-from html.parser import HTMLParser
 from pathlib import Path
 from typing import Annotated, Optional
-from urllib.parse import quote_plus, urlparse, parse_qs, unquote
 
 import httpx
 import websockets
@@ -189,6 +187,45 @@ for pair in _raw_codes.split(","):
         name, code = pair.split(":", 1)
         USER_CODES[code.strip()] = name.strip()
 
+
+# MiniMax speech-2.8-hd/turbo 实际支持的 inline 语气标签（已通过官方文档确认）。
+# 这是一份穷举清单——不在此列表中的词不会被 TTS 识别为标签，只会被当作
+# 普通文字照字面读出来，所以生成 system_prompt 时必须使用这份清单，
+# 不能由 LLM 自行编造。
+MINIMAX_VOICE_TAGS = [
+    "laughs", "chuckle", "coughs", "clear-throat", "groans", "breath", "pant",
+    "inhale", "exhale", "gasps", "sniffs", "sighs", "snorts", "burps",
+    "lip-smacking", "humming", "hissing", "emm", "sneezes",
+]
+
+
+def _normalize_tag_key(raw: str) -> str:
+    """将 (clears-throat)/(clear_throat)/(ClearThroat) 这些拼写变体全部
+    归一化为同一个 key，方便与官方清单做宽松匹配。"""
+    words = re.split(r"[-_\s]+", raw.strip().lower())
+    words = [w[:-1] if w.endswith("s") and len(w) > 3 else w for w in words]
+    return "".join(words)
+
+
+_VOICE_TAG_LOOKUP = {_normalize_tag_key(t): t for t in MINIMAX_VOICE_TAGS}
+
+
+def _fix_invalid_voice_tags(text: str) -> str:
+    """兜底方案：就算生成指令已经写得很清楚，LLM 仍然偶尔会写出近似但不
+    准确的标签（例如 (clears-throat) 应该是 (clear-throat)，(laugh) 应该
+    是 (laughs)）。单靠"说清楚"不够保险，这里扫描整段文本中所有 (xxx)
+    括号词，用宽松归一化尝试匹配有效清单，匹配到就静默改成正确写法；
+    一个都匹配不到才保留原文（避免误伤本来就不是标签的普通括号内容，
+    例如角色名后面的 "(M)"）。"""
+
+    def _replace(m: "re.Match[str]") -> str:
+        raw = m.group(1)
+        if raw in MINIMAX_VOICE_TAGS:
+            return m.group(0)
+        fixed = _VOICE_TAG_LOOKUP.get(_normalize_tag_key(raw))
+        return f"({fixed})" if fixed else m.group(0)
+
+    return re.sub(r"\(([a-zA-Z][a-zA-Z\- ]{2,20})\)", _replace, text)
 
 # 默认 TTS 配置（可被 WebSocket tts_config 覆盖）
 DEFAULT_TTS_CONFIG = {
@@ -488,6 +525,7 @@ class FinalizeCharacterRequest(BaseModel):
     system_prompt: str
     tts_voice_id: str = DEFAULT_TTS_CONFIG["voice_id"]
     tts_language: str = DEFAULT_TTS_CONFIG["language_boost"]
+    asr_lang: str = ""
     theme_color: str = "#8A6D3B"
 
 
@@ -701,10 +739,10 @@ _THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
 
 def _extract_minimax_text(data: dict) -> str:
-    # M2 系模型冇得关闭思考（thinking），思考本身要食 tokens；如果 max_tokens
-    # 批得太紧，模型可能思考到一半就截断，content 会係空字符串。呢种情况落去
-    # reasoning_content 只会攞到未完成嘅思考过程，唔係真正答案——不如识别出嚟
-    # 当做冇答案，好过静静鸡将思考过程当正常回复吐畀用户睇。
+    # M2 系模型无法关闭思考（thinking），思考本身要消耗 tokens；如果 max_tokens
+    # 设置得太紧，模型可能思考到一半就被截断，content 会是空字符串。这种情况下
+    # reasoning_content 只会拿到未完成的思考过程，不是真正的答案——不如直接
+    # 识别出来当作没有答案处理，好过静默地把思考过程当正常回复吐给用户看。
     choices = data.get("choices") or []
     if choices:
         first = choices[0] or {}
@@ -724,62 +762,6 @@ def _clamp_knowledge(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text.strip())[:MAX_KNOWLEDGE_CHARS]
 
 
-class _DuckResultParser(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.results: list[dict] = []
-        self._in_link = False
-        self._href = ""
-        self._text: list[str] = []
-
-    def handle_starttag(self, tag, attrs):
-        attrs_d = dict(attrs)
-        href = attrs_d.get("href", "")
-        cls = attrs_d.get("class", "")
-        if tag == "a" and href and ("result-link" in cls or "/l/?" in href):
-            self._in_link = True
-            self._href = href
-            self._text = []
-
-    def handle_data(self, data):
-        if self._in_link:
-            self._text.append(data)
-
-    def handle_endtag(self, tag):
-        if tag == "a" and self._in_link:
-            title = " ".join(" ".join(self._text).split())
-            url = self._href
-            if "/l/?" in url:
-                qs = parse_qs(urlparse(url).query)
-                if qs.get("uddg"):
-                    url = unquote(qs["uddg"][0])
-            if title and url:
-                self.results.append({"title": title, "url": url})
-            self._in_link = False
-
-
-async def _search_web(query: str) -> list[dict]:
-    if not query.strip():
-        return []
-    url = f"https://duckduckgo.com/html/?q={quote_plus(query)}"
-    async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
-        res = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
-    if res.status_code >= 400:
-        raise HTTPException(status_code=502, detail=f"Web search failed: {res.status_code}")
-    parser = _DuckResultParser()
-    parser.feed(res.text)
-    dedup = []
-    seen = set()
-    for item in parser.results:
-        key = item["url"]
-        if key not in seen:
-            seen.add(key)
-            dedup.append(item)
-        if len(dedup) >= 6:
-            break
-    return dedup
-
-
 class MiniMaxProvider:
     def __init__(self, api_key: str, llm_base: str | None = None):
         self.api_key = api_key
@@ -791,14 +773,26 @@ class MiniMaxProvider:
 
     async def improve_prompt(self, req: CreatePromptRequest) -> str:
         examples = _existing_prompt_examples()
+        tag_list = "、".join(f"({t})" for t in MINIMAX_VOICE_TAGS)
         messages = [
             {
                 "role": "system",
                 "content": (
                     "你是数字人角色提示词设计师。请把用户给出的角色背景、说话设定和知识库内容整理成"
-                    "可直接作为 system_prompt 使用的角色提示词。要求结构清晰、事实约束明确、可用于中小学生互动，"
-                    "保留角色身份，不编造知识库外的具体事实。每次回答建议 3-5 句，并包含 MiniMax TTS 语气标签使用规则。"
-                    "输出格式要参考下面已有角色样例的章节结构、身份/性格/知识/说话风格/重要规则组织方式。\n\n"
+                    "可直接作为 system_prompt 使用的角色提示词。角色可以面向任何身份、任何年龄的用户，"
+                    "不要假设对话对象是中小学生或任何特定人群。要求结构清晰、事实约束明确，"
+                    "保留角色身份，不编造知识库外的具体事实。每次回答建议 3-5 句。\n\n"
+                    "【语气标签规则，必须严格遵守，逐字符一模一样】MiniMax TTS 只识别以下固定标签，"
+                    "绝对不可以自创任何其他标签，也不可以稍微改写/换个近义词/改单复数或连字符写法"
+                    "（例如 cheerful、confident、serious、gentle 都不是有效标签；(clear-throat) 不可以写成"
+                    "(clears-throat) 或 (throat-clear)，(laughs) 不可以写成 (laugh)）——哪怕只改一个字母，"
+                    "TTS 都无法识别，会把整个词的英文字面读出来，效果非常怪。生成 system_prompt 里的"
+                    f"「语气表达/语气标签」章节，必须逐字符照抄以下清单中的拼写，只能从中挑选，不能新增或修改：\n{tag_list}\n\n"
+                    "【输出语言规则】用户会指定一个「回复语言」。整份 system_prompt（包括所有章节标题和示例句）"
+                    "必须直接用该语言撰写；如果回复语言不是中文，就完全不要用中文写这份 system_prompt，"
+                    "角色的身份描述、性格、说话风格等章节标题本身也要翻译成该语言。\n\n"
+                    "输出格式要参考下面已有角色样例的章节结构、身份/性格/知识/说话风格/重要规则组织方式"
+                    "（但章节标题语言要跟随回复语言，不要照抄中文标题）。\n\n"
                     f"{examples}"
                 ),
             },
@@ -830,7 +824,7 @@ class MiniMaxProvider:
         content = _extract_minimax_text(data)
         if not content:
             raise HTTPException(status_code=502, detail="MiniMax prompt API returned empty content")
-        return content
+        return _fix_invalid_voice_tags(content)
 
     async def simple_text(self, system: str, user: str, max_tokens: int = 800, temperature: float = 0.3) -> str:
         async with httpx.AsyncClient(timeout=120.0) as client:
@@ -851,6 +845,38 @@ class MiniMaxProvider:
         text = _extract_minimax_text(res.json())
         if not text:
             raise HTTPException(status_code=502, detail="MiniMax text API returned empty content")
+        return text
+
+    async def web_search_knowledge(self, instruction: str, query: str) -> str:
+        """用 MiniMax 自己的 web_search server tool 做资料搜集，一步到位拿到
+        总结好的知识库文本，不再需要靠爬 DuckDuckGo（那个 HTML 爬虫已经被
+        DDG 的反爬虫机制挡住，会稳定收到 202 挑战页，拿不到任何结果）。
+        这个 tool 只有在 MiniMax-M3 通过 /v1/responses 这个 OpenAI Responses
+        兼容端点才能用，和其余角色用的 /text/chatcompletion_v2 不是同一个端点。
+        """
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            res = await client.post(
+                f"{self.llm_base}/responses",
+                headers=self.headers,
+                json={
+                    "model": "MiniMax-M3",
+                    "input": f"{instruction}\n\n{query}",
+                    "tools": [{"type": "web_search"}],
+                },
+            )
+        if res.status_code >= 400:
+            logger.error("MiniMax web_search API failed: %s %s", res.status_code, res.text[:500])
+            raise HTTPException(status_code=502, detail=f"MiniMax web search failed: {res.status_code}")
+        data = res.json()
+        text = (data.get("output_text") or "").strip()
+        if not text:
+            raise HTTPException(status_code=502, detail="MiniMax web search returned no usable results")
+        # 模型有时会在正文前面加一句"我来为您搜索…"这种叙述搜索过程的开场白，
+        # 明明已经吩咐过不要写，而且有时和正文标题黏在同一行，没有换行分隔。
+        # 找到第一个 markdown 标题符号出现的位置，把之前的内容全部截掉。
+        heading = re.search(r"#{1,3}\s", text)
+        if heading and heading.start() > 0:
+            text = text[heading.start():].strip()
         return text
 
     async def generate_images(self, prompt: str, count: int, job_id: str) -> list[dict]:
@@ -1602,7 +1628,7 @@ async def create_test_key(x_minimax_api_key: ApiKeyHeader = None, x_user_code: U
     text = await provider.simple_text(
         "You are a health check endpoint. Reply with exactly OK.",
         "Check this API key.",
-        max_tokens=300,  # M2 思考模型冇得关闭思考，太紧会思考到一半就冇晒 budget 畀真正答案
+        max_tokens=300,  # M2 思考模型无法关闭思考，太紧会导致思考到一半就没有 budget 留给真正答案
         temperature=0.1,
     )
     # 只回连通性与延迟，绝不回传 Key 本身或它的任何片段。
@@ -1663,23 +1689,21 @@ async def create_search_knowledge(req: GenerateKnowledgeRequest, x_minimax_api_k
     query = req.query.strip() or " ".join(x for x in [req.name, req.name_en, req.role, req.background[:120]] if x).strip()
     if not query:
         raise HTTPException(status_code=400, detail="Search query or role context is required")
-    results = await _search_web(query)
-    if not results:
-        raise HTTPException(status_code=502, detail="Web search returned no usable results")
 
     provider = MiniMaxProvider(api_key, llm_base)
-    result_text = "\n".join(f"- {r['title']} ({r['url']})" for r in results)
-    text = await provider.simple_text(
-        "你是数字人角色知识库整理员。根据搜索结果和角色设定，输出不超过6000字的事实型知识库文本。"
-        "内容要直接可放入角色上下文，不要写搜索过程，不要编造搜索结果之外的具体事实。",
-        (
-            f"角色名：{req.name}\n英文/副标题：{req.name_en}\n角色定位：{req.role}\n"
-            f"背景：{req.background}\n说话设定：{req.speaking_style}\n搜索词：{query}\n\n搜索结果：\n{result_text}"
-        ),
-        max_tokens=10000,
-        temperature=0.2,
+    text = await provider.web_search_knowledge(
+        "你是数字人角色知识库整理员。请先用 web search 搜集资料，再根据搜索结果和下面的角色设定，"
+        "输出不超过6000字的事实型知识库文本，内容要直接可以放入角色对话上下文使用。"
+        "不要写搜索过程本身，不要编造搜索结果之外的具体事实，结尾列出参考来源网址。\n\n"
+        f"角色名：{req.name}\n英文/副标题：{req.name_en}\n角色定位：{req.role}\n"
+        f"背景：{req.background}\n说话设定：{req.speaking_style}",
+        query,
     )
-    return {"ok": True, "query": query, "text": _clamp_knowledge(text), "sources": results}
+    text = text[:MAX_KNOWLEDGE_CHARS]
+    # MiniMax 会将参考来源直接写在 output_text 里面（markdown 链接/纯网址），
+    # 不一定会填 annotations，所以这里直接从文本中提取 URL，供前端显示条数。
+    sources = [{"url": u} for u in dict.fromkeys(re.findall(r"https?://[^\s\)\]，,。]+", text))]
+    return {"ok": True, "query": query, "text": _clamp_knowledge(text), "sources": sources}
 
 
 @app.post("/api/create/image-prompt")
@@ -1688,14 +1712,22 @@ async def create_image_prompt(req: GenerateImagePromptRequest, x_minimax_api_key
     api_key, llm_base, _used_platform_key = _creation_credentials(x_minimax_api_key, x_session_token)
     provider = MiniMaxProvider(api_key, llm_base)
     prompt = await provider.simple_text(
-        "你是数字人角色视觉提示词设计师。输出一段可直接用于图像生成的中文 prompt。"
-        "要求 3:4 半身肖像、正面或微侧脸、背景干净、电影级暖色调打光、适合作为后续视频 first frame。"
+        "你是数字人角色视觉提示词设计师，为 MiniMax image-01 文生图模型撰写 prompt。"
+        "输出一段可以直接用于图像生成的中文 prompt，长度控制在 1500 字以内"
+        "（image-01 的 prompt 长度上限就是 1500 字符，超长会被截断）。\n\n"
+        "结合 image-01 实际能力来写：这个模型擅长逼真人像和精细光影，对具体、"
+        "可视化的描述还原度很高（衣着材质、发型细节、镜头角度、光源方向），"
+        "但对模糊/抽象形容词（例如「有气质」「专业感」）几乎没有提升作用，所以要"
+        "尽量用具体、可以直接想象出画面的词语，不要堆砌空泛形容词。\n\n"
+        "要求：3:4 半身肖像、正面或微侧脸、单人（不要要求多人同镜，容易变形）、"
+        "背景干净简洁、电影级暖色调打光、适合作为后续视频 first frame；"
+        "不要要求画面中出现文字/标志/logo（图像模型对文字渲染不准确）。"
         "不要输出解释，只输出 prompt 本身。",
         (
             f"角色名：{req.name}\n英文/副标题：{req.name_en}\n角色定位：{req.role}\n"
             f"背景：{req.background}\n说话设定：{req.speaking_style}\nSystem Prompt 摘要：{req.system_prompt[:1200]}"
         ),
-        max_tokens=1500,  # 之前 450 太紧，M2 思考模型会思考到截断、content 变空
+        max_tokens=1500,  # 之前 450 太紧，M2 思考模型会思考到被截断、content 变空
         temperature=0.5,
     )
     return {"ok": True, "prompt": prompt.strip()}
@@ -1849,6 +1881,7 @@ async def create_finalize(req: FinalizeCharacterRequest, x_user_code: UserCodeHe
             "theme_color": req.theme_color or "#8A6D3B",
             "tts_voice_id": req.tts_voice_id or DEFAULT_TTS_CONFIG["voice_id"],
             "tts_language": req.tts_language or DEFAULT_TTS_CONFIG["language_boost"],
+            "asr_lang": req.asr_lang.strip(),
             "created_by": username,
             "tts_speed": 1.0,
             "tts_vol": 1.0,

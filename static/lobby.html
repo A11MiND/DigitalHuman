@@ -10,6 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+TC:wght@400;500;700;900&family=Noto+Sans+SC:wght@400;500;700;900&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/palace.css">
 <script src="/js/i18n.js"></script>
+<script src="/js/voices.js"></script>
 <style>
   /* ── Creation wizard ──────────────────────────────────────────
      Same flow and same element ids as before, relit for the light
@@ -81,6 +82,24 @@
     color: var(--muted);
     margin-bottom: 7px;
   }
+  .field-hint {
+    font-size: 11.5px;
+    color: var(--muted);
+    line-height: 1.4;
+    margin: -3px 0 7px;
+  }
+  .lang-search {
+    width: 100%;
+    border: 1px solid var(--line);
+    background: #FCFDFD;
+    border-radius: 10px;
+    color: var(--ink);
+    padding: 9px 12px;
+    font: 13px/1.4 var(--font-sans);
+    outline: none;
+    margin-bottom: 6px;
+  }
+  .lang-search:focus { border-color: var(--yellow-deep); }
   .field input, .field textarea, .field select {
     width: 100%;
     border: 1px solid var(--line);
@@ -130,6 +149,7 @@
     margin-top: 12px;
   }
   .image-choice {
+    position: relative;
     border: 2px solid transparent;
     border-radius: 12px;
     overflow: hidden;
@@ -138,6 +158,56 @@
   }
   .image-choice.selected { border-color: var(--yellow-deep); }
   .image-choice img { width: 100%; aspect-ratio: 3/4; display: block; object-fit: cover; }
+  .image-zoom-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(16,16,18,.55);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 2;
+  }
+  .image-zoom-btn:hover { background: rgba(16,16,18,.8); }
+  .image-lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: rgba(10,10,12,.92);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .image-lightbox.open { display: flex; }
+  .image-lightbox img {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 10px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.5);
+  }
+  .image-lightbox-close {
+    position: fixed;
+    top: 18px;
+    right: 22px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255,255,255,.12);
+    color: #fff;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 201;
+  }
+  .image-lightbox-close:hover { background: rgba(255,255,255,.22); }
   .preview-video-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
   .preview-video-grid video {
     width: 100%;
@@ -248,13 +318,25 @@
           <div class="field"><label data-i18n="wizard.name_en_label">英文/副標題</label><input id="wizNameEn" data-i18n-attr="placeholder:wizard.name_en_placeholder" placeholder="Poet Immortal"></div>
         </div>
         <div class="field"><label data-i18n="wizard.role_label">角色定位</label><input id="wizRole" data-i18n-attr="placeholder:wizard.role_placeholder" placeholder="唐代詩人 / 科幻導師 / 品牌顧問"></div>
+        <div class="field">
+          <label data-i18n="wizard.reply_language_label">回覆語言</label>
+          <p class="field-hint" data-i18n="wizard.reply_language_hint">角色 Prompt 會用這種語言撰寫，同時決定它預設用哪種語言回答。</p>
+          <input type="text" class="lang-search" id="wizReplyLanguageSearch" data-i18n-attr="placeholder:chat.settings.search_placeholder" placeholder="輸入語言名搜尋…">
+          <select id="wizReplyLanguage"></select>
+        </div>
         <div class="field"><label data-i18n="wizard.background_label">背景設定</label><textarea id="wizBackground" data-i18n-attr="placeholder:wizard.background_placeholder" placeholder="輸入角色身份、經歷、性格、禁忌和目標受眾"></textarea></div>
         <div class="field"><label data-i18n="wizard.speaking_label">說話設定</label><textarea id="wizSpeaking" data-i18n-attr="placeholder:wizard.speaking_placeholder" placeholder="輸入語氣、稱呼、回覆長度、是否古風/粵語/英文等"></textarea></div>
         <button class="wiz-btn primary" id="btnBuildPrompt" data-i18n="wizard.build_prompt">潤色角色 Prompt</button>
         <div class="status-line" id="promptStatus"></div>
         <div class="field" style="margin-top:14px;">
-          <label data-i18n="wizard.system_prompt_label">角色 Prompt（會參考秦始皇與 Elizabeth 的現有格式，可直接編輯）</label>
-          <textarea id="wizSystemPrompt" data-i18n-attr="placeholder:wizard.system_prompt_placeholder" placeholder="點擊潤色後會自動填入"></textarea>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <label data-i18n="wizard.system_prompt_label" style="margin-bottom:0;">角色 Prompt（會參考秦始皇與 Elizabeth 的現有格式，可直接編輯）</label>
+            <div style="display:flex;gap:6px;flex-shrink:0;">
+              <button type="button" class="wiz-btn" id="btnPromptUndoStep1" data-i18n="wizard.undo" style="min-width:auto;padding:5px 10px;font-size:12px;" disabled>撤銷上一版</button>
+              <button type="button" class="wiz-btn" id="btnPromptRedoStep1" data-i18n="wizard.redo" style="min-width:auto;padding:5px 10px;font-size:12px;" disabled>恢復</button>
+            </div>
+          </div>
+          <textarea id="wizSystemPrompt" data-i18n-attr="placeholder:wizard.system_prompt_placeholder" placeholder="點擊潤色後會自動填入" style="margin-top:7px;"></textarea>
         </div>
       </section>
 
@@ -292,56 +374,33 @@
       <section class="wizard-panel" data-step="5">
         <div class="preview-video-grid" id="videoPreview"></div>
         <div class="field" style="margin-top:14px;">
-          <label data-i18n="wizard.final_prompt_label">最終 System Prompt</label>
-          <textarea id="wizFinalPrompt"></textarea>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <label data-i18n="wizard.final_prompt_label" style="margin-bottom:0;">最終 System Prompt</label>
+            <div style="display:flex;gap:6px;flex-shrink:0;">
+              <button type="button" class="wiz-btn" id="btnPromptUndoStep5" data-i18n="wizard.undo" style="min-width:auto;padding:5px 10px;font-size:12px;" disabled>撤銷上一版</button>
+              <button type="button" class="wiz-btn" id="btnPromptRedoStep5" data-i18n="wizard.redo" style="min-width:auto;padding:5px 10px;font-size:12px;" disabled>恢復</button>
+            </div>
+          </div>
+          <textarea id="wizFinalPrompt" style="margin-top:7px;"></textarea>
         </div>
         <div class="two-col" style="margin-top:14px;">
           <div class="field">
-            <label data-i18n="wizard.tts_voice_label">TTS 語音</label>
-            <select id="wizTtsVoice">
-              <optgroup label="粵語男聲" data-lang="Chinese,Yue">
-                <option value="Cantonese_PlayfulMan" selected>活潑男聲</option>
-                <option value="Cantonese_ProfessionalHost（M)">專業男主持</option>
-              </optgroup>
-              <optgroup label="粵語女聲" data-lang="Chinese,Yue">
-                <option value="Cantonese_GentleLady">溫柔女聲</option>
-                <option value="Cantonese_ProfessionalHost（F)">專業女主持</option>
-                <option value="Cantonese_CuteGirl">可愛女孩</option>
-                <option value="Cantonese_KindWoman">善良女聲</option>
-              </optgroup>
-              <optgroup label="普通話男聲" data-lang="Chinese">
-                <option value="Chinese (Mandarin)_Gentleman">溫潤男聲</option>
-                <option value="Chinese (Mandarin)_Male_Announcer">播報男聲</option>
-              </optgroup>
-              <optgroup label="普通話女聲" data-lang="Chinese">
-                <option value="Chinese (Mandarin)_Sweet_Lady">甜美女聲</option>
-                <option value="Chinese (Mandarin)_Warm_Bestie">溫暖閨蜜</option>
-              </optgroup>
-              <optgroup label="English Female" data-lang="English">
-                <option value="English_Graceful_Lady">Graceful Lady</option>
-                <option value="English_Insightful_Speaker">Insightful Speaker</option>
-                <option value="English_radiant_girl">Radiant Girl</option>
-              </optgroup>
-              <optgroup label="English Male" data-lang="English">
-                <option value="English_Persuasive_Man">Persuasive Man</option>
-                <option value="English_Lucky_Robot">Lucky Robot</option>
-              </optgroup>
-              <optgroup label="Deutsch" data-lang="German">
-                <option value="German_FriendlyMan">Friendly Man</option>
-                <option value="German_PlayfulMan">Playful Man</option>
-                <option value="German_SweetLady">Sweet Lady</option>
-              </optgroup>
-            </select>
+            <label data-i18n="wizard.tts_lang_label">TTS 語言</label>
+            <p class="field-hint" data-i18n="chat.settings.tts_lang_hint">這個只是給 TTS 的讀音提示（消除多音字歧義），不是選「用哪種語言回答」——回答語言由角色自己決定。</p>
+            <input type="text" class="lang-search" id="wizTtsLanguageSearch" data-i18n-attr="placeholder:chat.settings.search_placeholder" placeholder="輸入語言名搜尋…">
+            <select id="wizTtsLanguage"></select>
           </div>
           <div class="field">
-            <label data-i18n="wizard.tts_lang_label">TTS 語言</label>
-            <select id="wizTtsLanguage">
-              <option value="Chinese,Yue">粵語</option>
-              <option value="Chinese">普通話</option>
-              <option value="English">English</option>
-              <option value="German">Deutsch</option>
-            </select>
+            <label data-i18n="wizard.tts_voice_label">TTS 語音</label>
+            <input type="text" class="lang-search" id="wizTtsVoiceSearch" data-i18n-attr="placeholder:chat.settings.search_placeholder" placeholder="輸入語言或音色名搜尋…">
+            <select id="wizTtsVoice" size="6"></select>
           </div>
+        </div>
+        <div class="field" style="margin-top:14px;">
+          <label data-i18n="wizard.asr_lang_label">聆聽語言（ASR）</label>
+          <p class="field-hint" data-i18n="wizard.asr_lang_hint">語音輸入識別使用的語言，不會跟隨 TTS 語言自動推斷，需要獨立選擇。</p>
+          <input type="text" class="lang-search" id="wizAsrLangSearch" data-i18n-attr="placeholder:chat.settings.search_placeholder" placeholder="輸入語言名搜尋…">
+          <select id="wizAsrLang"></select>
         </div>
         <button class="wiz-btn primary" id="btnFinalize" data-i18n="wizard.finalize">完成並加入大廳</button>
         <div class="status-line" id="finalStatus"></div>
@@ -353,6 +412,11 @@
       </div>
     </div>
   </div>
+</div>
+
+<div class="image-lightbox" id="imageLightbox">
+  <button type="button" class="image-lightbox-close" id="imageLightboxClose" data-i18n-attr="title:wizard.image_zoom_close" title="關閉">×</button>
+  <img id="imageLightboxImg" src="" alt="">
 </div>
 
 <script>
@@ -671,6 +735,46 @@ let createState = {
   videos: null,
 };
 
+// ── 角色 Prompt 文本撤销/恢复（Ctrl+Z 风格），只针对这一份文本 ──────
+// wizSystemPrompt（步骤1）和 wizFinalPrompt（步骤5）是同一份内容的两个
+// 显示位置，共用这一条历史栈。_promptHistory 最后一项永远是"当前值"。
+let _promptHistory = [];
+let _promptFuture = [];
+
+function pushPromptHistory(val) {
+  if (!val || _promptHistory[_promptHistory.length - 1] === val) return;
+  _promptHistory.push(val);
+  _promptFuture = [];
+  updatePromptUndoButtons();
+}
+
+function applyPromptValue(val) {
+  createState.systemPrompt = val;
+  $('wizSystemPrompt').value = val;
+  $('wizFinalPrompt').value = val;
+  updatePromptUndoButtons();
+}
+
+function undoPrompt() {
+  if (_promptHistory.length < 2) return;
+  _promptFuture.push(_promptHistory.pop());
+  applyPromptValue(_promptHistory[_promptHistory.length - 1]);
+}
+
+function redoPrompt() {
+  if (!_promptFuture.length) return;
+  const val = _promptFuture.pop();
+  _promptHistory.push(val);
+  applyPromptValue(val);
+}
+
+function updatePromptUndoButtons() {
+  const canUndo = _promptHistory.length > 1;
+  const canRedo = _promptFuture.length > 0;
+  ['btnPromptUndoStep1', 'btnPromptUndoStep5'].forEach(id => { const b = $(id); if (b) b.disabled = !canUndo; });
+  ['btnPromptRedoStep1', 'btnPromptRedoStep5'].forEach(id => { const b = $(id); if (b) b.disabled = !canRedo; });
+}
+
 for (let i = 0; i < wizardPanels.length; i++) {
   const dot = document.createElement('div');
   dot.className = 'step-dot';
@@ -785,7 +889,7 @@ function baseCharacterPayload() {
     background: $('wizBackground').value.trim(),
     speaking_style: $('wizSpeaking').value.trim(),
     knowledge_text: $('wizKnowledge').value.trim().slice(0, 6000),
-    language: 'Chinese,Yue',
+    language: $('wizReplyLanguage').value || 'Chinese,Yue',
   };
 }
 
@@ -807,18 +911,34 @@ async function ensurePrompt(force = false) {
   createState.systemPrompt = data.system_prompt;
   $('wizSystemPrompt').value = data.system_prompt;
   $('wizFinalPrompt').value = data.system_prompt;
+  pushPromptHistory(data.system_prompt);
   return data.system_prompt;
 }
 
 $('wizardClose').onclick = closeWizard;
 wizardOverlay.addEventListener('click', e => { if (e.target === wizardOverlay) closeWizard(); });
-$('wizPrev').onclick = () => showWizardStep(wizardStep - 1);
+// 步骤 1（wizSystemPrompt）和步骤 5（wizFinalPrompt）是同一份角色 Prompt
+// 的两个显示位置。之前只有"前进"方向会同步，如果用户在步骤 5 改完
+// 直接点"上一步"，步骤 1 会看到旧版本，还要用户自己复制过去。现在不论
+// 哪个方向离开哪一步，都以「刚刚离开的那个 textarea」的内容为准，同步到
+// 另一边，两个方向都不会遗漏。
+function syncPromptOnLeaveStep(leavingStep) {
+  if (leavingStep === 1) {
+    const val = $('wizSystemPrompt').value.trim();
+    if (val) { pushPromptHistory(val); createState.systemPrompt = val; $('wizFinalPrompt').value = val; }
+  } else if (leavingStep === 5) {
+    const val = $('wizFinalPrompt').value.trim();
+    if (val) { pushPromptHistory(val); createState.systemPrompt = val; $('wizSystemPrompt').value = val; }
+  }
+}
+
+$('wizPrev').onclick = () => {
+  syncPromptOnLeaveStep(wizardStep);
+  showWizardStep(wizardStep - 1);
+};
 $('wizNext').onclick = async () => {
   if (wizardStep === 0 && !requireKey()) return;
-  if (wizardStep === 1 && $('wizSystemPrompt').value.trim()) {
-    createState.systemPrompt = $('wizSystemPrompt').value.trim();
-    $('wizFinalPrompt').value = createState.systemPrompt;
-  }
+  syncPromptOnLeaveStep(wizardStep);
   showWizardStep(wizardStep + 1);
 };
 
@@ -982,16 +1102,37 @@ $('btnGenerateImages').onclick = async () => {
   }
 };
 
+function openImageLightbox(url) {
+  $('imageLightboxImg').src = url;
+  $('imageLightbox').classList.add('open');
+}
+function closeImageLightbox() {
+  $('imageLightbox').classList.remove('open');
+  $('imageLightboxImg').src = '';
+}
+$('imageLightboxClose').onclick = closeImageLightbox;
+$('imageLightbox').addEventListener('click', e => { if (e.target === $('imageLightbox')) closeImageLightbox(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeImageLightbox(); });
+
 function renderImageChoices() {
   const box = $('imageChoices');
   box.innerHTML = '';
   createState.images.forEach(img => {
     const item = document.createElement('div');
     item.className = 'image-choice' + (img.id === createState.selectedImageId ? ' selected' : '');
-    item.innerHTML = `<img src="${img.url}" alt="${escapeHtml(I18N.t('wizard.candidate_image_alt'))}">`;
+    const altText = escapeHtml(I18N.t('wizard.candidate_image_alt'));
+    item.innerHTML =
+      `<img src="${img.url}" alt="${altText}">` +
+      `<button type="button" class="image-zoom-btn" data-i18n-attr="title:wizard.image_zoom_hint" title="點擊圖片放大查看" aria-label="${altText}">` +
+      `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>` +
+      `</button>`;
     item.onclick = () => {
       createState.selectedImageId = img.id;
       renderImageChoices();
+    };
+    item.querySelector('.image-zoom-btn').onclick = e => {
+      e.stopPropagation();
+      openImageLightbox(img.url);
     };
     box.appendChild(item);
   });
@@ -1058,6 +1199,7 @@ $('btnFinalize').onclick = async () => {
         system_prompt: $('wizFinalPrompt').value.trim() || createState.systemPrompt,
         tts_voice_id: $('wizTtsVoice').value.trim() || 'Cantonese_PlayfulMan',
         tts_language: $('wizTtsLanguage').value.trim() || 'Chinese,Yue',
+        asr_lang: $('wizAsrLang').value.trim() || 'zh-HK',
         theme_color: '#8A6D3B',
       }),
     });
@@ -1088,6 +1230,25 @@ fileInput.onchange = async () => {
   } catch(e) { alert('導入失敗: ' + e.message); }
   fileInput.value = '';
 };
+
+// 音色/TTS 语言/ASR/回复语言 四个选单全部由同一个 MiniMax voice catalog
+// 生成，涵盖全部 24 种语言、325 把声，不再只是之前那个小子集。
+VoiceUI.populateLanguageSelect($('wizTtsLanguage'));
+VoiceUI.populateVoiceSelect($('wizTtsVoice'), { preserveValue: 'Cantonese_PlayfulMan' });
+VoiceUI.populateAsrSelect($('wizAsrLang'), { preserveValue: 'zh-HK' });
+VoiceUI.populateLanguageSelect($('wizReplyLanguage'));
+$('wizReplyLanguage').value = 'Chinese,Yue';
+VoiceUI.attachFilter($('wizTtsLanguageSearch'), $('wizTtsLanguage'));
+VoiceUI.attachFilter($('wizTtsVoiceSearch'), $('wizTtsVoice'));
+VoiceUI.attachFilter($('wizAsrLangSearch'), $('wizAsrLang'));
+VoiceUI.attachFilter($('wizReplyLanguageSearch'), $('wizReplyLanguage'));
+
+// 角色 Prompt 撤销/恢复：两个步骤各有一对按钮，共用同一条历史栈
+['btnPromptUndoStep1', 'btnPromptUndoStep5'].forEach(id => $(id).onclick = undoPrompt);
+['btnPromptRedoStep1', 'btnPromptRedoStep5'].forEach(id => $(id).onclick = redoPrompt);
+// 手动编辑完，一离开个 textarea 就记一个历史点（唔系每个按键都记，避免历史栈太乱）
+$('wizSystemPrompt').addEventListener('blur', () => pushPromptHistory($('wizSystemPrompt').value.trim()));
+$('wizFinalPrompt').addEventListener('blur', () => pushPromptHistory($('wizFinalPrompt').value.trim()));
 
 // Voice-language sync: auto-switch language when voice changes
 $('wizTtsVoice').addEventListener('change', function() {

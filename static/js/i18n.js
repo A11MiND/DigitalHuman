@@ -251,7 +251,17 @@
       'wizard.err.image_gen_failed':         '图片生成失败',
       'wizard.err.video_gen_failed':         '视频生成失败',
       'wizard.err.char_write_failed':        '角色写入失败',
-      'wizard.candidate_image_alt':          '候选角色图'
+      'wizard.candidate_image_alt':          '候选角色图',
+      'chat.settings.tts_lang_hint':      '这个只是给 TTS 的读音提示（消除多音字歧义），不是选「用哪种语言回答」——回答语言由角色自己决定。',
+      'chat.settings.search_placeholder': '输入语言或音色名搜索…',
+      'wizard.reply_language_label':      '回复语言',
+      'wizard.reply_language_hint':       '角色 Prompt 会用这种语言撰写，同时决定它默认用哪种语言回答。',
+      'wizard.asr_lang_label':            '聆听语言（ASR）',
+      'wizard.asr_lang_hint':             '语音输入识别使用的语言，不会跟随 TTS 语言自动推断，需要独立选择。',
+      'wizard.undo':                      '撤销上一版',
+      'wizard.redo':                      '恢复',
+      'wizard.image_zoom_hint':           '点击图片放大查看',
+      'wizard.image_zoom_close':          '关闭'
     },
 
     'zh-Hant': {
@@ -482,7 +492,17 @@
       'wizard.err.image_gen_failed':         '圖片生成失敗',
       'wizard.err.video_gen_failed':         '視頻生成失敗',
       'wizard.err.char_write_failed':        '角色寫入失敗',
-      'wizard.candidate_image_alt':          '候選角色圖'
+      'wizard.candidate_image_alt':          '候選角色圖',
+      'chat.settings.tts_lang_hint':      '這個只是給 TTS 的讀音提示（消除多音字歧義），不是選「用哪種語言回答」——回答語言由角色自己決定。',
+      'chat.settings.search_placeholder': '輸入語言或音色名搜尋…',
+      'wizard.reply_language_label':      '回覆語言',
+      'wizard.reply_language_hint':       '角色 Prompt 會用這種語言撰寫，同時決定它預設用哪種語言回答。',
+      'wizard.asr_lang_label':            '聆聽語言（ASR）',
+      'wizard.asr_lang_hint':             '語音輸入識別使用的語言，不會跟隨 TTS 語言自動推斷，需要獨立選擇。',
+      'wizard.undo':                      '撤銷上一版',
+      'wizard.redo':                      '恢復',
+      'wizard.image_zoom_hint':           '點擊圖片放大查看',
+      'wizard.image_zoom_close':          '關閉'
     },
 
     'en': {
@@ -713,7 +733,17 @@
       'wizard.err.image_gen_failed':         'Failed to generate images',
       'wizard.err.video_gen_failed':         'Failed to generate videos',
       'wizard.err.char_write_failed':        'Failed to write the character files',
-      'wizard.candidate_image_alt':          'Candidate character image'
+      'wizard.candidate_image_alt':          'Candidate character image',
+      'chat.settings.tts_lang_hint':      'This is only a pronunciation hint for the TTS engine (disambiguating multi-language text) — it does not choose which language the character replies in.',
+      'chat.settings.search_placeholder': 'Type a language or voice name…',
+      'wizard.reply_language_label':      'Reply language',
+      'wizard.reply_language_hint':       'The generated character prompt will be written in this language, and it becomes the character\'s default reply language.',
+      'wizard.asr_lang_label':            'Listening language (ASR)',
+      'wizard.asr_lang_hint':             'The language used for voice-input recognition. It is not inferred from the TTS language — pick it separately.',
+      'wizard.undo':                      'Undo',
+      'wizard.redo':                      'Redo',
+      'wizard.image_zoom_hint':           'Click an image to view it full-screen',
+      'wizard.image_zoom_close':          'Close'
     },
 
     'fr': {
@@ -944,7 +974,17 @@
       'wizard.err.image_gen_failed':         'Échec de la génération des images',
       'wizard.err.video_gen_failed':         'Échec de la génération des vidéos',
       'wizard.err.char_write_failed':        'Échec de l\'écriture des fichiers du personnage',
-      'wizard.candidate_image_alt':          'Image candidate du personnage'
+      'wizard.candidate_image_alt':          'Image candidate du personnage',
+      'chat.settings.tts_lang_hint':      'Ceci sert uniquement d\'indice de prononciation pour le moteur TTS (désambiguïser un texte multilingue) — cela ne détermine pas la langue de réponse du personnage.',
+      'chat.settings.search_placeholder': 'Tapez une langue ou un nom de voix…',
+      'wizard.reply_language_label':      'Langue de réponse',
+      'wizard.reply_language_hint':       'Le prompt du personnage généré sera rédigé dans cette langue, qui devient sa langue de réponse par défaut.',
+      'wizard.asr_lang_label':            'Langue d\'écoute (ASR)',
+      'wizard.asr_lang_hint':             'Langue utilisée pour la reconnaissance vocale. Elle n\'est pas déduite de la langue TTS — à choisir séparément.',
+      'wizard.undo':                      'Annuler',
+      'wizard.redo':                      'Rétablir',
+      'wizard.image_zoom_hint':           'Cliquez sur une image pour l\'afficher en plein écran',
+      'wizard.image_zoom_close':          'Fermer'
     },
 
     'de': {
@@ -1175,7 +1215,17 @@
       'wizard.err.image_gen_failed':         'Bildgenerierung fehlgeschlagen',
       'wizard.err.video_gen_failed':         'Videogenerierung fehlgeschlagen',
       'wizard.err.char_write_failed':        'Schreiben der Figurendateien fehlgeschlagen',
-      'wizard.candidate_image_alt':          'Kandidatenbild der Figur'
+      'wizard.candidate_image_alt':          'Kandidatenbild der Figur',
+      'chat.settings.tts_lang_hint':      'Dies ist nur ein Ausspracheh­inweis für die TTS-Engine (zur Auflösung mehrsprachiger Texte) — es legt nicht fest, in welcher Sprache die Figur antwortet.',
+      'chat.settings.search_placeholder': 'Sprache oder Stimmennamen eingeben…',
+      'wizard.reply_language_label':      'Antwortsprache',
+      'wizard.reply_language_hint':       'Der generierte Rollen-Prompt wird in dieser Sprache verfasst und wird zur Standard-Antwortsprache der Figur.',
+      'wizard.asr_lang_label':            'Zuhörsprache (ASR)',
+      'wizard.asr_lang_hint':             'Sprache für die Spracherkennung. Wird nicht automatisch aus der TTS-Sprache abgeleitet — separat auswählen.',
+      'wizard.undo':                      'Rückgängig',
+      'wizard.redo':                      'Wiederholen',
+      'wizard.image_zoom_hint':           'Bild anklicken, um es im Vollbild anzuzeigen',
+      'wizard.image_zoom_close':          'Schließen'
     },
 
     'es': {
@@ -1406,7 +1456,17 @@
       'wizard.err.image_gen_failed':         'Error al generar las imágenes',
       'wizard.err.video_gen_failed':         'Error al generar los vídeos',
       'wizard.err.char_write_failed':        'Error al escribir los archivos del personaje',
-      'wizard.candidate_image_alt':          'Imagen candidata del personaje'
+      'wizard.candidate_image_alt':          'Imagen candidata del personaje',
+      'chat.settings.tts_lang_hint':      'Esto es solo una pista de pronunciación para el motor TTS (para desambiguar texto multilingüe) — no determina en qué idioma responde el personaje.',
+      'chat.settings.search_placeholder': 'Escribe un idioma o nombre de voz…',
+      'wizard.reply_language_label':      'Idioma de respuesta',
+      'wizard.reply_language_hint':       'El prompt del personaje generado se redactará en este idioma, que pasa a ser su idioma de respuesta predeterminado.',
+      'wizard.asr_lang_label':            'Idioma de escucha (ASR)',
+      'wizard.asr_lang_hint':             'Idioma usado para el reconocimiento de voz. No se infiere del idioma TTS — elígelo por separado.',
+      'wizard.undo':                      'Deshacer',
+      'wizard.redo':                      'Rehacer',
+      'wizard.image_zoom_hint':           'Haz clic en una imagen para verla a pantalla completa',
+      'wizard.image_zoom_close':          'Cerrar'
     }
   };
 

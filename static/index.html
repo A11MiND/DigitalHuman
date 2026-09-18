@@ -6,6 +6,7 @@
 <title>數字人殿堂</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏛️</text></svg>">
 <script src="/js/i18n.js"></script>
+<script src="/js/voices.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -633,6 +634,22 @@
     outline: none;
     cursor: pointer;
   }
+  .settings-search {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(0,0,0,0.1);
+    background: #fff;
+    color: #3d3028;
+    font-size: 13px;
+    outline: none;
+  }
+  .settings-search:focus { border-color: rgba(138,109,59,0.5); }
+  .field-hint {
+    font-size: 11.5px;
+    color: #999;
+    line-height: 1.4;
+  }
 
   .export-btn {
     display: block;
@@ -839,70 +856,23 @@
     <!-- 语言与音色设置 -->
     <div class="settings-section-title" data-i18n="chat.settings.lang_voice_section">語言與音色</div>
 
-    <div class="settings-row">
+    <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:4px;">
       <span class="label-text" data-i18n="chat.settings.tts_lang">說話語言</span>
-      <select class="settings-select" id="ttsLang" style="width:auto;padding:6px 10px;font-size:13px;">
-        <option value="Chinese,Yue">粵語</option>
-        <option value="Chinese">普通話</option>
-        <option value="English">English</option>
-        <option value="German">Deutsch</option>
-        <option value="auto" data-i18n="chat.emotion.auto">自動</option>
-      </select>
+      <span class="field-hint" data-i18n="chat.settings.tts_lang_hint">這個只是給 TTS 的讀音提示（消除多音字歧義），不是選「用哪種語言回答」——回答語言由角色自己決定。</span>
+      <input type="text" class="settings-search" id="ttsLangSearch" data-i18n-attr="placeholder:chat.settings.search_placeholder" placeholder="輸入語言名搜尋…" style="margin-top:2px;">
+      <select class="settings-select" id="ttsLang" style="width:100%;padding:6px 10px;font-size:13px;"></select>
     </div>
 
-    <div class="settings-row">
+    <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:4px;margin-top:10px;">
       <span class="label-text" data-i18n="chat.settings.tts_voice">音色</span>
-      <select class="settings-select" id="ttsVoice" style="width:auto;padding:6px 10px;font-size:12px;">
-        <optgroup label="粵語男聲" data-lang="Chinese,Yue">
-          <option value="Cantonese_PlayfulMan" selected>活潑男聲</option>
-          <option value="Cantonese_ProfessionalHost（M)">專業男主持</option>
-        </optgroup>
-        <optgroup label="粵語女聲" data-lang="Chinese,Yue">
-          <option value="Cantonese_GentleLady">溫柔女聲</option>
-          <option value="Cantonese_ProfessionalHost（F)">專業女主持</option>
-          <option value="Cantonese_CuteGirl">可愛女孩</option>
-          <option value="Cantonese_KindWoman">善良女聲</option>
-        </optgroup>
-        <optgroup label="普通話男聲" data-lang="Chinese">
-          <option value="male-qn-qingse">青澀青年</option>
-          <option value="male-qn-jingying">精英青年</option>
-          <option value="Chinese (Mandarin)_Gentleman">溫潤男聲</option>
-          <option value="Chinese (Mandarin)_Male_Announcer">播報男聲</option>
-        </optgroup>
-        <optgroup label="普通話女聲" data-lang="Chinese">
-          <option value="female-shaonv">少女音色</option>
-          <option value="female-yujie">御姐音色</option>
-          <option value="Chinese (Mandarin)_Sweet_Lady">甜美女聲</option>
-          <option value="Chinese (Mandarin)_Warm_Bestie">溫暖閨蜜</option>
-        </optgroup>
-        <optgroup label="English Female" data-lang="English">
-          <option value="English_Graceful_Lady" selected>Graceful Lady</option>
-          <option value="English_Insightful_Speaker">Insightful Speaker</option>
-          <option value="English_radiant_girl">Radiant Girl</option>
-        </optgroup>
-        <optgroup label="English Male" data-lang="English">
-          <option value="English_Persuasive_Man">Persuasive Man</option>
-          <option value="English_Lucky_Robot">Lucky Robot</option>
-        </optgroup>
-        <optgroup label="Deutsch" data-lang="German">
-          <option value="German_FriendlyMan">Friendly Man</option>
-          <option value="German_PlayfulMan">Playful Man</option>
-          <option value="German_SweetLady">Sweet Lady</option>
-        </optgroup>
-      </select>
+      <input type="text" class="settings-search" id="ttsVoiceSearch" data-i18n-attr="placeholder:chat.settings.search_placeholder" placeholder="輸入語言或音色名搜尋…">
+      <select class="settings-select" id="ttsVoice" style="width:100%;padding:6px 10px;font-size:12px;" size="6"></select>
     </div>
 
-    <div class="settings-row">
+    <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:4px;margin-top:10px;">
       <span class="label-text" data-i18n="chat.settings.asr_lang">聆聽語言</span>
-      <select class="settings-select" id="asrLang" style="width:auto;padding:6px 10px;font-size:13px;">
-        <option value="zh-HK" selected>粵語</option>
-        <option value="zh-CN">普通話</option>
-        <option value="en-US">English</option>
-        <option value="de-DE">Deutsch (Deutschland)</option>
-        <option value="de-AT">Deutsch (Österreich)</option>
-        <option value="fr-FR">Français</option>
-        <option value="es-ES">Español</option>
-      </select>
+      <input type="text" class="settings-search" id="asrLangSearch" data-i18n-attr="placeholder:chat.settings.search_placeholder" placeholder="輸入語言名搜尋…">
+      <select class="settings-select" id="asrLang" style="width:100%;padding:6px 10px;font-size:13px;"></select>
     </div>
 
     <!-- ═══ 语音参数调试 ═══ -->
@@ -1057,6 +1027,13 @@
 I18N.apply();
 
 const $ = id => document.getElementById(id);
+
+// 音色/語言/聆聽語言三個選單全部由同一個 MiniMax voice catalog 生成，
+// 涵蓋全部 24 種語言、325 把聲，不再只是原本 16 把的手選子集。
+VoiceUI.populateLanguageSelect($('ttsLang'), { includeAuto: true, autoLabel: I18N.t('chat.emotion.auto') });
+VoiceUI.populateVoiceSelect($('ttsVoice'));
+VoiceUI.populateAsrSelect($('asrLang'));
+
 const messagesEl = $('messages');
 const inputText = $('inputText');
 const btnTalk = $('btnTalk');
@@ -1718,7 +1695,7 @@ function switchVideo(type) {
   showEl.classList.add('visible');
   hideEl.classList.remove('visible');
 
-  // 等 opacity transition 播完先暂停淡出嗰个，唔好中途截停
+  // 等 opacity transition 播完再暂停淡出的那个，不要中途截停
   if (_switchFadeTimer) clearTimeout(_switchFadeTimer);
   _switchFadeTimer = setTimeout(() => {
     if (!hideEl.classList.contains('visible')) hideEl.pause();
@@ -2059,30 +2036,40 @@ $('btnSettingsClose').onclick = () => { settingsOverlay.classList.remove('open')
 $('btnRefresh').onclick = () => location.reload();
 
 // TTS 语言与音色
+let _ttsVoiceSearchQuery = '';
+
 function filterVoiceGroups(preserveVoiceId = false) {
   const opts = $('ttsVoice').querySelectorAll('optgroup');
   const currentLang = $('ttsLang').value;
-  // "auto" 唔對應單一語言嘅音色分組——冇呢個分支嘅話所有 optgroup 都會
-  // 被隱藏晒，令音色下拉選單完全空白（慕尼黑/維也納機場角色 tts_language
-  // 都係 "auto"，一開 Settings 就中招）。呢種情況下顯示晒全部分組畀用戶揀。
+  const q = _ttsVoiceSearchQuery.trim().toLowerCase();
+  // "auto" 不對應單一語言的音色分組——沒有這個分支的話所有 optgroup 都會
+  // 被隱藏，令音色下拉選單完全空白（慕尼黑/維也納機場角色的 tts_language
+  // 都是 "auto"，一開 Settings 就會中招）。這種情況下顯示全部分組讓用戶挑選。
   const showAll = currentLang === 'auto';
   let firstVisible = null;
   let currentVoiceExists = false;
 
   opts.forEach(g => {
-    if (showAll || g.dataset.lang === currentLang) {
-      g.style.display = '';
-      if (!firstVisible) firstVisible = g.querySelector('option');
-      // Check if current voice exists in this group
-      const voiceOpts = g.querySelectorAll('option');
-      voiceOpts.forEach(opt => {
-        if (opt.value === ttsVoiceId) currentVoiceExists = true;
-      });
-    } else {
+    const langMatch = showAll || g.dataset.lang === currentLang;
+    if (!langMatch) {
       g.style.display = 'none';
+      return;
     }
+    // 语言匹配的前提下，再叠加搜索框的文字过滤（比对 optgroup 标签和各个音色名）
+    const groupTextMatches = !q || (g.label || '').toLowerCase().includes(q);
+    let anyVisible = false;
+    g.querySelectorAll('option').forEach(opt => {
+      const show = !q || groupTextMatches || opt.textContent.toLowerCase().includes(q);
+      opt.hidden = !show;
+      if (show) {
+        anyVisible = true;
+        if (!firstVisible) firstVisible = opt;
+        if (opt.value === ttsVoiceId) currentVoiceExists = true;
+      }
+    });
+    g.style.display = anyVisible ? '' : 'none';
   });
-  
+
   // Only change voice if current one doesn't exist in this language group
   // or if we're explicitly resetting (preserveVoiceId = false and voice doesn't exist)
   if (!preserveVoiceId && !currentVoiceExists) {
@@ -2103,6 +2090,12 @@ $('ttsVoice').addEventListener('change', () => {
   ttsVoiceId = $('ttsVoice').value;
   syncTtsToServer();
 });
+$('ttsVoiceSearch').addEventListener('input', e => {
+  _ttsVoiceSearchQuery = e.target.value;
+  filterVoiceGroups(true);
+});
+VoiceUI.attachFilter($('ttsLangSearch'), $('ttsLang'));
+VoiceUI.attachFilter($('asrLangSearch'), $('asrLang'));
 $('asrLang').addEventListener('change', () => {
   const newLang = $('asrLang').value;
   asrLang = newLang;
