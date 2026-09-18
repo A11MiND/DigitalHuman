@@ -697,18 +697,26 @@ def _existing_prompt_examples() -> str:
     return "\n\n".join(examples)
 
 
+_THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
 def _extract_minimax_text(data: dict) -> str:
+    # M2 系模型冇得关闭思考（thinking），思考本身要食 tokens；如果 max_tokens
+    # 批得太紧，模型可能思考到一半就截断，content 会係空字符串。呢种情况落去
+    # reasoning_content 只会攞到未完成嘅思考过程，唔係真正答案——不如识别出嚟
+    # 当做冇答案，好过静静鸡将思考过程当正常回复吐畀用户睇。
     choices = data.get("choices") or []
     if choices:
         first = choices[0] or {}
         msg = first.get("message") or {}
-        return (
-            msg.get("content")
-            or msg.get("reasoning_content")
-            or first.get("text")
-            or first.get("delta", {}).get("content")
-            or ""
-        ).strip()
+        content = (msg.get("content") or first.get("text") or first.get("delta", {}).get("content") or "").strip()
+        content = _THINK_TAG_RE.sub("", content).strip()
+        if content:
+            return content
+        finish_reason = first.get("finish_reason") or ""
+        if finish_reason == "length" or not content:
+            logger.warning("MiniMax 回复被截断或为空，可能思考用晒 max_tokens：finish_reason=%s", finish_reason)
+        return ""
     return (data.get("reply") or data.get("text") or data.get("content") or "").strip()
 
 
@@ -1594,7 +1602,7 @@ async def create_test_key(x_minimax_api_key: ApiKeyHeader = None, x_user_code: U
     text = await provider.simple_text(
         "You are a health check endpoint. Reply with exactly OK.",
         "Check this API key.",
-        max_tokens=64,
+        max_tokens=300,  # M2 思考模型冇得关闭思考，太紧会思考到一半就冇晒 budget 畀真正答案
         temperature=0.1,
     )
     # 只回连通性与延迟，绝不回传 Key 本身或它的任何片段。
@@ -1687,7 +1695,7 @@ async def create_image_prompt(req: GenerateImagePromptRequest, x_minimax_api_key
             f"角色名：{req.name}\n英文/副标题：{req.name_en}\n角色定位：{req.role}\n"
             f"背景：{req.background}\n说话设定：{req.speaking_style}\nSystem Prompt 摘要：{req.system_prompt[:1200]}"
         ),
-        max_tokens=450,
+        max_tokens=1500,  # 之前 450 太紧，M2 思考模型会思考到截断、content 变空
         temperature=0.5,
     )
     return {"ok": True, "prompt": prompt.strip()}

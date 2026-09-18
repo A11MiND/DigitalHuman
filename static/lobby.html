@@ -222,10 +222,10 @@
   <div class="wizard">
     <div class="wizard-head">
       <div>
-        <div class="wizard-title">創建新角色</div>
-        <div class="status-line" id="wizardSubtitle">API Key 只保存在本次頁面會話</div>
+        <div class="wizard-title" data-i18n="wizard.title">創建新角色</div>
+        <div class="status-line" id="wizardSubtitle" data-i18n="wizard.subtitle_default">API Key 只保存在本次頁面會話</div>
       </div>
-      <button class="wizard-close" id="wizardClose" title="關閉">×</button>
+      <button class="wizard-close" id="wizardClose" data-i18n-attr="title:wizard.close" title="關閉">×</button>
     </div>
     <div class="wizard-body">
       <div class="wizard-steps" id="wizardSteps"></div>
@@ -235,69 +235,69 @@
           <label>MiniMax API Key</label>
           <input id="wizApiKey" type="password" placeholder="sk-...">
         </div>
-        <div class="status-line" id="serverKeyNote" style="display:none;">
+        <div class="status-line" id="serverKeyNote" style="display:none;" data-i18n="wizard.server_key_note">
           已使用平台配置的 MiniMax 服務，無需填寫 API Key
         </div>
-        <button class="wiz-btn primary" id="btnTestKey">測試 MiniMax Key</button>
+        <button class="wiz-btn primary" id="btnTestKey" data-i18n="wizard.test_key_own">測試 MiniMax Key</button>
         <div class="status-line" id="keyStatus"></div>
       </section>
 
       <section class="wizard-panel" data-step="1">
         <div class="two-col">
-          <div class="field"><label>角色名稱</label><input id="wizName" placeholder="例如：李白"></div>
-          <div class="field"><label>英文/副標題</label><input id="wizNameEn" placeholder="Poet Immortal"></div>
+          <div class="field"><label data-i18n="wizard.name_label">角色名稱</label><input id="wizName" data-i18n-attr="placeholder:wizard.name_placeholder" placeholder="例如：李白"></div>
+          <div class="field"><label data-i18n="wizard.name_en_label">英文/副標題</label><input id="wizNameEn" data-i18n-attr="placeholder:wizard.name_en_placeholder" placeholder="Poet Immortal"></div>
         </div>
-        <div class="field"><label>角色定位</label><input id="wizRole" placeholder="唐代詩人 / 科幻導師 / 品牌顧問"></div>
-        <div class="field"><label>背景設定</label><textarea id="wizBackground" placeholder="輸入角色身份、經歷、性格、禁忌和目標受眾"></textarea></div>
-        <div class="field"><label>說話設定</label><textarea id="wizSpeaking" placeholder="輸入語氣、稱呼、回覆長度、是否古風/粵語/英文等"></textarea></div>
-        <button class="wiz-btn primary" id="btnBuildPrompt">潤色角色 Prompt</button>
+        <div class="field"><label data-i18n="wizard.role_label">角色定位</label><input id="wizRole" data-i18n-attr="placeholder:wizard.role_placeholder" placeholder="唐代詩人 / 科幻導師 / 品牌顧問"></div>
+        <div class="field"><label data-i18n="wizard.background_label">背景設定</label><textarea id="wizBackground" data-i18n-attr="placeholder:wizard.background_placeholder" placeholder="輸入角色身份、經歷、性格、禁忌和目標受眾"></textarea></div>
+        <div class="field"><label data-i18n="wizard.speaking_label">說話設定</label><textarea id="wizSpeaking" data-i18n-attr="placeholder:wizard.speaking_placeholder" placeholder="輸入語氣、稱呼、回覆長度、是否古風/粵語/英文等"></textarea></div>
+        <button class="wiz-btn primary" id="btnBuildPrompt" data-i18n="wizard.build_prompt">潤色角色 Prompt</button>
         <div class="status-line" id="promptStatus"></div>
         <div class="field" style="margin-top:14px;">
-          <label>角色 Prompt（會參考秦始皇與 Elizabeth 的現有格式，可直接編輯）</label>
-          <textarea id="wizSystemPrompt" placeholder="點擊潤色後會自動填入"></textarea>
+          <label data-i18n="wizard.system_prompt_label">角色 Prompt（會參考秦始皇與 Elizabeth 的現有格式，可直接編輯）</label>
+          <textarea id="wizSystemPrompt" data-i18n-attr="placeholder:wizard.system_prompt_placeholder" placeholder="點擊潤色後會自動填入"></textarea>
         </div>
       </section>
 
       <section class="wizard-panel" data-step="2">
         <div class="field">
-          <label>Web Search 關鍵詞（留空時根據前面角色內容生成）</label>
-          <input id="wizSearchQuery" placeholder="例如：李白 生平 詩風 盛唐">
+          <label data-i18n="wizard.search_query_label">Web Search 關鍵詞（留空時根據前面角色內容生成）</label>
+          <input id="wizSearchQuery" data-i18n-attr="placeholder:wizard.search_query_placeholder" placeholder="例如：李白 生平 詩風 盛唐">
         </div>
         <div class="field">
-          <label>知識庫文本（最多 6000 字）</label>
-          <textarea id="wizKnowledge" maxlength="6000" placeholder="可直接粘貼，也可以上傳 txt/pdf/docx 後自動提取，或點擊 Web Search 生成"></textarea>
+          <label data-i18n="wizard.knowledge_label">知識庫文本（最多 6000 字）</label>
+          <textarea id="wizKnowledge" maxlength="6000" data-i18n-attr="placeholder:wizard.knowledge_placeholder" placeholder="可直接粘貼，也可以上傳 txt/pdf/docx 後自動提取，或點擊 Web Search 生成"></textarea>
         </div>
-        <button class="wiz-btn" id="btnKnowledgeUpload">上傳知識庫文件</button>
-        <button class="wiz-btn primary" id="btnKnowledgeSearch">Web Search 生成知識庫</button>
+        <button class="wiz-btn" id="btnKnowledgeUpload" data-i18n="wizard.upload_knowledge">上傳知識庫文件</button>
+        <button class="wiz-btn primary" id="btnKnowledgeSearch" data-i18n="wizard.web_search_gen">Web Search 生成知識庫</button>
         <div class="status-line" id="knowledgeCount">0 / 6000</div>
         <div class="status-line" id="knowledgeStatus"></div>
       </section>
 
       <section class="wizard-panel" data-step="3">
         <div class="field">
-          <label>形象描述 / 圖像 Prompt</label>
-          <textarea id="wizImagePrompt" placeholder="描述角色外觀、服裝、鏡頭、光線、背景。建議 3:4 半身像，背景乾淨。"></textarea>
+          <label data-i18n="wizard.image_prompt_label">形象描述 / 圖像 Prompt</label>
+          <textarea id="wizImagePrompt" data-i18n-attr="placeholder:wizard.image_prompt_placeholder" placeholder="描述角色外觀、服裝、鏡頭、光線、背景。建議 3:4 半身像，背景乾淨。"></textarea>
         </div>
-        <button class="wiz-btn" id="btnBuildImagePrompt">根據角色內容生成圖像 Prompt</button>
-        <button class="wiz-btn primary" id="btnGenerateImages">生成 4 張候選圖</button>
+        <button class="wiz-btn" id="btnBuildImagePrompt" data-i18n="wizard.build_image_prompt">根據角色內容生成圖像 Prompt</button>
+        <button class="wiz-btn primary" id="btnGenerateImages" data-i18n="wizard.generate_images">生成 4 張候選圖</button>
         <div class="status-line" id="imageStatus"></div>
       </section>
 
       <section class="wizard-panel" data-step="4">
         <div class="image-choice-grid" id="imageChoices"></div>
-        <button class="wiz-btn primary" id="btnGenerateVideos">生成 idle/talk 視頻</button>
+        <button class="wiz-btn primary" id="btnGenerateVideos" data-i18n="wizard.generate_videos">生成 idle/talk 視頻</button>
         <div class="status-line" id="videoStatus"></div>
       </section>
 
       <section class="wizard-panel" data-step="5">
         <div class="preview-video-grid" id="videoPreview"></div>
         <div class="field" style="margin-top:14px;">
-          <label>最終 System Prompt</label>
+          <label data-i18n="wizard.final_prompt_label">最終 System Prompt</label>
           <textarea id="wizFinalPrompt"></textarea>
         </div>
         <div class="two-col" style="margin-top:14px;">
           <div class="field">
-            <label>TTS 語音</label>
+            <label data-i18n="wizard.tts_voice_label">TTS 語音</label>
             <select id="wizTtsVoice">
               <optgroup label="粵語男聲" data-lang="Chinese,Yue">
                 <option value="Cantonese_PlayfulMan" selected>活潑男聲</option>
@@ -334,7 +334,7 @@
             </select>
           </div>
           <div class="field">
-            <label>TTS 語言</label>
+            <label data-i18n="wizard.tts_lang_label">TTS 語言</label>
             <select id="wizTtsLanguage">
               <option value="Chinese,Yue">粵語</option>
               <option value="Chinese">普通話</option>
@@ -343,7 +343,7 @@
             </select>
           </div>
         </div>
-        <button class="wiz-btn primary" id="btnFinalize">完成並加入大廳</button>
+        <button class="wiz-btn primary" id="btnFinalize" data-i18n="wizard.finalize">完成並加入大廳</button>
         <div class="status-line" id="finalStatus"></div>
       </section>
 
@@ -690,7 +690,7 @@ function setBusy(btn, busy, text) {
   if (!btn) return;
   if (busy) {
     btn.dataset.oldText = btn.textContent;
-    btn.textContent = text || '處理中...';
+    btn.textContent = text || I18N.t('wizard.testing_own');
     btn.disabled = true;
   } else {
     btn.textContent = btn.dataset.oldText || btn.textContent;
@@ -728,12 +728,12 @@ function applyKeyMode() {
   const btn = $('btnTestKey');
   if (field) field.style.display = serverKey ? 'none' : '';
   if (note) note.style.display = serverKey ? '' : 'none';
-  if (btn) btn.textContent = serverKey ? '測試連結穩定性' : '測試 MiniMax Key';
+  if (btn) btn.textContent = serverKey ? I18N.t('wizard.test_key_server') : I18N.t('wizard.test_key_own');
   if (serverKey) {
     sessionMiniMaxKey = '';
     const input = $('wizApiKey');
     if (input) input.value = '';
-    setStatus('wizardSubtitle', '使用平台配置的 MiniMax 服務');
+    setStatus('wizardSubtitle', I18N.t('wizard.subtitle_platform'));
   }
 }
 
@@ -754,26 +754,26 @@ function requireKey() {
   if (!sessionMiniMaxKey && usesServerKey()) {
     // 服務端已備好 Key，只要求先做一次連結穩定性測試
     if (!keyValidated) {
-      setStatus('keyStatus', '請先測試連結穩定性，確認可用後再下一步', true);
-      setStatus('wizardSubtitle', '尚未測試連結穩定性', true);
+      setStatus('keyStatus', I18N.t('wizard.next_blocked_test'), true);
+      setStatus('wizardSubtitle', I18N.t('wizard.subtitle_not_tested'), true);
       showWizardStep(0);
       return false;
     }
-    setStatus('wizardSubtitle', '使用平台配置的 MiniMax 服務');
+    setStatus('wizardSubtitle', I18N.t('wizard.subtitle_platform'));
     return true;
   }
   if (!sessionMiniMaxKey) {
-    setStatus('wizardSubtitle', '請先填寫 MiniMax API Key（只保存於本頁面會話）', true);
+    setStatus('wizardSubtitle', I18N.t('wizard.subtitle_fill_key'), true);
     showWizardStep(0);
     return false;
   }
   if (!keyValidated) {
-    setStatus('keyStatus', '請先測試 MiniMax Key，確認可用後再下一步', true);
-    setStatus('wizardSubtitle', 'MiniMax Key 尚未測試通過', true);
+    setStatus('keyStatus', I18N.t('wizard.next_blocked_test_own'), true);
+    setStatus('wizardSubtitle', I18N.t('wizard.subtitle_key_not_tested'), true);
     showWizardStep(0);
     return false;
   }
-  setStatus('wizardSubtitle', 'API Key 已在本頁面會話中就緒，刷新後會丟失');
+  setStatus('wizardSubtitle', I18N.t('wizard.subtitle_key_ready'));
   return true;
 }
 
@@ -794,7 +794,7 @@ async function ensurePrompt(force = false) {
   if (!requireKey()) throw new Error('missing_api_key');
   const payload = baseCharacterPayload();
   if (!payload.name || !payload.background || !payload.speaking_style) {
-    throw new Error('請先填寫角色名稱、背景設定和說話設定');
+    throw new Error(I18N.t('wizard.err.fill_required'));
   }
   const res = await fetch('/api/create/prompt', {
     method: 'POST',
@@ -802,7 +802,7 @@ async function ensurePrompt(force = false) {
     body: JSON.stringify(payload),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || 'Prompt 生成失敗'));
+  if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || I18N.t('wizard.err.prompt_failed')));
   createState.promptJobId = data.job_id;
   createState.systemPrompt = data.system_prompt;
   $('wizSystemPrompt').value = data.system_prompt;
@@ -824,8 +824,8 @@ $('wizNext').onclick = async () => {
 
 $('wizApiKey').addEventListener('input', () => {
   keyValidated = false;
-  setStatus('keyStatus', 'Key 已變更，請重新測試');
-  setStatus('wizardSubtitle', 'API Key 只保存在本次頁面會話');
+  setStatus('keyStatus', I18N.t('wizard.key_changed'));
+  setStatus('wizardSubtitle', I18N.t('wizard.subtitle_default'));
 });
 
 $('btnTestKey').onclick = async () => {
@@ -833,22 +833,22 @@ $('btnTestKey').onclick = async () => {
   sessionMiniMaxKey = $('wizApiKey').value.trim();
   const serverKey = !sessionMiniMaxKey && usesServerKey();
   if (!sessionMiniMaxKey && !serverKey) {
-    setStatus('keyStatus', '請先填寫 MiniMax API Key', true);
+    setStatus('keyStatus', I18N.t('wizard.key_missing'), true);
     return;
   }
-  setBusy(btn, true, '測試中...');
-  setStatus('keyStatus', serverKey ? '正在測試與 MiniMax 的連結穩定性...' : '正在用 MiniMax 做一次輕量文本測試...');
+  setBusy(btn, true, I18N.t('wizard.testing_ellipsis'));
+  setStatus('keyStatus', serverKey ? I18N.t('wizard.testing_server') : I18N.t('wizard.testing_own'));
   try {
     const res = await fetch('/api/create/test-key', { method: 'POST', headers: headersJson() });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || 'MiniMax 連結測試失敗'));
+    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || I18N.t('wizard.err.connection_failed')));
     keyValidated = true;
-    setStatus('keyStatus', `連結正常，延遲 ${data.latency_ms}ms`);
-    setStatus('wizardSubtitle', data.server_key ? '使用平台配置的 MiniMax 服務' : 'API Key 已測試通過，刷新後會丟失');
+    setStatus('keyStatus', I18N.t('wizard.test_ok', { ms: data.latency_ms }));
+    setStatus('wizardSubtitle', data.server_key ? I18N.t('wizard.subtitle_platform') : I18N.t('wizard.subtitle_key_tested'));
   } catch (e) {
     keyValidated = false;
     setStatus('keyStatus', e.message, true);
-    setStatus('wizardSubtitle', 'MiniMax Key 測試未通過', true);
+    setStatus('wizardSubtitle', I18N.t('wizard.subtitle_key_failed'), true);
   } finally {
     setBusy(btn, false);
   }
@@ -856,11 +856,11 @@ $('btnTestKey').onclick = async () => {
 
 $('btnBuildPrompt').onclick = async () => {
   const btn = $('btnBuildPrompt');
-  setBusy(btn, true, '潤色中...');
-  setStatus('promptStatus', '正在調用 MiniMax 優化角色提示詞...');
+  setBusy(btn, true, I18N.t('wizard.polishing_ellipsis'));
+  setStatus('promptStatus', I18N.t('wizard.building_prompt'));
   try {
     await ensurePrompt(true);
-    setStatus('promptStatus', '角色 Prompt 已生成，可在最後一步微調。');
+    setStatus('promptStatus', I18N.t('wizard.prompt_ready'));
   } catch (e) {
     setStatus('promptStatus', e.message, true);
   } finally {
@@ -874,17 +874,17 @@ knowledgeInput.onchange = async () => {
   if (!file) return;
   const form = new FormData();
   form.append('file', file);
-  setStatus('knowledgeStatus', '正在提取文件文本...');
+  setStatus('knowledgeStatus', I18N.t('wizard.extracting'));
   try {
     const h = {};
     if (userCode) h['X-User-Code'] = userCode;
     if (SESSION_TOKEN) h['X-Session-Token'] = SESSION_TOKEN;
     const res = await fetch('/api/create/knowledge', { method: 'POST', body: form, headers: h });
     const data = await res.json();
-    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || '知識庫提取失敗'));
+    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || I18N.t('wizard.err.knowledge_extract_failed')));
     $('wizKnowledge').value = data.text;
     clampKnowledgeInput();
-    setStatus('knowledgeStatus', `已提取 ${data.chars} 字${data.truncated ? '（已截斷）' : ''}`);
+    setStatus('knowledgeStatus', I18N.t('wizard.extracted', { chars: data.chars, truncated: data.truncated ? I18N.t('wizard.truncated_suffix') : '' }));
   } catch (e) {
     setStatus('knowledgeStatus', e.message, true);
   } finally {
@@ -898,8 +898,8 @@ clampKnowledgeInput();
 $('btnKnowledgeSearch').onclick = async () => {
   const btn = $('btnKnowledgeSearch');
   if (!requireKey()) return;
-  setBusy(btn, true, '搜索中...');
-  setStatus('knowledgeStatus', '正在 Web Search 並整理為 6000 字以內知識庫...');
+  setBusy(btn, true, I18N.t('wizard.searching_ellipsis'));
+  setStatus('knowledgeStatus', I18N.t('wizard.searching'));
   try {
     const payload = baseCharacterPayload();
     payload.query = $('wizSearchQuery').value.trim();
@@ -909,10 +909,10 @@ $('btnKnowledgeSearch').onclick = async () => {
       body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || 'Web Search 生成失敗'));
+    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || I18N.t('wizard.err.websearch_failed')));
     $('wizKnowledge').value = data.text || '';
     clampKnowledgeInput();
-    setStatus('knowledgeStatus', `已根據「${data.query}」生成知識庫，來源 ${data.sources?.length || 0} 條`);
+    setStatus('knowledgeStatus', I18N.t('wizard.knowledge_ready', { query: data.query, count: data.sources?.length || 0 }));
   } catch (e) {
     setStatus('knowledgeStatus', e.message, true);
   } finally {
@@ -923,8 +923,8 @@ $('btnKnowledgeSearch').onclick = async () => {
 $('btnBuildImagePrompt').onclick = async () => {
   const btn = $('btnBuildImagePrompt');
   if (!requireKey()) return;
-  setBusy(btn, true, '生成中...');
-  setStatus('imageStatus', '正在根據角色內容生成圖像 Prompt...');
+  setBusy(btn, true, I18N.t('wizard.generating_ellipsis'));
+  setStatus('imageStatus', I18N.t('wizard.building_image_prompt'));
   try {
     const payload = baseCharacterPayload();
     payload.system_prompt = $('wizSystemPrompt').value.trim() || createState.systemPrompt || '';
@@ -934,9 +934,9 @@ $('btnBuildImagePrompt').onclick = async () => {
       body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || '圖像 Prompt 生成失敗'));
+    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || I18N.t('wizard.err.image_prompt_failed')));
     $('wizImagePrompt').value = data.prompt || '';
-    setStatus('imageStatus', '圖像 Prompt 已生成並填入，可直接生成候選圖。');
+    setStatus('imageStatus', I18N.t('wizard.image_prompt_ready'));
   } catch (e) {
     setStatus('imageStatus', e.message, true);
   } finally {
@@ -947,8 +947,8 @@ $('btnBuildImagePrompt').onclick = async () => {
 $('btnGenerateImages').onclick = async () => {
   const btn = $('btnGenerateImages');
   if (!requireKey()) return;
-  setBusy(btn, true, '生成中...');
-  setStatus('imageStatus', '正在準備 Prompt 並生成候選圖...');
+  setBusy(btn, true, I18N.t('wizard.generating_ellipsis'));
+  setStatus('imageStatus', I18N.t('wizard.generating_images'));
   try {
     if ($('wizSystemPrompt').value.trim()) {
       createState.systemPrompt = $('wizSystemPrompt').value.trim();
@@ -957,7 +957,7 @@ $('btnGenerateImages').onclick = async () => {
       await ensurePrompt(true);
     }
     const imagePrompt = $('wizImagePrompt').value.trim();
-    if (!imagePrompt) throw new Error('請先填寫形象描述');
+    if (!imagePrompt) throw new Error(I18N.t('wizard.err.fill_image_desc'));
     const res = await fetch('/api/create/images', {
       method: 'POST',
       headers: headersJson(),
@@ -969,11 +969,11 @@ $('btnGenerateImages').onclick = async () => {
       }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || '圖片生成失敗'));
+    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || I18N.t('wizard.err.image_gen_failed')));
     createState.promptJobId = data.job_id;
     createState.images = data.images || [];
     renderImageChoices();
-    setStatus('imageStatus', `已生成 ${createState.images.length} 張候選圖，請選一張。`);
+    setStatus('imageStatus', I18N.t('wizard.images_ready', { count: createState.images.length }));
     showWizardStep(4);
   } catch (e) {
     setStatus('imageStatus', e.message, true);
@@ -988,7 +988,7 @@ function renderImageChoices() {
   createState.images.forEach(img => {
     const item = document.createElement('div');
     item.className = 'image-choice' + (img.id === createState.selectedImageId ? ' selected' : '');
-    item.innerHTML = `<img src="${img.url}" alt="候選角色圖">`;
+    item.innerHTML = `<img src="${img.url}" alt="${escapeHtml(I18N.t('wizard.candidate_image_alt'))}">`;
     item.onclick = () => {
       createState.selectedImageId = img.id;
       renderImageChoices();
@@ -1005,11 +1005,11 @@ $('btnGenerateVideos').onclick = async () => {
   const btn = $('btnGenerateVideos');
   if (!requireKey()) return;
   if (!createState.selectedImageId) {
-    setStatus('videoStatus', '請先選擇一張候選圖', true);
+    setStatus('videoStatus', I18N.t('wizard.select_image_first'), true);
     return;
   }
-  setBusy(btn, true, '視頻生成中...');
-  setStatus('videoStatus', '正在生成 idle/talk 視頻，這一步可能需要數分鐘...');
+  setBusy(btn, true, I18N.t('wizard.video_generating_ellipsis'));
+  setStatus('videoStatus', I18N.t('wizard.generating_videos'));
   try {
     const res = await fetch('/api/create/videos', {
       method: 'POST',
@@ -1022,12 +1022,12 @@ $('btnGenerateVideos').onclick = async () => {
       }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || '視頻生成失敗'));
+    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || I18N.t('wizard.err.video_gen_failed')));
     createState.videos = data.videos;
     $('videoPreview').innerHTML = `
       <video src="${data.videos.idle}" autoplay muted loop playsinline></video>
       <video src="${data.videos.talk}" autoplay muted loop playsinline></video>`;
-    setStatus('videoStatus', '視頻已生成並完成去音軌/壓縮。');
+    setStatus('videoStatus', I18N.t('wizard.videos_ready'));
     showWizardStep(5);
   } catch (e) {
     setStatus('videoStatus', e.message, true);
@@ -1039,11 +1039,11 @@ $('btnGenerateVideos').onclick = async () => {
 $('btnFinalize').onclick = async () => {
   const btn = $('btnFinalize');
   if (!createState.videos) {
-    setStatus('finalStatus', '請先完成視頻生成', true);
+    setStatus('finalStatus', I18N.t('wizard.videos_required'), true);
     return;
   }
-  setBusy(btn, true, '寫入中...');
-  setStatus('finalStatus', '正在寫入角色目錄...');
+  setBusy(btn, true, I18N.t('wizard.writing_ellipsis'));
+  setStatus('finalStatus', I18N.t('wizard.writing'));
   try {
     const name = $('wizName').value.trim();
     const res = await fetch('/api/create/finalize', {
@@ -1062,8 +1062,8 @@ $('btnFinalize').onclick = async () => {
       }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || '角色寫入失敗'));
-    setStatus('finalStatus', '角色已加入大廳，正在刷新...');
+    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || I18N.t('wizard.err.char_write_failed')));
+    setStatus('finalStatus', I18N.t('wizard.done'));
     closeWizard();
     await loadCharacters();
   } catch (e) {

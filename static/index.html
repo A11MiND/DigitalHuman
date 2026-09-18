@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>數字人殿堂</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏛️</text></svg>">
+<script src="/js/i18n.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -749,17 +750,17 @@
 <!-- 顶部控制栏 -->
 <div class="top-bar">
   <div class="left-controls">
-    <button class="ctrl-btn" id="btnBack" title="返回大廳" onclick="location.href='/lobby.html'" style="margin-right:2px;">
+    <button class="ctrl-btn" id="btnBack" data-i18n-attr="title:chat.back" title="返回大廳" onclick="location.href='/lobby.html'" style="margin-right:2px;">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
     </button>
-    <button class="ctrl-btn" id="btnMenu" title="設置">
+    <button class="ctrl-btn" id="btnMenu" data-i18n-attr="title:chat.settings_title" title="設置">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
         <line x1="3" y1="6" x2="21" y2="6"/>
         <line x1="3" y1="12" x2="21" y2="12"/>
         <line x1="3" y1="18" x2="21" y2="18"/>
       </svg>
     </button>
-    <button class="ctrl-btn active" id="btnMic" title="麥克風開關">
+    <button class="ctrl-btn active" id="btnMic" data-i18n-attr="title:chat.mic_toggle" title="麥克風開關">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
         <rect x="9" y="1" width="6" height="11" rx="3"/>
         <path d="M5 10a7 7 0 0 0 14 0"/>
@@ -767,14 +768,14 @@
         <line x1="8" y1="23" x2="16" y2="23"/>
       </svg>
     </button>
-    <button class="ctrl-btn active" id="btnVoice" title="聲音開關">
+    <button class="ctrl-btn active" id="btnVoice" data-i18n-attr="title:chat.voice_toggle" title="聲音開關">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
         <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
         <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
         <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
       </svg>
     </button>
-    <button class="ctrl-btn" id="btnRefresh" title="刷新">
+    <button class="ctrl-btn" id="btnRefresh" data-i18n-attr="title:chat.refresh" title="刷新">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="23 4 23 10 17 10"/>
         <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
@@ -784,9 +785,9 @@
   <div class="right-controls">
     <div class="status-badge">
       <span class="status-dot" id="statusDot"></span>
-      <span id="statusText">在線</span>
+      <span id="statusText" data-i18n="chat.status.online">在線</span>
     </div>
-    <div class="quota-badge" id="quotaBadge" title="帳戶額度"></div>
+    <div class="quota-badge" id="quotaBadge" data-i18n-attr="title:chat.quota_tooltip" title="帳戶額度"></div>
   </div>
 
 <!-- 对话区域 -->
@@ -796,7 +797,7 @@
     </div>
   </div>
   <div class="input-bar">
-    <button class="btn-icon" id="btnTalk" title="按住說話">
+    <button class="btn-icon" id="btnTalk" data-i18n-attr="title:chat.talk_hold" title="按住說話">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
         <rect x="9" y="1" width="6" height="11" rx="3"/>
         <path d="M5 10a7 7 0 0 0 14 0"/>
@@ -805,7 +806,7 @@
       </svg>
     </button>
     <input type="text" id="inputText" placeholder="問秦始皇..." autocomplete="off">
-    <button class="btn-icon btn-send" id="btnSend" title="發送">
+    <button class="btn-icon btn-send" id="btnSend" data-i18n-attr="title:chat.send" title="發送">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
         <line x1="22" y1="2" x2="11" y2="13"/>
         <polygon points="22 2 15 22 13 13 2 9 22 2"/>
@@ -817,40 +818,40 @@
 <!-- ═══════ 设置面板 ═══════ -->
 <div class="settings-overlay" id="settingsOverlay">
   <div class="settings-card">
-    <h3>設置</h3>
+    <h3 data-i18n="chat.settings_title">設置</h3>
 
     <!-- 基础开关 -->
     <div class="settings-row" id="setMic">
       <span class="label-text">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="1" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-        語音輸入
+        <span data-i18n="chat.settings.voice_input">語音輸入</span>
       </span>
       <span class="toggle-sw on" id="toggleMic"></span>
     </div>
     <div class="settings-row" id="setVoice">
       <span class="label-text">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
-        語音朗讀
+        <span data-i18n="chat.settings.voice_output">語音朗讀</span>
       </span>
       <span class="toggle-sw on" id="toggleVoice"></span>
     </div>
 
     <!-- 语言与音色设置 -->
-    <div class="settings-section-title">語言與音色</div>
+    <div class="settings-section-title" data-i18n="chat.settings.lang_voice_section">語言與音色</div>
 
     <div class="settings-row">
-      <span class="label-text">說話語言</span>
+      <span class="label-text" data-i18n="chat.settings.tts_lang">說話語言</span>
       <select class="settings-select" id="ttsLang" style="width:auto;padding:6px 10px;font-size:13px;">
         <option value="Chinese,Yue">粵語</option>
         <option value="Chinese">普通話</option>
         <option value="English">English</option>
         <option value="German">Deutsch</option>
-        <option value="auto">自動</option>
+        <option value="auto" data-i18n="chat.emotion.auto">自動</option>
       </select>
     </div>
 
     <div class="settings-row">
-      <span class="label-text">音色</span>
+      <span class="label-text" data-i18n="chat.settings.tts_voice">音色</span>
       <select class="settings-select" id="ttsVoice" style="width:auto;padding:6px 10px;font-size:12px;">
         <optgroup label="粵語男聲" data-lang="Chinese,Yue">
           <option value="Cantonese_PlayfulMan" selected>活潑男聲</option>
@@ -892,7 +893,7 @@
     </div>
 
     <div class="settings-row">
-      <span class="label-text">聆聽語言</span>
+      <span class="label-text" data-i18n="chat.settings.asr_lang">聆聽語言</span>
       <select class="settings-select" id="asrLang" style="width:auto;padding:6px 10px;font-size:13px;">
         <option value="zh-HK" selected>粵語</option>
         <option value="zh-CN">普通話</option>
@@ -905,127 +906,127 @@
     </div>
 
     <!-- ═══ 语音参数调试 ═══ -->
-    <div class="settings-section-title">🎛️ 語音參數調試</div>
+    <div class="settings-section-title" data-i18n="chat.settings.tuning_section">🎛️ 語音參數調試</div>
 
     <!-- 語速 / 音量（单极） -->
     <div class="tts-row">
-      <span class="tts-name">語速</span>
+      <span class="tts-name" data-i18n="chat.settings.speed">語速</span>
       <span class="tts-pill" id="valSpeed">1.0</span>
       <input type="range" id="ttsSpeed" min="0.5" max="2.0" step="0.1" value="1.0">
     </div>
     <div class="tts-row">
-      <span class="tts-name">音量</span>
+      <span class="tts-name" data-i18n="chat.settings.volume">音量</span>
       <span class="tts-pill" id="valVol">1.0</span>
       <input type="range" id="ttsVol" min="0.1" max="10" step="0.1" value="1.0">
     </div>
 
     <!-- 語調（双极对称） -->
     <div class="tts-row bipolar">
-      <div class="tts-end"><span class="tts-pill" id="valPitch">0</span><span class="tts-hint">低沉</span></div>
+      <div class="tts-end"><span class="tts-pill" id="valPitch">0</span><span class="tts-hint" data-i18n="chat.settings.low">低沉</span></div>
       <input type="range" id="ttsPitch" min="-12" max="12" step="1" value="0">
-      <div class="tts-end"><span class="tts-pill" id="valPitchR">0</span><span class="tts-hint">明亮</span></div>
+      <div class="tts-end"><span class="tts-pill" id="valPitchR">0</span><span class="tts-hint" data-i18n="chat.settings.bright">明亮</span></div>
     </div>
 
     <div class="tts-row select-row">
-      <span class="tts-name">情緒</span>
+      <span class="tts-name" data-i18n="chat.settings.emotion">情緒</span>
       <select class="settings-select" id="ttsEmotion" style="width:auto;padding:4px 10px;font-size:12px;">
-        <option value="" selected>自動</option>
-        <option value="happy">😊 高興</option>
-        <option value="sad">😢 悲傷</option>
-        <option value="angry">😠 憤怒</option>
-        <option value="fearful">😨 害怕</option>
-        <option value="disgusted">🤢 厭惡</option>
-        <option value="surprised">😲 驚訝</option>
-        <option value="calm">😐 中性</option>
-        <option value="fluent">🗣️ 生動</option>
+        <option value="" selected data-i18n="chat.emotion.auto">自動</option>
+        <option value="happy" data-i18n="chat.emotion.happy">😊 高興</option>
+        <option value="sad" data-i18n="chat.emotion.sad">😢 悲傷</option>
+        <option value="angry" data-i18n="chat.emotion.angry">😠 憤怒</option>
+        <option value="fearful" data-i18n="chat.emotion.fearful">😨 害怕</option>
+        <option value="disgusted" data-i18n="chat.emotion.disgusted">🤢 厭惡</option>
+        <option value="surprised" data-i18n="chat.emotion.surprised">😲 驚訝</option>
+        <option value="calm" data-i18n="chat.emotion.calm">😐 中性</option>
+        <option value="fluent" data-i18n="chat.emotion.fluent">🗣️ 生動</option>
       </select>
     </div>
 
-    <div class="settings-section-title" style="margin-top:4px;">🎚️ 聲音效果器</div>
+    <div class="settings-section-title" style="margin-top:4px;" data-i18n="chat.settings.sfx_section">🎚️ 聲音效果器</div>
 
     <!-- 音高 -->
     <div class="tts-row bipolar">
-      <div class="tts-end"><span class="tts-pill" id="valVMPitch">0</span><span class="tts-hint">低沉</span></div>
+      <div class="tts-end"><span class="tts-pill" id="valVMPitch">0</span><span class="tts-hint" data-i18n="chat.settings.low">低沉</span></div>
       <input type="range" id="ttsVMPitch" min="-100" max="100" step="5" value="0">
-      <div class="tts-end"><span class="tts-pill" id="valVMPitchR">0</span><span class="tts-hint">明亮</span></div>
+      <div class="tts-end"><span class="tts-pill" id="valVMPitchR">0</span><span class="tts-hint" data-i18n="chat.settings.bright">明亮</span></div>
     </div>
     <!-- 強度 -->
     <div class="tts-row bipolar">
-      <div class="tts-end"><span class="tts-pill" id="valVMIntensity">0</span><span class="tts-hint">剛勁</span></div>
+      <div class="tts-end"><span class="tts-pill" id="valVMIntensity">0</span><span class="tts-hint" data-i18n="chat.settings.firm">剛勁</span></div>
       <input type="range" id="ttsVMIntensity" min="-100" max="100" step="5" value="0">
-      <div class="tts-end"><span class="tts-pill" id="valVMIntensityR">0</span><span class="tts-hint">柔和</span></div>
+      <div class="tts-end"><span class="tts-pill" id="valVMIntensityR">0</span><span class="tts-hint" data-i18n="chat.settings.soft">柔和</span></div>
     </div>
     <!-- 音色 -->
     <div class="tts-row bipolar">
-      <div class="tts-end"><span class="tts-pill" id="valVMTimbre">0</span><span class="tts-hint">渾厚</span></div>
+      <div class="tts-end"><span class="tts-pill" id="valVMTimbre">0</span><span class="tts-hint" data-i18n="chat.settings.thick">渾厚</span></div>
       <input type="range" id="ttsVMTimbre" min="-100" max="100" step="5" value="0">
-      <div class="tts-end"><span class="tts-pill" id="valVMTimbreR">0</span><span class="tts-hint">清脆</span></div>
+      <div class="tts-end"><span class="tts-pill" id="valVMTimbreR">0</span><span class="tts-hint" data-i18n="chat.settings.crisp">清脆</span></div>
     </div>
 
     <div class="tts-row select-row">
-      <span class="tts-name">音效</span>
+      <span class="tts-name" data-i18n="chat.settings.sound_effect">音效</span>
       <select class="settings-select" id="ttsSoundEffect" style="width:auto;padding:4px 10px;font-size:12px;">
-        <option value="" selected>無</option>
-        <option value="spacious_echo">🔁 空曠回音</option>
-        <option value="auditorium_echo">🏛️ 禮堂廣播</option>
-        <option value="lofi_telephone">📞 電話失真</option>
-        <option value="robotic">🤖 電音</option>
+        <option value="" selected data-i18n="chat.sfx.none">無</option>
+        <option value="spacious_echo" data-i18n="chat.sfx.spacious_echo">🔁 空曠回音</option>
+        <option value="auditorium_echo" data-i18n="chat.sfx.auditorium_echo">🏛️ 禮堂廣播</option>
+        <option value="lofi_telephone" data-i18n="chat.sfx.lofi_telephone">📞 電話失真</option>
+        <option value="robotic" data-i18n="chat.sfx.robotic">🤖 電音</option>
       </select>
     </div>
 
-    <button class="diag-btn" id="btnResetTTS" style="margin-top:8px;">重置全部語音參數</button>
+    <button class="diag-btn" id="btnResetTTS" style="margin-top:8px;" data-i18n="chat.settings.reset_voice">重置全部語音參數</button>
 
     <!-- ═══ 实验功能 ═══ -->
-    <div class="settings-section-title">🧪 實驗功能</div>
+    <div class="settings-section-title" data-i18n="chat.settings.experimental">🧪 實驗功能</div>
     <div class="settings-row" id="setCallMode">
       <span class="label-text">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-        無縫通話模式
+        <span data-i18n="chat.settings.call_mode">無縫通話模式</span>
       </span>
       <span class="toggle-sw" id="toggleCallMode"></span>
     </div>
 
     <!-- 画面调整 -->
-    <div class="settings-section-title">畫面調整</div>
+    <div class="settings-section-title" data-i18n="chat.settings.screen_adjust">畫面調整</div>
     <div style="display:flex;gap:10px;margin-bottom:4px;">
       <div style="flex:1;">
         <div class="crop-thumb" id="thumbIdle" style="background-size:100%;background-position:50% 50%;background-repeat:no-repeat;">
         </div>
-        <div style="font-size:11px;color:#888;text-align:center;margin-top:4px;">在線畫面</div>
+        <div style="font-size:11px;color:#888;text-align:center;margin-top:4px;" data-i18n="chat.settings.idle_screen">在線畫面</div>
         <div style="font-size:11px;color:#aaa;">X</div>
         <input type="range" id="idlePosX" min="0" max="100" value="50" style="width:100%;margin:2px 0;">
         <div style="font-size:11px;color:#aaa;">Y</div>
         <input type="range" id="idlePosY" min="0" max="100" value="50" style="width:100%;margin:2px 0;">
-        <div style="font-size:11px;color:#aaa;">縮放</div>
+        <div style="font-size:11px;color:#aaa;" data-i18n="chat.settings.scale">縮放</div>
         <input type="range" id="idleScale" min="80" max="200" value="100" style="width:100%;margin:2px 0;">
       </div>
       <div style="flex:1;">
         <div class="crop-thumb" id="thumbTalk" style="background-size:100%;background-position:50% 50%;background-repeat:no-repeat;">
         </div>
-        <div style="font-size:11px;color:#888;text-align:center;margin-top:4px;">說話畫面</div>
+        <div style="font-size:11px;color:#888;text-align:center;margin-top:4px;" data-i18n="chat.settings.talk_screen">說話畫面</div>
         <div style="font-size:11px;color:#aaa;">X</div>
         <input type="range" id="talkPosX" min="0" max="100" value="50" style="width:100%;margin:2px 0;">
         <div style="font-size:11px;color:#aaa;">Y</div>
         <input type="range" id="talkPosY" min="0" max="100" value="50" style="width:100%;margin:2px 0;">
-        <div style="font-size:11px;color:#aaa;">縮放</div>
+        <div style="font-size:11px;color:#aaa;" data-i18n="chat.settings.scale">縮放</div>
         <input type="range" id="talkScale" min="80" max="200" value="100" style="width:100%;margin:2px 0;">
       </div>
     </div>
     <div style="display:flex;gap:8px;margin-top:6px;">
-      <button class="diag-btn" id="btnResetPos" style="flex:1;">重置居中</button>
-      <button class="diag-btn" id="btnApplyPos" style="flex:1;background:rgba(138,109,59,0.12);border-color:rgba(138,109,59,0.3);">應用</button>
+      <button class="diag-btn" id="btnResetPos" style="flex:1;" data-i18n="chat.settings.reset_center">重置居中</button>
+      <button class="diag-btn" id="btnApplyPos" style="flex:1;background:rgba(138,109,59,0.12);border-color:rgba(138,109,59,0.3);" data-i18n="chat.settings.apply">應用</button>
     </div>
 
     <!-- 模块1：系统诊断 -->
-    <div class="settings-section-title">系統診斷</div>
-    <button class="diag-btn" id="btnDiag">執行診斷</button>
+    <div class="settings-section-title" data-i18n="chat.settings.diagnostics">系統診斷</div>
+    <button class="diag-btn" id="btnDiag" data-i18n="chat.settings.run_diag">執行診斷</button>
     <div class="diag-results" id="diagResults" style="display:none"></div>
 
     <!-- 模块2：导出对话 -->
-    <div class="settings-section-title">對話記錄</div>
-    <button class="export-btn" id="btnExport">匯出對話紀錄 (.json)</button>
+    <div class="settings-section-title" data-i18n="chat.settings.chat_log">對話記錄</div>
+    <button class="export-btn" id="btnExport" data-i18n="chat.settings.export">匯出對話紀錄 (.json)</button>
 
-    <button class="settings-close" id="btnSettingsClose">關閉</button>
+    <button class="settings-close" id="btnSettingsClose" data-i18n="chat.settings.close">關閉</button>
   </div>
 </div>
 
@@ -1033,26 +1034,28 @@
 <div class="paywall" id="paywall">
   <div class="paywall-card">
     <div class="paywall-seal">🏛️</div>
-    <h2 id="pwTitle">體驗次數已用完</h2>
+    <h2 id="pwTitle" data-i18n="chat.paywall.title">體驗次數已用完</h2>
     <p class="lead" id="pwLead">您的 20 次體驗對話已全部使用完畢。<br>升級為高級帳戶即可繼續暢聊。</p>
 
     <div class="paywall-perks">
-      <div class="title">高級帳戶包含</div>
+      <div class="title" data-i18n="chat.paywall.perks_title">高級帳戶包含</div>
       <ul>
-        <li>不限次數的實時對話</li>
-        <li>全部歷史人物角色</li>
-        <li>語音合成與角色創建</li>
-        <li>知識庫定制與導入</li>
+        <li data-i18n="chat.paywall.perk1">不限次數的實時對話</li>
+        <li data-i18n="chat.paywall.perk2">全部歷史人物角色</li>
+        <li data-i18n="chat.paywall.perk3">語音合成與角色創建</li>
+        <li data-i18n="chat.paywall.perk4">知識庫定制與導入</li>
       </ul>
     </div>
 
-    <button class="paywall-btn primary" id="pwRequest">申請追加額度</button>
-    <button class="paywall-btn ghost" id="pwClose">稍後再說</button>
-    <p class="paywall-note" id="pwNote">申請提交後由管理員審核，通過即時到賬</p>
+    <button class="paywall-btn primary" id="pwRequest" data-i18n="chat.paywall.request">申請追加額度</button>
+    <button class="paywall-btn ghost" id="pwClose" data-i18n="chat.paywall.later">稍後再說</button>
+    <p class="paywall-note" id="pwNote" data-i18n="chat.paywall.note">申請提交後由管理員審核，通過即時到賬</p>
   </div>
 </div>
 
 <script>
+I18N.apply();
+
 const $ = id => document.getElementById(id);
 const messagesEl = $('messages');
 const inputText = $('inputText');
@@ -1087,13 +1090,13 @@ function renderQuota(q) {
   if (!el || !q) return;
   if (q.quota_limit === -1) {
     el.className = 'quota-badge show premium';
-    el.innerHTML = '<span>✦ 高級帳戶</span>';
+    el.innerHTML = `<span>${escapeHtml(I18N.t('chat.quota.premium'))}</span>`;
     return;
   }
   const left = Math.max(0, q.quota_left ?? (q.quota_limit - q.quota_used));
   const cls = left === 0 ? 'gone' : left <= 5 ? 'low' : '';
   el.className = `quota-badge show ${cls}`;
-  el.innerHTML = `<span>體驗</span><span class="q-num">${left}</span><span>/ ${q.quota_limit}</span>`;
+  el.innerHTML = `<span>${escapeHtml(I18N.t('chat.quota.trial'))}</span><span class="q-num">${left}</span><span>/ ${q.quota_limit}</span>`;
 }
 
 // Character config (loaded from API)
@@ -1182,9 +1185,9 @@ async function loadCharacter(id) {
     // Initial thumbnails: capture real video first frame
     refreshThumbnails();
     // Update placeholder
-    inputText.placeholder = `問${charConfig.name}...`;
+    inputText.placeholder = I18N.t('chat.input_placeholder', { name: charConfig.name });
     // Update title
-    document.title = `${charConfig.name} — 數字人殿堂`;
+    document.title = `${charConfig.name} — ${I18N.t('brand')}`;
     // Set initial TTS values from character
     ttsLanguage = charConfig.tts_language || 'Chinese,Yue';
     ttsVoiceId = charConfig.tts_voice_id || 'Cantonese_PlayfulMan';
@@ -1201,7 +1204,7 @@ async function loadCharacter(id) {
     return true;
   } catch(e) {
     console.error('[Char] load failed:', e);
-    alert(e && e.message && e.message.includes('未獲授權') ? e.message : `角色「${id}」加載失敗`);
+    alert(e && e.message && e.message.includes('未獲授權') ? e.message : I18N.t('chat.alert.char_load_failed_named', { id }));
     return false;
   }
 }
@@ -1502,14 +1505,14 @@ function connect() {
   ws.binaryType = 'arraybuffer';
 
   ws.onopen = () => {
-    wsOk = true; _wsDelay = 1000; updateStatus('在線');
+    wsOk = true; _wsDelay = 1000; updateStatus(I18N.t('chat.status.online'));
     ws.send(JSON.stringify({ type: 'auth', token: SESSION_TOKEN }));
     syncTtsToServer();
   };
   ws.onclose = () => {
     wsOk = false;
     if (processing) { processing = false; _msEnd(); _stopAllTurnAudio(); }
-    updateStatus('離線');
+    updateStatus(I18N.t('chat.status.offline'));
     switchVideo('idle');
     // 鑑權失敗不重連，否則會無限撞牆
     if (authFailed) return;
@@ -1530,14 +1533,14 @@ function connect() {
 function handleMsg(msg) {
   switch (msg.type) {
     case 'status':
-      if (msg.content === 'thinking') updateStatus('思考中', 'thinking');
+      if (msg.content === 'thinking') updateStatus(I18N.t('chat.status.thinking'), 'thinking');
       else if (msg.content === 'tts') {
         // 呢度只更新文字状态，唔再喺呢度切 talk 视频——第一句音频真正开始
         // 播放先切（睇 _scheduleSegment），否则视频会喺仲未出声嗰阵就郁嘴。
-        updateStatus('說話中', 'speaking');
+        updateStatus(I18N.t('chat.status.speaking'), 'speaking');
       }
       else if (msg.content === 'done') {
-        processing = false; updateStatus('在線');
+        processing = false; updateStatus(I18N.t('chat.status.online'));
         _msEnd();
         if (_segmentedAudio) {
           if (_segBytes.length > 0) {
@@ -1583,23 +1586,23 @@ function handleMsg(msg) {
 
     case 'quota_exceeded':
       processing = false;
-      updateStatus('在線');
+      updateStatus(I18N.t('chat.status.online'));
       renderQuota({ quota_limit: msg.quota_limit, quota_used: msg.quota_used, quota_left: 0 });
       openPaywall();
       break;
 
     case 'auth_required':
       authFailed = true;
-      updateStatus('未登入');
-      alertBeforeLogin(msg.content || '登入已失效，請重新登入');
+      updateStatus(I18N.t('chat.status.not_logged_in'));
+      alertBeforeLogin(msg.content || I18N.t('chat.alert.session_expired'));
       break;
 
-    case 'error': console.error('Error:', msg.content); processing = false; updateStatus('在線'); break;
+    case 'error': console.error('Error:', msg.content); processing = false; updateStatus(I18N.t('chat.status.online')); break;
   }
 }
 
 function send(text) {
-  if (!wsOk || !ws || ws.readyState !== 1) { processing = false; updateStatus('連接中斷'); return; }
+  if (!wsOk || !ws || ws.readyState !== 1) { processing = false; updateStatus(I18N.t('chat.status.disconnected')); return; }
   ws.send(JSON.stringify({ type: 'text', content: text }));
 }
 
@@ -1639,7 +1642,7 @@ function getRoleLabel() { return charConfig ? charConfig.name : 'AI'; }
 
 function addBubble(role, text) {
   // roleLabel 来自角色名（可由帐户自建角色时自行填写），插入 innerHTML 前必须转义
-  const roleLabel = role === 'user' ? '你' : getRoleLabel();
+  const roleLabel = role === 'user' ? I18N.t('chat.you') : getRoleLabel();
   const div = document.createElement('div');
   div.className = `bubble ${role}`;
   div.innerHTML = `<div class="label">${escapeHtml(roleLabel)}</div><div class="text">${escapeHtml(text)}</div>`;
@@ -1726,7 +1729,7 @@ function sendQuery(text) {
   if (processing || !text.trim()) return;
   if (!wsOk) {
     ensureConnected();
-    updateStatus('連接中，請稍後再試...', '');
+    updateStatus(I18N.t('chat.status.reconnecting'), '');
     // Queue the message and retry when WebSocket opens
     const retryMsg = () => {
       if (wsOk && ws && ws.readyState === 1) {
@@ -1736,7 +1739,7 @@ function sendQuery(text) {
     };
     ws.addEventListener('open', retryMsg);
     // Timeout after 8 seconds
-    setTimeout(() => { ws.removeEventListener('open', retryMsg); updateStatus('在線'); }, 8000);
+    setTimeout(() => { ws.removeEventListener('open', retryMsg); updateStatus(I18N.t('chat.status.online')); }, 8000);
     return;
   }
   processing = true;
@@ -1759,7 +1762,7 @@ function sendQuery(text) {
   llmEl = null;
   llmText = '';
 
-  updateStatus('思考中', 'thinking');
+  updateStatus(I18N.t('chat.status.thinking'), 'thinking');
   send(text);
   inputText.value = '';
 }
@@ -1779,7 +1782,7 @@ function initSR() {
   recognition.onstart = () => {
     listening = true;
     if (!callActive) btnTalk.classList.add('recording');
-    updateStatus(callActive ? '🗣️ 通話中' : '聆聽中', 'listening');
+    updateStatus(callActive ? I18N.t('chat.status.call_active') : I18N.t('chat.status.listening'), 'listening');
   };
 
   recognition.onresult = e => {
@@ -1822,7 +1825,7 @@ function initSR() {
 }
 
 function startListening() {
-  if (!recognition && !initSR()) { alert('瀏覽器不支援語音'); return; }
+  if (!recognition && !initSR()) { alert(I18N.t('chat.alert.no_speech_support')); return; }
   try { recognition.start(); } catch(e) {}
 }
 
@@ -1831,7 +1834,7 @@ function stopListening() {
   if (recognition) { try { recognition.stop(); } catch(e) {} }
   listening = false;
   btnTalk.classList.remove('recording');
-  if (!callActive && !processing) updateStatus('在線');
+  if (!callActive && !processing) updateStatus(I18N.t('chat.status.online'));
 }
 
 function stopRecognition() {
@@ -1848,7 +1851,7 @@ function _callWaitResume() {
     if (!processing && !currentAudio) {
       clearInterval(_callResumeTimer);
       btnTalk.classList.remove('busy');
-      updateStatus('🗣️ 通話中', 'listening');
+      updateStatus(I18N.t('chat.status.call_active'), 'listening');
       listening = true;
       try { recognition.start(); } catch(e) {}
     }
@@ -1861,7 +1864,7 @@ function _callWaitResume() {
 function _toggleCall() {
   if (!callMode) {
     // 普通模式：点一下开始聆听 → 再点停止（原有逻辑）
-    if (!micOn) { alert('請先在設置中開啟語音輸入'); return; }
+    if (!micOn) { alert(I18N.t('chat.alert.enable_mic_first')); return; }
     if (processing) return;
     if (listening) { stopListening(); return; }
     ensureConnected();
@@ -1869,7 +1872,7 @@ function _toggleCall() {
     return;
   }
   // 通话模式
-  if (!micOn) { alert('請先在設置中開啟語音輸入'); return; }
+  if (!micOn) { alert(I18N.t('chat.alert.enable_mic_first')); return; }
   if (processing && !callActive) return;
 
   if (callActive) {
@@ -1877,13 +1880,13 @@ function _toggleCall() {
     clearInterval(_callResumeTimer);
     stopListening();
     btnTalk.classList.remove('call-mode', 'busy');
-    btnTalk.title = '開始通話';
-    updateStatus('在線');
+    btnTalk.title = I18N.t('chat.call_start');
+    updateStatus(I18N.t('chat.status.online'));
   } else {
     ensureConnected();
     callActive = true;
     btnTalk.classList.add('call-mode');
-    btnTalk.title = '掛斷';
+    btnTalk.title = I18N.t('chat.call_hangup');
     startListening();
   }
 }
@@ -1972,8 +1975,8 @@ function _quickTtsDiag() {
         console.log('[TTS diag] ✅', d.voiceId, d.ttsMs + 'ms');
       } else {
         console.warn('[TTS diag] ❌', d.error);
-        updateStatus('⚠️ TTS 異常', '');
-        setTimeout(() => { if (statusText && statusText.textContent.includes('TTS')) updateStatus('在線'); }, 3000);
+        updateStatus(I18N.t('chat.status.tts_error'), '');
+        setTimeout(() => { if (statusText && statusText.textContent.includes('TTS')) updateStatus(I18N.t('chat.status.online')); }, 3000);
       }
     } catch(e) {}
   };
@@ -2007,12 +2010,12 @@ function syncTtsToServer() {
 (async function init() {
   if (!charId) return;  // redirected to lobby
   const ok = await loadCharacter(charId);
-  if (!ok) { updateStatus('角色加載失敗', ''); return; }
+  if (!ok) { updateStatus(I18N.t('chat.status.char_load_failed'), ''); return; }
   // Auto-connect WebSocket on page load so first message goes through immediately
   connect();
   document.getElementById('vidIdle').play().catch(() => {});
   applyVideoPosition(_videoPos);
-  updateStatus('連接中...');
+  updateStatus(I18N.t('chat.status.connecting'));
   console.log('[Init] 數字人已就緒（WS 自動連接）');
 })();
 
@@ -2214,8 +2217,8 @@ $('setMic').onclick = () => {
   micOn = !micOn;
   toggleMic.classList.toggle('on', micOn);
   btnMic.classList.toggle('active', micOn);
-  if (!micOn) { stopListening(); inputText.placeholder = '問秦始皇...'; }
-  else { inputText.placeholder = '問秦始皇...（可語音）'; }
+  if (!micOn) { stopListening(); inputText.placeholder = I18N.t('chat.input_placeholder', { name: charConfig ? charConfig.name : '' }); }
+  else { inputText.placeholder = I18N.t('chat.input_placeholder_voice', { name: charConfig ? charConfig.name : '' }); }
 };
 
 // 语音朗读开关
@@ -2235,10 +2238,10 @@ $('setCallMode').onclick = () => {
   if (callActive) _toggleCall(); // 切换模式时自动挂断
   btnTalk.style.display = '';
   if (callMode) {
-    btnTalk.title = '開始通話';
+    btnTalk.title = I18N.t('chat.call_start');
     btnTalk.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
   } else {
-    btnTalk.title = '按住說話';
+    btnTalk.title = I18N.t('chat.talk_hold');
     btnTalk.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="1" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
   }
 };
@@ -2331,7 +2334,7 @@ function updateDiag(idx, cls, text) {
 
 // ── 导出对话 ──
 $('btnExport').onclick = () => {
-  if (history.length === 0) { alert('暫無對話記錄'); return; }
+  if (history.length === 0) { alert(I18N.t('chat.alert.no_history')); return; }
   const exportData = {
     exportTime: new Date().toISOString(),
     character: charConfig ? charConfig.name : charId,
@@ -2371,12 +2374,12 @@ async function refreshQuotaRequest() {
     const req = d.request;
     if (req && req.status === 'pending') {
       $('pwRequest').disabled = true;
-      $('pwRequest').textContent = '申請審核中';
-      $('pwNote').textContent = '已於 ' + (req.requested_at || '').slice(0, 16).replace('T', ' ') + ' 提交，請等待管理員審核';
+      $('pwRequest').textContent = I18N.t('chat.paywall.pending_btn');
+      $('pwNote').textContent = I18N.t('chat.paywall.pending_note', { date: (req.requested_at || '').slice(0, 16).replace('T', ' ') });
     } else {
       $('pwRequest').disabled = false;
-      $('pwRequest').textContent = '申請追加額度';
-      $('pwNote').textContent = '申請提交後由管理員審核，通過即時到賬';
+      $('pwRequest').textContent = I18N.t('chat.paywall.request');
+      $('pwNote').textContent = I18N.t('chat.paywall.note');
     }
   } catch (_) {}
 }
@@ -2389,7 +2392,7 @@ $('pwRequest').addEventListener('click', async () => {
   paywallBusy = true;
   const btn = $('pwRequest');
   btn.disabled = true;
-  btn.textContent = '提交中…';
+  btn.textContent = I18N.t('chat.paywall.submitting');
   try {
     const r = await fetch('/api/quota/request', {
       method: 'POST',
@@ -2398,17 +2401,17 @@ $('pwRequest').addEventListener('click', async () => {
     });
     const d = await r.json();
     if (r.ok) {
-      btn.textContent = d.already_pending ? '申請審核中' : '申請已提交';
-      $('pwNote').textContent = d.message || '管理員審核後額度會立即到賬';
+      btn.textContent = d.already_pending ? I18N.t('chat.paywall.pending_btn') : I18N.t('chat.paywall.submitted');
+      $('pwNote').textContent = d.message || I18N.t('chat.paywall.approved_note');
     } else {
       btn.disabled = false;
-      btn.textContent = '申請追加額度';
-      $('pwNote').textContent = typeof d.detail === 'string' ? d.detail : '提交失敗，請稍後再試';
+      btn.textContent = I18N.t('chat.paywall.request');
+      $('pwNote').textContent = typeof d.detail === 'string' ? d.detail : I18N.t('chat.paywall.submit_failed');
     }
   } catch (_) {
     btn.disabled = false;
-    btn.textContent = '申請追加額度';
-    $('pwNote').textContent = '網絡異常，請稍後再試';
+    btn.textContent = I18N.t('chat.paywall.request');
+    $('pwNote').textContent = I18N.t('chat.paywall.error_note');
   }
   paywallBusy = false;
 });
@@ -2422,12 +2425,12 @@ $('quotaBadge').addEventListener('click', () => {
 function alertBeforeLogin(text) {
   const card = $('paywall');
   if (!card) { gotoLogin(); return; }
-  $('pwTitle').textContent = '請重新登入';
+  $('pwTitle').textContent = I18N.t('chat.paywall.relogin_title');
   $('pwLead').textContent = text;
-  $('pwRequest').textContent = '前往登入';
+  $('pwRequest').textContent = I18N.t('chat.paywall.relogin_btn');
   $('pwRequest').disabled = false;
   $('pwRequest').onclick = gotoLogin;
-  $('pwClose').textContent = '關閉';
+  $('pwClose').textContent = I18N.t('chat.paywall.relogin_close');
   $('pwNote').textContent = '';
   card.querySelector('.paywall-perks').style.display = 'none';
   card.classList.add('show');
