@@ -302,6 +302,9 @@ CREATION_DAILY_LIMITS = {
     "image": 30,
     "video": 10,
     "knowledge_search": 20,
+    # 智能知识库一次会调用几十次 LLM；输入框 AI 辅助单次很便宜，只防滥用
+    "knowledge_agent": 10,
+    "field_assist": 200,
 }
 
 

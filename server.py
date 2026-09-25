@@ -31,13 +31,15 @@ import tempfile
 import uuid
 import sqlite3
 import datetime
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Header, Response
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Form, Header, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 import accounts
+import knowledge_agent
+from knowledge_agent import estimate_tokens, truncate_to_tokens
 
 # ── Config ──────────────────────────────────────────────
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "")
@@ -66,10 +68,22 @@ MINIMAX_TOKEN_PLAN_URL = "https://www.minimaxi.com/v1/token_plan/remains"
 MINIMAX_TOKEN_PLAN_API_KEY = os.getenv("MINIMAX_TOKEN_PLAN_API_KEY", "")
 TTS_MODEL = "speech-2.8-hd"
 TTS_TEXT_MAX = 5000  # TTS max chars before truncation
-GENERATED_DIR = Path(".generated")
+# 线上只有 data/ 挂了持久化 Volume。characters/ 来自 git，是系统角色；用户
+# 自建/导入的角色、创作中间产物都必须落在 data/ 下，否则每次重新部署都会丢。
+SYSTEM_CHARACTERS_DIR = Path("characters")
+USER_CHARACTERS_DIR = Path("data/characters")
+GENERATED_DIR = Path("data/generated")
 CREATE_JOBS_DIR = GENERATED_DIR / "jobs"
+AGENT_TASKS_DIR = GENERATED_DIR / "agent"
+CREATE_JOB_TTL_SECONDS = 7 * 24 * 3600
 MAX_KNOWLEDGE_FILE_BYTES = 10 * 1024 * 1024
-MAX_KNOWLEDGE_CHARS = 6000
+# 知识库按 token 计上限：每轮对话都会带上完整知识库，太长会拖慢首字、增加成本。
+KNOWLEDGE_TOKEN_BUDGET = int(os.getenv("KNOWLEDGE_TOKEN_BUDGET", "20000"))
+# 生成角色 Prompt 时只参考知识库开头这么多 token——全文会在运行时另外附上。
+PROMPT_KNOWLEDGE_EXCERPT_TOKENS = 3000
+# 只有这些后缀可以经静态挂载下载；character.json / knowledge.md / job.json
+# 里有角色 Prompt 和知识库，不能对外公开。
+PUBLIC_MEDIA_SUFFIXES = {".mp4", ".webm", ".jpg", ".jpeg", ".png", ".webp"}
 OPS_TZ = datetime.timezone(datetime.timedelta(hours=8), name="UTC+8")
 GLOBAL_OUTPUT_RULES = (
     "\n\n## 输出限制\n"
@@ -334,49 +348,75 @@ SYSTEM_PROMPT = """你是秦始皇嬴政，生活在公元前259年至公元前2
 
 # ── Character Manager ───────────────────────────────────
 class CharacterManager:
-    """Scan characters/ directory, provide per-character config."""
+    """Scan character directories, provide per-character config.
 
-    def __init__(self, base_dir: str = "characters"):
-        self.base_dir = Path(base_dir)
+    系统角色来自 git 里的 characters/；用户创建/导入的角色在持久化 Volume 上的
+    data/characters/，经 /user-characters 对外提供媒体文件。两边 id 撞了以系统
+    角色为准。
+    """
+
+    SOURCES = (
+        (SYSTEM_CHARACTERS_DIR, "/characters"),
+        (USER_CHARACTERS_DIR, "/user-characters"),
+    )
+
+    def __init__(self):
         self._chars: dict[str, dict] = {}
         self.reload()
 
     def reload(self):
-        """Re-scan characters/ for character.json files."""
+        """Re-scan every character source for character.json files."""
         self._chars.clear()
-        if not self.base_dir.is_dir():
-            logger.warning(f"Character dir not found: {self.base_dir}")
-            return
         loaded = []
-        for d in sorted(self.base_dir.iterdir()):
-            if d.is_dir() and not d.name.startswith("."):
+        for base_dir, media_base in self.SOURCES:
+            if not base_dir.is_dir():
+                continue
+            for d in sorted(base_dir.iterdir()):
+                if not d.is_dir() or d.name.startswith("."):
+                    continue
                 cfg = d / "character.json"
-                if cfg.is_file():
-                    try:
-                        ch = json.loads(cfg.read_text(encoding="utf-8"))
-                        ch["_dir"] = str(d)
-                        self._chars[ch["id"]] = ch
-                        loaded.append(ch["id"])
-                    except (json.JSONDecodeError, KeyError) as err:
-                        logger.error(f"Failed to load character {cfg}: {err}")
+                if not cfg.is_file():
+                    continue
+                try:
+                    ch = json.loads(cfg.read_text(encoding="utf-8"))
+                    if ch["id"] in self._chars:
+                        logger.warning(f"Duplicate character id {ch['id']} in {d}, skipped")
+                        continue
+                    ch["_dir"] = str(d)
+                    ch["_media_base"] = media_base
+                    self._chars[ch["id"]] = ch
+                    loaded.append(ch["id"])
+                except (json.JSONDecodeError, KeyError) as err:
+                    logger.error(f"Failed to load character {cfg}: {err}")
         if loaded:
             logger.info(f"Loaded {len(loaded)} character(s): {', '.join(loaded)}")
 
+    def exists(self, char_id: str) -> bool:
+        return char_id in self._chars or any((base / char_id).exists() for base, _ in self.SOURCES)
+
+    @staticmethod
+    def media_url(ch: dict, key: str, default: str) -> str:
+        return f"{ch.get('_media_base', '/characters')}/{ch['id']}/{ch.get(key, default)}"
+
+    def summary(self, c: dict) -> dict:
+        """Lobby card fields — no system_prompt, no owner."""
+        return {
+            "id": c["id"],
+            "name": c.get("name", c["id"]),
+            "name_en": c.get("name_en", ""),
+            "role": c.get("role", ""),
+            "icon": self.media_url(c, "icon", "portrait.jpg"),
+            "avatar_idle": self.media_url(c, "avatar_idle", "idle.mp4"),
+            "theme_color": c.get("theme_color", "#8A6D3B"),
+        }
+
+    def all(self) -> list[dict]:
+        """Full configs of every loaded character (server-side use only)."""
+        return list(self._chars.values())
+
     def list_all(self) -> list[dict]:
-        """Return summary list for lobby display."""
-        return [
-            {
-                "id": c["id"],
-                "name": c.get("name", c["id"]),
-                "name_en": c.get("name_en", ""),
-                "role": c.get("role", ""),
-                "icon": f"/characters/{c['id']}/{c.get('icon', 'portrait.jpg')}",
-                "avatar_idle": f"/characters/{c['id']}/{c.get('avatar_idle', 'idle.mp4')}",
-                "theme_color": c.get("theme_color", "#8A6D3B"),
-                "created_by": c.get("created_by", ""),
-            }
-            for c in self._chars.values()
-        ]
+        """Return summary list of every character (ops/admin views)."""
+        return [self.summary(c) for c in self._chars.values()]
 
     def get(self, char_id: str) -> dict | None:
         """Return full character config."""
@@ -389,7 +429,8 @@ class CharacterManager:
 
         # Inject knowledge file if configured — no RAG, full context
         knowledge_file = (ch or {}).get("knowledge_file")
-        if knowledge_file:
+        # 只接受角色目录里的普通文件名（用户导入的 character.json 不可信）
+        if knowledge_file and Path(knowledge_file).name == knowledge_file:
             kpath = Path(ch["_dir"]) / knowledge_file
             if kpath.is_file():
                 try:
@@ -487,6 +528,7 @@ class CreatePromptRequest(BaseModel):
     speaking_style: str
     knowledge_text: str = ""
     language: str = "Chinese,Yue"
+    job_id: str = ""  # 重新润色时沿用同一个创作任务，已生成的图片/视频不丢
 
 class GenerateKnowledgeRequest(BaseModel):
     name: str
@@ -504,6 +546,15 @@ class GenerateImagePromptRequest(BaseModel):
     speaking_style: str = ""
     system_prompt: str = ""
     language: str = ""
+    target: str = "minimax"  # "external_en"：给 Midjourney/SD 等外部平台用的英文版
+
+class FieldAssistRequest(BaseModel):
+    field: str
+    action: str = "write"
+    value: str = ""
+    instruction: str = ""
+    context: dict[str, str] = Field(default_factory=dict)
+    language: str = ""
 
 class CreateImagesRequest(BaseModel):
     prompt: str
@@ -516,10 +567,12 @@ class CreateVideosRequest(BaseModel):
     image_id: str
     character_name: str
     image_prompt: str = ""
+    feedback: str = ""  # 用户对视频的额外要求 / 重新生成时的调整意见
+    which: str = "both"  # both | idle | talk：只重做其中一段可以省时间和额度
 
 class FinalizeCharacterRequest(BaseModel):
     job_id: str
-    character_id: str
+    image_id: str = ""  # 选中的形象图；空 = 沿用生成视频时选的图，都没有就截 idle 第一帧
     name: str
     name_en: str = ""
     role: str = ""
@@ -528,6 +581,7 @@ class FinalizeCharacterRequest(BaseModel):
     tts_language: str = DEFAULT_TTS_CONFIG["language_boost"]
     asr_lang: str = ""
     theme_color: str = "#8A6D3B"
+    knowledge_text: str = ""
 
 
 ApiKeyHeader = Annotated[str | None, Header(alias="X-MiniMax-API-Key")]
@@ -621,11 +675,18 @@ def _creation_credentials(api_key: str | None, token: str | None) -> tuple[str, 
     return key, base, True
 
 
-def _safe_character_id(raw: str) -> str:
-    slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", raw.strip().lower()).strip("-")
-    if not slug:
-        slug = f"character-{uuid.uuid4().hex[:8]}"
-    return slug[:64]
+def _new_character_id(raw: str) -> str:
+    """用户角色 id：slug + 随机后缀。
+
+    不同用户各自建私有角色很容易同名（两个人都建「李白」），纯 slug 会互相
+    409，还会让人借此探测到别人有这个角色；随机后缀也让私有角色的媒体 URL
+    猜不出来。
+    """
+    slug = re.sub(r"[^a-z0-9_-]+", "-", (raw or "").strip().lower()).strip("-")[:48] or "character"
+    while True:
+        char_id = f"{slug}-{uuid.uuid4().hex[:6]}"
+        if not char_mgr.exists(char_id):
+            return char_id
 
 
 def _safe_job_id(raw: str) -> str:
@@ -690,7 +751,7 @@ def _extract_docx_text(path: Path) -> str:
     return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
 
 
-def _extract_pdf_text(path: Path) -> str:
+def _extract_pdf_text(path: Path, max_pages: int = 80) -> str:
     try:
         import PyPDF2
     except Exception as exc:
@@ -698,26 +759,52 @@ def _extract_pdf_text(path: Path) -> str:
     text_parts = []
     with path.open("rb") as fh:
         reader = PyPDF2.PdfReader(fh)
-        for page in reader.pages[:80]:
+        for page in reader.pages[:max_pages]:
             text_parts.append(page.extract_text() or "")
     return "\n".join(text_parts)
+
+
+_H264_ENCODER_ARGS: list[str] | None = None
+
+
+def _h264_encoder_args() -> list[str]:
+    """优先 libx264（线上 apt 装的 ffmpeg 自带）；本机 conda 版 ffmpeg 常常是
+    --disable-gpl 编译、没有 libx264，就退回 openh264 / VideoToolbox，方便本地测试。"""
+    global _H264_ENCODER_ARGS
+    if _H264_ENCODER_ARGS is None:
+        try:
+            encoders = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"],
+                                      capture_output=True, text=True, timeout=10).stdout
+        except Exception:
+            encoders = ""
+        if "libx264" in encoders or not encoders:
+            _H264_ENCODER_ARGS = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "24"]
+        elif "libopenh264" in encoders:
+            _H264_ENCODER_ARGS = ["-c:v", "libopenh264", "-b:v", "2M"]
+        else:
+            _H264_ENCODER_ARGS = ["-c:v", "h264_videotoolbox", "-b:v", "2M"]
+    return _H264_ENCODER_ARGS
 
 
 def _ffmpeg_process_video(src: Path, dest: Path, duration: int) -> None:
     if not shutil.which("ffmpeg"):
         raise HTTPException(status_code=500, detail="ffmpeg is required to process generated videos")
     dest.parent.mkdir(parents=True, exist_ok=True)
+    # 先写临时文件再替换：重新生成失败时，原来那段能用的视频不会被写坏
+    tmp = dest.with_name(f".{dest.stem}.tmp.mp4")
     cmd = [
         "ffmpeg", "-y", "-i", str(src), "-t", str(duration), "-an",
         "-vf", "scale=720:-2,fps=24,format=yuv420p",
         "-movflags", "+faststart",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
-        str(dest),
+        *_h264_encoder_args(),
+        str(tmp),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=240)
-    if result.returncode != 0 or not dest.is_file() or dest.stat().st_size == 0:
+    if result.returncode != 0 or not tmp.is_file() or tmp.stat().st_size == 0:
+        tmp.unlink(missing_ok=True)
         logger.error("ffmpeg video processing failed: %s", result.stderr[-1200:])
         raise HTTPException(status_code=500, detail="Generated video post-processing failed")
+    tmp.replace(dest)
 
 
 def _copy_or_make_portrait(src: Path, dest: Path) -> None:
@@ -725,6 +812,82 @@ def _copy_or_make_portrait(src: Path, dest: Path) -> None:
         shutil.copy2(src, dest)
         return
     raise HTTPException(status_code=500, detail="Selected portrait image missing")
+
+
+# ── 用户上传的形象图 / 视频 ──────────────────────────────
+MAX_UPLOAD_IMAGE_BYTES = 10 * 1024 * 1024
+MAX_UPLOAD_VIDEO_BYTES = 100 * 1024 * 1024
+UPLOAD_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
+UPLOAD_VIDEO_SUFFIXES = {".mp4", ".mov", ".webm", ".m4v"}
+# 秒数上下限：idle 是循环待机，talk 是说话循环，太短会一直重播、太长加载慢
+UPLOAD_VIDEO_DURATION = {"idle": (2, 15), "talk": (2, 20)}
+
+
+async def _save_upload(file: UploadFile, dest: Path, max_bytes: int) -> None:
+    """分块写盘——视频最大 100MB，不整个读进内存。"""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    size = 0
+    with dest.open("wb") as fh:
+        while chunk := await file.read(1024 * 1024):
+            size += len(chunk)
+            if size > max_bytes:
+                break
+            fh.write(chunk)
+    if size > max_bytes:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(status_code=413, detail=f"文件太大，上限 {max_bytes // (1024 * 1024)}MB")
+    if size == 0:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="文件是空的")
+
+
+def _ffprobe(path: Path) -> dict:
+    """→ {width, height, duration}；不是可识别的图片/视频就 400。"""
+    if not shutil.which("ffprobe"):
+        raise HTTPException(status_code=500, detail="ffprobe is required to inspect uploaded media")
+    cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0",
+           "-show_entries", "stream=width,height:format=duration", "-of", "json", str(path)]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    try:
+        data = json.loads(result.stdout or "{}")
+        stream = (data.get("streams") or [{}])[0]
+        width, height = int(stream.get("width") or 0), int(stream.get("height") or 0)
+    except (ValueError, json.JSONDecodeError):
+        width = height = 0
+    if result.returncode != 0 or not width or not height:
+        raise HTTPException(status_code=400, detail="無法識別的圖片或視頻文件")
+    try:
+        duration = float((data.get("format") or {}).get("duration") or 0)
+    except ValueError:
+        duration = 0.0
+    return {"width": width, "height": height, "duration": duration}
+
+
+def _run_ffmpeg(cmd: list[str], dest: Path, what: str) -> None:
+    if not shutil.which("ffmpeg"):
+        raise HTTPException(status_code=500, detail="ffmpeg is required to process uploaded media")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=240)
+    if result.returncode != 0 or not dest.is_file() or dest.stat().st_size == 0:
+        logger.error("ffmpeg %s failed: %s", what, result.stderr[-1200:])
+        raise HTTPException(status_code=500, detail=f"{what} failed")
+
+
+def _ffmpeg_normalize_image(src: Path, dest: Path) -> None:
+    """统一转 jpg，长边缩到 2048 以内（MiniMax 视频首帧也有大小限制）。"""
+    _run_ffmpeg([
+        "ffmpeg", "-y", "-i", str(src), "-frames:v", "1",
+        "-vf", "scale='min(2048,iw)':'min(2048,ih)':force_original_aspect_ratio=decrease",
+        "-q:v", "2", str(dest),
+    ], dest, "Image conversion")
+
+
+def _ffmpeg_extract_frame(src: Path, dest: Path) -> None:
+    _run_ffmpeg(["ffmpeg", "-y", "-i", str(src), "-frames:v", "1", "-q:v", "2", str(dest)], dest, "Portrait extraction")
+
+
+def _image_data_url(path: Path) -> str:
+    return "data:image/jpeg;base64," + base64.b64encode(path.read_bytes()).decode()
 
 
 def _existing_prompt_examples() -> str:
@@ -760,7 +923,7 @@ def _extract_minimax_text(data: dict) -> str:
 
 
 def _clamp_knowledge(text: str) -> str:
-    return re.sub(r"\n{3,}", "\n\n", text.strip())[:MAX_KNOWLEDGE_CHARS]
+    return truncate_to_tokens(re.sub(r"\n{3,}", "\n\n", text.strip()), KNOWLEDGE_TOKEN_BUDGET)
 
 
 class MiniMaxProvider:
@@ -783,6 +946,9 @@ class MiniMaxProvider:
                     "可直接作为 system_prompt 使用的角色提示词。角色可以面向任何身份、任何年龄的用户，"
                     "不要假设对话对象是中小学生或任何特定人群。要求结构清晰、事实约束明确，"
                     "保留角色身份，不编造知识库外的具体事实。每次回答建议 3-5 句。\n\n"
+                    "【知识库】用户给的只是知识库的开头摘录，知识库全文会在对话时另外附在 system_prompt 后面。"
+                    "不要把知识库内容抄进 system_prompt，只需概括角色掌握哪些知识，并在重要规则里写明"
+                    "「回答事实性问题时以参考资料为准，资料里没有的不要编造」。\n\n"
                     "【语气标签规则，必须严格遵守，逐字符一模一样】MiniMax TTS 只识别以下固定标签，"
                     "绝对不可以自创任何其他标签，也不可以稍微改写/换个近义词/改单复数或连字符写法"
                     "（例如 cheerful、confident、serious、gentle 都不是有效标签；(clear-throat) 不可以写成"
@@ -802,7 +968,7 @@ class MiniMaxProvider:
                 "content": (
                     f"角色名：{req.name}\n英文/副标题：{req.name_en}\n角色定位：{req.role}\n"
                     f"回复语言：{req.language}\n\n背景设定：\n{req.background}\n\n说话设定：\n{req.speaking_style}\n\n"
-                    f"知识库摘录（最多6000字）：\n{req.knowledge_text[:MAX_KNOWLEDGE_CHARS]}"
+                    f"知识库摘录：\n{truncate_to_tokens(req.knowledge_text, PROMPT_KNOWLEDGE_EXCERPT_TOKENS)}"
                 ),
             },
         ]
@@ -917,8 +1083,11 @@ class MiniMaxProvider:
             raise HTTPException(status_code=502, detail="MiniMax image API returned no images")
 
         images = []
+        # 每批生成图用不同的 id / 文件名：重新生成后旧批次不会被覆盖，前端也不会把
+        # 新图误认成之前选中的那张（视频是否过期要靠 id 比对）
+        batch = uuid.uuid4().hex[:6]
         for idx, url in enumerate(urls[:count], start=1):
-            image_id = f"img-{idx}"
+            image_id = f"img-{batch}-{idx}"
             local = out_dir / f"{image_id}.jpg"
             if url.startswith("data:") or len(url) > 500 and not url.startswith("http"):
                 b64 = url.split(",", 1)[-1]
@@ -931,9 +1100,12 @@ class MiniMaxProvider:
                 "id": image_id,
                 "url": f"/generated/jobs/{job_id}/images/{local.name}",
                 "source_url": source_url,
+                "source": "minimax",
             }
             images.append(item)
-        job["images"] = images
+        # 重新生成只替换上一批生成图，用户上传的图保留在候选里
+        uploads = [img for img in job.get("images") or [] if img.get("source") == "upload"]
+        job["images"] = uploads + images
         job["image_prompt"] = prompt
         _save_job(job_id, job)
         return images
@@ -1373,7 +1545,9 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close(code=4401)
         return
 
-    if not accounts.character_allowed(session_account, char_id):
+    _ws_char = char_mgr.get(char_id)
+    if not (_can_view_character(session_account, _ws_char) if _ws_char
+            else accounts.character_allowed(session_account, char_id)):
         logger.info(f"[{req_id}] WS rejected (无权限) char={char_id} user={session_account['username']} ip={client_ip}")
         await websocket.send_json({
             "type": "auth_required",
@@ -1641,6 +1815,75 @@ async def create_test_key(x_minimax_api_key: ApiKeyHeader = None, x_user_code: U
     }
 
 
+# 每个表单字段的写作要求：(字段名, 要求)。field-assist 只接受这些字段。
+FIELD_ASSIST_SPECS = {
+    "name": ("角色名称", "只输出一个名字，不要任何解释或标点。"),
+    "name_en": ("英文名 / 副标题", "只输出一个简短的英文名，或 2-5 个词的英文副标题。"),
+    "role": ("角色定位", "一句话，不超过 30 字，说明这个角色是谁、为谁服务。"),
+    "background": ("背景设定", "写身份、经历、性格、专长、禁忌和目标受众，150-400 字，可以分点。"),
+    "speaking_style": ("说话设定", "写语气、称呼方式、口头禅、句子长短、每次回答的长度、使用的语言或方言，100-250 字。"),
+    "knowledge_request": ("知识库需求", "一两句话说明希望角色掌握哪些知识：书名、系列、主题或资料范围。"),
+    "image_prompt": ("图像 Prompt", "写给 MiniMax image-01 的角色形象描述：3:4 半身像、单人、外貌、服装材质、"
+                     "镜头角度、光线、干净简洁的背景；用具体可视化的词，不要空泛形容词，不要要求画面出现文字，"
+                     "不超过 1500 字符。"),
+    "system_prompt": ("角色 Prompt", "完整的角色 system prompt。保留原有的章节结构、语气标签规则和重要规则，"
+                      f"语气标签只能使用以下拼写：{'、'.join(f'({t})' for t in MINIMAX_VOICE_TAGS)}。"),
+}
+FIELD_ASSIST_ACTIONS = {
+    "write": "根据其他已填写的字段，为当前字段写一版内容；当前字段已有内容时可以参考，但可以重写。",
+    "polish": "润色当前字段的内容：保留原意和全部信息，让表达更清楚、更生动。",
+    "expand": "在当前内容的基础上扩写，补充合理的细节，与其他字段保持一致。",
+    "shorten": "精简当前内容，只保留最关键的信息。",
+    "custom": "按照用户的要求修改当前字段。",
+}
+_SHORT_FIELDS = {"name", "name_en", "role"}
+
+
+@app.post("/api/create/field-assist")
+async def create_field_assist(req: FieldAssistRequest, x_minimax_api_key: ApiKeyHeader = None, x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
+    """表单里每个输入框右下角的 AI 按钮：结果直接写回该输入框。"""
+    username = _require_creator_access(x_user_code, x_session_token)
+    spec = FIELD_ASSIST_SPECS.get(req.field)
+    task = FIELD_ASSIST_ACTIONS.get(req.action)
+    if not spec or not task:
+        raise HTTPException(status_code=400, detail="Unsupported field or action")
+    if req.action in ("polish", "expand", "shorten") and not req.value.strip():
+        raise HTTPException(status_code=400, detail="這個欄位還是空的，先寫一點內容，或者用「幫我寫」")
+    if req.action == "custom" and not req.instruction.strip():
+        raise HTTPException(status_code=400, detail="請先輸入你的要求")
+    api_key, llm_base, used_platform_key = _creation_credentials(x_minimax_api_key, x_session_token)
+    if used_platform_key:
+        allowed, _used = accounts.reserve_creation_action(username, "field_assist")
+        if not allowed:
+            raise HTTPException(status_code=429, detail="今日使用平台服務嘅 AI 輔助次數已達上限，請稍後再試或改用自己嘅 MiniMax Key")
+
+    label, rule = spec
+    language = "English" if req.field == "name_en" else (req.language.strip() or "与其他字段相同的语言")
+    context = "\n".join(
+        f"{FIELD_ASSIST_SPECS[k][0]}：{v.strip()[:1500]}"
+        for k, v in req.context.items()
+        if k in FIELD_ASSIST_SPECS and k != req.field and (v or "").strip()
+    )
+    user = f"其他字段：\n{context or '（无）'}\n\n当前字段现有内容：\n{req.value.strip() or '（空）'}"
+    if req.instruction.strip():
+        user += f"\n\n用户要求：{req.instruction.strip()[:500]}"
+    provider = MiniMaxProvider(api_key, llm_base)
+    text = await provider.simple_text(
+        "你是数字人角色设定助手，帮用户填写「创建角色」表单里的一个字段。\n"
+        f"当前字段：{label}。字段要求：{rule}\n任务：{task}\n"
+        f"输出语言：{language}。只输出这个字段的最终内容本身，不要加引号、标题、解释或开场白。",
+        user,
+        max_tokens=6000 if req.field == "system_prompt" else 2000,
+        temperature=0.6,
+    )
+    text = text.strip()
+    if req.field in _SHORT_FIELDS:
+        text = text.strip("\"'“”「」『』").splitlines()[0].strip() if text else ""
+    elif req.field == "system_prompt":
+        text = _fix_invalid_voice_tags(text)
+    return {"ok": True, "text": text}
+
+
 @app.post("/api/create/knowledge")
 async def create_extract_knowledge(file: UploadFile = File(...), x_user_code: UserCodeHeader = None,
                      x_session_token: accounts.SessionHeader = None):
@@ -1667,12 +1910,13 @@ async def create_extract_knowledge(file: UploadFile = File(...), x_user_code: Us
             text = _extract_pdf_text(p)
 
     text = re.sub(r"\n{3,}", "\n\n", text).strip()
-    truncated = len(text) > MAX_KNOWLEDGE_CHARS
+    truncated = estimate_tokens(text) > KNOWLEDGE_TOKEN_BUDGET
     text = _clamp_knowledge(text)
     return {
         "ok": True,
         "filename": file.filename,
         "chars": len(text),
+        "tokens": estimate_tokens(text),
         "truncated": truncated,
         "text": text,
         "preview": text[:1000],
@@ -1694,17 +1938,121 @@ async def create_search_knowledge(req: GenerateKnowledgeRequest, x_minimax_api_k
     provider = MiniMaxProvider(api_key, llm_base)
     text = await provider.web_search_knowledge(
         "你是数字人角色知识库整理员。请先用 web search 搜集资料，再根据搜索结果和下面的角色设定，"
-        "输出不超过6000字的事实型知识库文本，内容要直接可以放入角色对话上下文使用。"
+        "输出不超过 6000 字的事实型知识库文本，内容要直接可以放入角色对话上下文使用。"
         "不要写搜索过程本身，不要编造搜索结果之外的具体事实，结尾列出参考来源网址。\n\n"
         f"角色名：{req.name}\n英文/副标题：{req.name_en}\n角色定位：{req.role}\n"
         f"背景：{req.background}\n说话设定：{req.speaking_style}",
         query,
     )
-    text = text[:MAX_KNOWLEDGE_CHARS]
+    text = _clamp_knowledge(text)
     # MiniMax 会将参考来源直接写在 output_text 里面（markdown 链接/纯网址），
     # 不一定会填 annotations，所以这里直接从文本中提取 URL，供前端显示条数。
     sources = [{"url": u} for u in dict.fromkeys(re.findall(r"https?://[^\s\)\]，,。]+", text))]
-    return {"ok": True, "query": query, "text": _clamp_knowledge(text), "sources": sources}
+    return {"ok": True, "query": query, "text": text, "tokens": estimate_tokens(text), "sources": sources}
+
+
+# 后台跑着的 Agent 任务要留引用，否则可能被 GC 回收掉
+_KNOWLEDGE_AGENT_RUNS: set[asyncio.Task] = set()
+_KNOWLEDGE_FILE_SUFFIXES = {".txt", ".pdf", ".docx"}
+
+
+def _extract_knowledge_file(path: Path) -> str:
+    """智能模式的文件抽取：整本书的 PDF 常常几百页，页数上限放宽到 400。"""
+    suffix = path.suffix.lower()
+    if suffix == ".txt":
+        return _extract_text_from_txt(path.read_bytes())
+    if suffix == ".docx":
+        return _extract_docx_text(path)
+    return _extract_pdf_text(path, max_pages=400)
+
+
+def _parse_str_list(raw: str, limit: int) -> list[str]:
+    try:
+        items = json.loads(raw or "[]")
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid list parameter")
+    if not isinstance(items, list):
+        raise HTTPException(status_code=400, detail="Invalid list parameter")
+    items = [str(x).strip()[:2000] for x in items if str(x).strip()]
+    if len(items) > limit:
+        raise HTTPException(status_code=400, detail=f"最多 {limit} 項")
+    return items
+
+
+@app.post("/api/create/knowledge/agent")
+async def create_knowledge_agent(
+    request: str = Form(""),
+    urls: str = Form("[]"),
+    directions: str = Form("[]"),
+    name: str = Form(""),
+    role: str = Form(""),
+    background: str = Form(""),
+    language: str = Form(""),
+    files: list[UploadFile] | None = File(None),
+    x_minimax_api_key: ApiKeyHeader = None,
+    x_user_code: UserCodeHeader = None,
+    x_session_token: accounts.SessionHeader = None,
+):
+    """智能知识库：后台跑 Agent，立即返回 task_id，前端轮询进度。只开放给高级用户。"""
+    username = _require_creator_access(x_user_code, x_session_token)
+    if not accounts.is_premium(accounts.resolve_session(x_session_token)):
+        raise HTTPException(status_code=403, detail="智能知識庫只對高級用戶開放")
+    url_list = _parse_str_list(urls, knowledge_agent.MAX_AGENT_URLS)
+    direction_list = _parse_str_list(directions, 8)
+    files = [f for f in (files or []) if f.filename]
+    if len(files) > knowledge_agent.MAX_AGENT_FILES:
+        raise HTTPException(status_code=400, detail=f"最多上傳 {knowledge_agent.MAX_AGENT_FILES} 個文件")
+    for f in files:
+        if Path(f.filename).suffix.lower() not in _KNOWLEDGE_FILE_SUFFIXES:
+            raise HTTPException(status_code=400, detail=f"不支援的文件類型：{f.filename}")
+    if not (request.strip() or url_list or files or direction_list or name.strip()):
+        raise HTTPException(status_code=400, detail="請描述需要的知識，或者上傳文件、填寫網址")
+
+    api_key, llm_base, used_platform_key = _creation_credentials(x_minimax_api_key, x_session_token)
+    if used_platform_key:
+        allowed, _used = accounts.reserve_creation_action(username, "knowledge_agent")
+        if not allowed:
+            raise HTTPException(status_code=429, detail="今日使用平台服務嘅智能知識庫次數已達上限，請聽日再試或改用自己嘅 MiniMax Key")
+
+    task_id = uuid.uuid4().hex
+    task_dir = AGENT_TASKS_DIR / task_id
+    saved: list[tuple[str, Path]] = []
+    for i, f in enumerate(files, start=1):
+        dest = task_dir / "inputs" / f"{i}{Path(f.filename).suffix.lower()}"
+        await _save_upload(f, dest, MAX_KNOWLEDGE_FILE_BYTES)
+        saved.append((Path(f.filename).name, dest))
+
+    provider = MiniMaxProvider(api_key, llm_base)
+    task_dir.mkdir(parents=True, exist_ok=True)
+    agent = knowledge_agent.KnowledgeAgent(
+        task_dir,
+        llm=provider.simple_text,
+        web_search=provider.web_search_knowledge,
+        extract_file=_extract_knowledge_file,
+        budget=KNOWLEDGE_TOKEN_BUDGET,
+    )
+    agent.init_status(username)
+    run = asyncio.create_task(agent.run(
+        request=request.strip()[:2000],
+        context={"name": name.strip(), "role": role.strip(), "background": background.strip(), "language": language.strip()},
+        files=saved,
+        urls=url_list,
+        directions=direction_list,
+    ))
+    _KNOWLEDGE_AGENT_RUNS.add(run)
+    run.add_done_callback(_KNOWLEDGE_AGENT_RUNS.discard)
+    return {"ok": True, "task_id": task_id, "budget": KNOWLEDGE_TOKEN_BUDGET}
+
+
+@app.get("/api/create/knowledge/agent/{task_id}")
+async def get_knowledge_agent(task_id: str, x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
+    username = _require_creator_access(x_user_code, x_session_token)
+    status = knowledge_agent.load_status(AGENT_TASKS_DIR / _safe_job_id(task_id))
+    account = accounts.resolve_session(x_session_token)
+    is_admin = bool(account and account["role"] == "admin")
+    if not status or (status.get("owner") != username and not is_admin):
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {k: v for k, v in status.items() if k != "owner"} | {"budget": KNOWLEDGE_TOKEN_BUDGET}
 
 
 @app.post("/api/create/image-prompt")
@@ -1712,6 +2060,25 @@ async def create_image_prompt(req: GenerateImagePromptRequest, x_minimax_api_key
     _require_creator_access(x_user_code, x_session_token)
     api_key, llm_base, _used_platform_key = _creation_credentials(x_minimax_api_key, x_session_token)
     provider = MiniMaxProvider(api_key, llm_base)
+    role_context = (
+        f"角色名：{req.name}\n英文/副标题：{req.name_en}\n角色定位：{req.role}\n"
+        f"背景：{req.background}\n说话设定：{req.speaking_style}\nSystem Prompt 摘要：{req.system_prompt[:1200]}"
+    )
+    if req.target == "external_en":
+        # 给用户拿去 Midjourney / Stable Diffusion 等外部平台自己生成的英文版
+        prompt = await provider.simple_text(
+            "You write text-to-image prompts for a digital human character portrait that the user will paste "
+            "into external tools such as Midjourney, Stable Diffusion, Flux or DALL-E. Write the prompt in "
+            "English only, as one paragraph of concrete, visual descriptors (appearance, hairstyle, clothing and "
+            "materials, expression, camera angle, lighting, background). Requirements: vertical 3:4 half-body "
+            "portrait, single person, facing the camera or slightly turned, clean simple background, soft "
+            "cinematic lighting, suitable as the first frame of a talking-head video; no text, logos or "
+            "watermarks. Do not use tool-specific parameters. Output only the prompt, no explanation.",
+            role_context,
+            max_tokens=1500,
+            temperature=0.5,
+        )
+        return {"ok": True, "prompt": prompt.strip()}
     lang_key = (req.language or "").strip().lower()
     target_lang = "中文" if (not lang_key or lang_key.startswith("chinese")) else req.language.strip()
     prompt = await provider.simple_text(
@@ -1729,14 +2096,25 @@ async def create_image_prompt(req: GenerateImagePromptRequest, x_minimax_api_key
         "背景干净简洁、电影级暖色调打光、适合作为后续视频 first frame；"
         "不要要求画面中出现文字/标志/logo（图像模型对文字渲染不准确）。"
         "不要输出解释，只输出 prompt 本身。",
-        (
-            f"角色名：{req.name}\n英文/副标题：{req.name_en}\n角色定位：{req.role}\n"
-            f"背景：{req.background}\n说话设定：{req.speaking_style}\nSystem Prompt 摘要：{req.system_prompt[:1200]}"
-        ),
+        role_context,
         max_tokens=1500,  # 之前 450 太紧，M2 思考模型会思考到被截断、content 变空
         temperature=0.5,
     )
     return {"ok": True, "prompt": prompt.strip()}
+
+
+def _ensure_job(job_id: str | None) -> tuple[str, dict]:
+    """沿用已有创作任务；没有（或已过期被清理）就新建一个。"""
+    if job_id:
+        try:
+            return job_id, _load_job(job_id)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+    job_id = uuid.uuid4().hex
+    job = {"id": job_id, "created_at": time.time(), "status": "created"}
+    _save_job(job_id, job)
+    return job_id, job
 
 
 @app.post("/api/create/prompt")
@@ -1748,17 +2126,15 @@ async def create_prompt(req: CreatePromptRequest, x_minimax_api_key: ApiKeyHeade
 
     provider = MiniMaxProvider(api_key, llm_base)
     prompt = await provider.improve_prompt(req)
-    job_id = uuid.uuid4().hex
-    _save_job(job_id, {
-        "id": job_id,
-        "created_at": time.time(),
+    job_id, job = _ensure_job(req.job_id)
+    job.update({
         "name": req.name.strip(),
         "name_en": req.name_en.strip(),
         "role": req.role.strip(),
         "system_prompt": prompt,
-        "knowledge_chars": len(req.knowledge_text or ""),
-        "status": "prompt_ready",
+        "knowledge_tokens": estimate_tokens(req.knowledge_text or ""),
     })
+    _save_job(job_id, job)
     return {"ok": True, "job_id": job_id, "system_prompt": prompt}
 
 
@@ -1773,16 +2149,7 @@ async def create_images(req: CreateImagesRequest, x_minimax_api_key: ApiKeyHeade
     if not req.prompt.strip():
         raise HTTPException(status_code=400, detail="Image prompt is required")
     provider = MiniMaxProvider(api_key, llm_base)
-
-    # Reuse existing prompt job if provided, otherwise create a new one
-    if req.job_id:
-        job_id = req.job_id
-        job = _load_job(job_id)
-        job["status"] = "image_generation_started"
-        _save_job(job_id, job)
-    else:
-        job_id = uuid.uuid4().hex
-        _save_job(job_id, {"id": job_id, "created_at": time.time(), "status": "image_generation_started"})
+    job_id, _job = _ensure_job(req.job_id)
 
     try:
         full_prompt = req.prompt.strip()
@@ -1793,7 +2160,52 @@ async def create_images(req: CreateImagesRequest, x_minimax_api_key: ApiKeyHeade
         if not req.job_id:
             shutil.rmtree(_job_dir(job_id), ignore_errors=True)
         raise
-    return {"ok": True, "job_id": job_id, "images": images}
+    return {"ok": True, "job_id": job_id, "images": _load_job(job_id).get("images") or images}
+
+
+@app.post("/api/create/images/upload")
+async def create_upload_image(
+    file: UploadFile = File(...),
+    job_id: str = Form(""),
+    rights_ack: bool = Form(False),
+    x_user_code: UserCodeHeader = None,
+    x_session_token: accounts.SessionHeader = None,
+):
+    """用户自己的形象图（或在其他平台生成的图），与生成图共用同一个候选列表。"""
+    username = _require_creator_access(x_user_code, x_session_token)
+    if not rights_ack:
+        raise HTTPException(status_code=400, detail="請先確認你擁有這張圖片中人物形象的使用權")
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in UPLOAD_IMAGE_SUFFIXES:
+        raise HTTPException(status_code=400, detail="只支援 jpg / png / webp 圖片")
+    job_id, job = _ensure_job(job_id)
+    images_dir = _job_dir(job_id) / "images"
+    n = sum(1 for img in job.get("images") or [] if img.get("source") == "upload") + 1
+    raw = images_dir / f"upload-{n}-raw{suffix}"
+    dest = images_dir / f"upload-{n}.jpg"
+    try:
+        await _save_upload(file, raw, MAX_UPLOAD_IMAGE_BYTES)
+        info = await asyncio.to_thread(_ffprobe, raw)
+        w, h = info["width"], info["height"]
+        # MiniMax 视频首帧要求：短边 > 300px，宽高比在 2:5 到 5:2 之间
+        if min(w, h) < 300:
+            raise HTTPException(status_code=400, detail="圖片太小，短邊最少要 300 像素")
+        if not 0.4 <= w / h <= 2.5:
+            raise HTTPException(status_code=400, detail="圖片比例太極端，寬高比要在 2:5 到 5:2 之間（建議 3:4）")
+        await asyncio.to_thread(_ffmpeg_normalize_image, raw, dest)
+    finally:
+        raw.unlink(missing_ok=True)
+    image = {
+        "id": f"upload-{n}",
+        "url": f"/generated/jobs/{job_id}/images/{dest.name}",
+        "source_url": "",
+        "source": "upload",
+        "rights_ack": {"by": username, "at": datetime.datetime.now(OPS_TZ).isoformat()},
+    }
+    job = _load_job(job_id)
+    job["images"] = (job.get("images") or []) + [image]
+    _save_job(job_id, job)
+    return {"ok": True, "job_id": job_id, "image": image, "images": job["images"]}
 
 
 @app.post("/api/create/videos")
@@ -1812,64 +2224,121 @@ async def create_videos(req: CreateVideosRequest, x_minimax_api_key: ApiKeyHeade
 
     provider = MiniMaxProvider(api_key, llm_base)
 
+    # 上传的图（以及 MiniMax 直接回 base64 的生成图）没有公网 URL，改用 data URL 作首帧
     first_frame_url = selected.get("source_url", "")
+    if not first_frame_url:
+        local = _job_dir(req.job_id) / "images" / Path(selected["url"]).name
+        if not local.is_file():
+            raise HTTPException(status_code=400, detail="Selected image file missing")
+        first_frame_url = _image_data_url(local)
     raw_dir = _job_dir(req.job_id) / "videos"
-    idle_raw = raw_dir / "idle_raw.mp4"
-    talk_raw = raw_dir / "talk_raw.mp4"
-    idle_final = raw_dir / "idle.mp4"
-    talk_final = raw_dir / "talk.mp4"
+    clips = {"both": ("idle", "talk"), "idle": ("idle",), "talk": ("talk",)}.get(req.which)
+    if not clips:
+        raise HTTPException(status_code=400, detail="which must be both, idle or talk")
+    # 只重做一段的前提：另一段是用同一张形象图生成的，否则两段的人物会对不上
+    if len(clips) == 1 and job.get("videos_image_id") != selected["id"]:
+        raise HTTPException(status_code=400, detail="形象圖已更換，需要重新生成 idle 和 talk 兩段視頻")
 
     base_identity = req.image_prompt.strip() or req.character_name.strip()
-    idle_prompt = (
-        f"{base_identity} 人物轻微呼吸，胸膛缓缓起伏，眼睛每隔3-4秒缓慢闭合再睁开，"
-        "头部有极其轻微的随呼吸摆动。背景保持完全静止。画面保持电影级暖色调打光，"
-        "无缝循环，画面无抖动"
-    )
-    talk_prompt = (
-        f"{base_identity} 人物正在说话，嘴巴自然微微张合，节奏如同从容对话，下颌和面部肌肉有轻微联动。"
-        "偶尔眨眼。头部有自然的说话伴随微动。身体和手臂保持静止，仅面部动画。背景保持完全静止。"
-        "画面保持电影级暖色调打光，无缝循环，画面无抖动，无字幕"
-    )
+    extra = f"。额外要求：{req.feedback.strip()[:500]}" if req.feedback.strip() else ""
+    prompts = {
+        "idle": (
+            f"{base_identity} 人物轻微呼吸，胸膛缓缓起伏，眼睛每隔3-4秒缓慢闭合再睁开，"
+            "头部有极其轻微的随呼吸摆动。背景保持完全静止。画面保持电影级暖色调打光，"
+            f"无缝循环，画面无抖动{extra}"
+        ),
+        "talk": (
+            f"{base_identity} 人物正在说话，嘴巴自然微微张合，节奏如同从容对话，下颌和面部肌肉有轻微联动。"
+            "偶尔眨眼。头部有自然的说话伴随微动。身体和手臂保持静止，仅面部动画。背景保持完全静止。"
+            f"画面保持电影级暖色调打光，无缝循环，画面无抖动，无字幕{extra}"
+        ),
+    }
+    durations = {"idle": 5, "talk": 8}
 
     job["status"] = "video_generation_started"
+    _save_job(req.job_id, job)
+
+    for kind in clips:
+        raw = raw_dir / f"{kind}_raw.mp4"
+        await provider.generate_video(prompts[kind], first_frame_url, raw, durations[kind])
+        await asyncio.to_thread(_ffmpeg_process_video, raw, raw_dir / f"{kind}.mp4", durations[kind])
+        raw.unlink(missing_ok=True)
+
+    job = _load_job(req.job_id)
+    videos = job.get("videos") or {}
+    for kind in clips:
+        videos[kind] = f"/generated/jobs/{req.job_id}/videos/{kind}.mp4"
+    job["videos"] = videos
     job["selected_image"] = selected
+    job["videos_image_id"] = selected["id"]
+    job["status"] = "videos_ready" if all((raw_dir / f"{k}.mp4").is_file() for k in ("idle", "talk")) else "video_partial"
     _save_job(req.job_id, job)
+    return {"ok": True, "job_id": req.job_id, "videos": videos, "videos_image_id": selected["id"]}
 
-    await provider.generate_video(idle_prompt, first_frame_url, idle_raw, 5)
-    _ffmpeg_process_video(idle_raw, idle_final, 5)
-    await provider.generate_video(talk_prompt, first_frame_url, talk_raw, 8)
-    _ffmpeg_process_video(talk_raw, talk_final, 8)
 
-    job["status"] = "videos_ready"
-    job["videos"] = {
-        "idle": f"/generated/jobs/{req.job_id}/videos/idle.mp4",
-        "talk": f"/generated/jobs/{req.job_id}/videos/talk.mp4",
-    }
-    _save_job(req.job_id, job)
-    return {"ok": True, "job_id": req.job_id, "videos": job["videos"]}
+@app.post("/api/create/videos/upload")
+async def create_upload_video(
+    file: UploadFile = File(...),
+    kind: str = Form(...),
+    job_id: str = Form(""),
+    rights_ack: bool = Form(False),
+    x_user_code: UserCodeHeader = None,
+    x_session_token: accounts.SessionHeader = None,
+):
+    """用户自己的 idle / talk 视频，统一转成 720p/24fps/H.264/无声轨，手机上才加载得快。"""
+    username = _require_creator_access(x_user_code, x_session_token)
+    if kind not in UPLOAD_VIDEO_DURATION:
+        raise HTTPException(status_code=400, detail="kind must be idle or talk")
+    if not rights_ack:
+        raise HTTPException(status_code=400, detail="請先確認你擁有視頻中人物形象的使用權")
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in UPLOAD_VIDEO_SUFFIXES:
+        raise HTTPException(status_code=400, detail="只支援 mp4 / mov / webm / m4v 視頻")
+    job_id, _job = _ensure_job(job_id)
+    videos_dir = _job_dir(job_id) / "videos"
+    raw = videos_dir / f"{kind}_upload{suffix}"
+    dest = videos_dir / f"{kind}.mp4"
+    try:
+        await _save_upload(file, raw, MAX_UPLOAD_VIDEO_BYTES)
+        info = await asyncio.to_thread(_ffprobe, raw)
+        lo, hi = UPLOAD_VIDEO_DURATION[kind]
+        if not lo <= info["duration"] <= hi:
+            raise HTTPException(status_code=400, detail=f"{kind} 視頻長度要在 {lo}-{hi} 秒之間（而家係 {info['duration']:.1f} 秒）")
+        await asyncio.to_thread(_ffmpeg_process_video, raw, dest, hi)
+    finally:
+        raw.unlink(missing_ok=True)
+    job = _load_job(job_id)
+    videos = job.get("videos") or {}
+    videos[kind] = f"/generated/jobs/{job_id}/videos/{dest.name}"
+    job["videos"] = videos
+    job.setdefault("video_rights_ack", {})[kind] = {"by": username, "at": datetime.datetime.now(OPS_TZ).isoformat()}
+    _save_job(job_id, job)
+    return {"ok": True, "job_id": job_id, "videos": videos}
 
 
 @app.post("/api/create/finalize")
 async def create_finalize(req: FinalizeCharacterRequest, x_user_code: UserCodeHeader = None, x_session_token: accounts.SessionHeader = None):
     username = _require_creator_access(x_user_code, x_session_token)
     job = _load_job(req.job_id)
-    if job.get("status") != "videos_ready":
-        raise HTTPException(status_code=400, detail="Videos must be generated before finalizing the character")
-
-    char_id = _safe_character_id(req.character_id or req.name)
-    dest = Path("characters") / char_id
-    if dest.exists():
-        raise HTTPException(status_code=409, detail=f"Character '{char_id}' already exists")
-
     job_path = _job_dir(req.job_id)
-    selected = job.get("selected_image") or {}
-    selected_name = Path(selected.get("url", "")).name
-    portrait_src = job_path / "images" / selected_name
     idle_src = job_path / "videos" / "idle.mp4"
     talk_src = job_path / "videos" / "talk.mp4"
+    # 不论视频是平台生成还是用户上传，只要 idle / talk 都在就可以完成
     if not idle_src.is_file() or not talk_src.is_file():
-        raise HTTPException(status_code=500, detail="Generated video files are missing")
+        raise HTTPException(status_code=400, detail="請先生成或上傳 idle 和 talk 兩段視頻")
 
+    images = job.get("images") or []
+    selected = next((img for img in images if img.get("id") == req.image_id), None) or job.get("selected_image")
+    portrait_src = job_path / "images" / Path(selected.get("url", "")).name if selected else None
+    if not portrait_src or not portrait_src.is_file():
+        # 只上传了视频、没选形象图：用 idle 第一帧当形象照
+        portrait_src = job_path / "videos" / "portrait.jpg"
+        await asyncio.to_thread(_ffmpeg_extract_frame, idle_src, portrait_src)
+        selected = None
+
+    char_id = _new_character_id(req.name_en or req.name)
+    dest = USER_CHARACTERS_DIR / char_id
+    knowledge = _clamp_knowledge(req.knowledge_text or "")
     tmp_dest = dest.with_name(f".{dest.name}.tmp-{uuid.uuid4().hex[:8]}")
     try:
         tmp_dest.mkdir(parents=True, exist_ok=False)
@@ -1881,6 +2350,9 @@ async def create_finalize(req: FinalizeCharacterRequest, x_user_code: UserCodeHe
             "name": _safe_display_text(req.name),
             "name_en": _safe_display_text(req.name_en),
             "role": _safe_display_text(req.role, max_len=160),
+            # 用户角色默认私有；"public" 是创建者公开给所有人（以后接社区功能）
+            "owner": username,
+            "visibility": "private",
             "icon": "portrait.jpg",
             "avatar_idle": "idle.mp4",
             "avatar_talk": "talk.mp4",
@@ -1894,6 +2366,17 @@ async def create_finalize(req: FinalizeCharacterRequest, x_user_code: UserCodeHe
             "tts_pitch": 0,
             "system_prompt": req.system_prompt,
         }
+        if knowledge:
+            (tmp_dest / "knowledge.md").write_text(knowledge, encoding="utf-8")
+            cfg["knowledge_file"] = "knowledge.md"
+        # 肖像权确认留档：上传的形象图 / 视频各自的确认人和时间
+        rights = {}
+        if selected and selected.get("rights_ack"):
+            rights["image"] = selected["rights_ack"]
+        if job.get("video_rights_ack"):
+            rights["videos"] = job["video_rights_ack"]
+        if rights:
+            cfg["image_rights_ack"] = rights
         (tmp_dest / "character.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp_dest.rename(dest)
     except Exception:
@@ -1901,42 +2384,68 @@ async def create_finalize(req: FinalizeCharacterRequest, x_user_code: UserCodeHe
         raise
 
     char_mgr.reload()
+    shutil.rmtree(job_path, ignore_errors=True)
     return {"ok": True, "id": char_id, "name": req.name, "url": f"/?char={char_id}"}
 
 
 # ── Character API ───────────────────────────────────────
+def _character_visibility(ch: dict) -> str:
+    """缺省即系统角色——git 里原有的角色都没有这个字段。"""
+    return ch.get("visibility") or "system"
+
+
+# 这两种对所有人可见（仍受账号白名单限制）；其余都按私有处理
+_OPEN_VISIBILITY = ("system", "public")
+
+
+def _can_view_character(account: dict | None, ch: dict) -> bool:
+    """角色可见性，大厅列表 / 详情 / WebSocket / 导出统一用这一个判断。
+
+    - 管理员：全部可见
+    - 创建者本人：可见
+    - 系统角色、公开的用户角色：沿用账号白名单（白名单为空 = 不限制；未登录也可见）
+    - 私有角色：只有白名单里明确勾选了它的账号可见（白名单在这里是「授权」）
+    """
+    if account and account.get("role") == "admin":
+        return True
+    owner = ch.get("owner")
+    if account and owner and account["username"] == owner:
+        return True
+    if _character_visibility(ch) in _OPEN_VISIBILITY:
+        return accounts.character_allowed(account, ch["id"])
+    return bool(account) and ch["id"] in (account.get("allowed_characters") or [])
+
+
 @app.get("/api/characters")
 async def list_characters(x_session_token: accounts.SessionHeader = None):
-    """List all available characters for the lobby page.
-
-    已登录且账号设有 allowed_characters 白名单时，只返回名单内的角色；
-    未登录或账号不受限时返回完整列表（保持向后兼容）。
-    """
-    all_chars = char_mgr.list_all()
+    """List the characters this viewer may see, for the lobby page."""
     account = accounts.resolve_session(x_session_token)
-    if account and account.get("allowed_characters"):
-        allowed = set(account["allowed_characters"])
-        return [c for c in all_chars if c["id"] in allowed]
-    return all_chars
+    username = account["username"] if account else None
+    return [
+        {**char_mgr.summary(ch), "owned": bool(username and ch.get("owner") == username)}
+        for ch in char_mgr.all()
+        if _can_view_character(account, ch)
+    ]
 
 
 @app.get("/api/characters/{char_id}")
 async def get_character(char_id: str, x_session_token: accounts.SessionHeader = None):
     """Get full character config (without system_prompt)."""
     ch = char_mgr.get(char_id)
-    if not ch:
-        raise HTTPException(status_code=404, detail=f"Character '{char_id}' not found")
     account = accounts.resolve_session(x_session_token)
-    if account and not accounts.character_allowed(account, char_id):
+    # 看不到的私有角色一律当作不存在，不透露「有这个角色但你没权限」
+    if not ch or (_character_visibility(ch) not in _OPEN_VISIBILITY and not _can_view_character(account, ch)):
+        raise HTTPException(status_code=404, detail=f"Character '{char_id}' not found")
+    if not _can_view_character(account, ch):
         raise HTTPException(status_code=403, detail="你的帳號未獲授權使用呢個數字人角色")
     # Return config without system_prompt (only sent via WS)
     return {
         "id": ch["id"],
         "name": ch.get("name", ch["id"]),
         "name_en": ch.get("name_en", ""),
-        "icon": f"/characters/{ch['id']}/{ch.get('icon', 'portrait.jpg')}",
-        "avatar_idle": f"/characters/{ch['id']}/{ch.get('avatar_idle', 'idle.mp4')}",
-        "avatar_talk": f"/characters/{ch['id']}/{ch.get('avatar_talk', 'talk.mp4')}",
+        "icon": char_mgr.media_url(ch, "icon", "portrait.jpg"),
+        "avatar_idle": char_mgr.media_url(ch, "avatar_idle", "idle.mp4"),
+        "avatar_talk": char_mgr.media_url(ch, "avatar_talk", "talk.mp4"),
         "theme_color": ch.get("theme_color", "#8A6D3B"),
         "tts_voice_id": ch.get("tts_voice_id", DEFAULT_TTS_CONFIG["voice_id"]),
         "tts_language": ch.get("tts_language", DEFAULT_TTS_CONFIG["language_boost"]),
@@ -1987,10 +2496,14 @@ async def import_character(file: UploadFile = File(...), x_user_code: UserCodeHe
                 if not str(target).startswith(str(expected)) or name.startswith("/") or ".." in Path(name).parts:
                     raise HTTPException(status_code=400, detail="Unsafe path found in zip")
 
-            # Extract to temp directory first, validate, then move
-            dest = Path("characters") / char_id
-            if dest.exists():
-                raise HTTPException(status_code=409, detail=f"Character '{char_id}' already exists")
+            # 导入的角色一律归导入者私有，id 重新分配避免撞到别人的角色；
+            # knowledge_file 只能是角色目录里的普通文件名，防止读到目录外的文件
+            new_id = _new_character_id(cfg_data.get("name_en") or char_id)
+            cfg_data.update({"id": new_id, "owner": username, "visibility": "private", "created_by": username})
+            kfile = cfg_data.get("knowledge_file")
+            if kfile and Path(kfile).name != kfile:
+                cfg_data.pop("knowledge_file")
+            dest = USER_CHARACTERS_DIR / new_id
 
             with tempfile.TemporaryDirectory() as tmp:
                 for member in zf.namelist():
@@ -2002,14 +2515,15 @@ async def import_character(file: UploadFile = File(...), x_user_code: UserCodeHe
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_bytes(zf.read(member))
                 src = Path(tmp) / char_id
-                if src.is_dir():
-                    await asyncio.to_thread(shutil.copytree, src, dest)
-                else:
+                if not src.is_dir():
                     raise HTTPException(status_code=400, detail="Invalid zip structure")
+                (src / "character.json").write_text(json.dumps(cfg_data, ensure_ascii=False, indent=2), encoding="utf-8")
+                USER_CHARACTERS_DIR.mkdir(parents=True, exist_ok=True)
+                await asyncio.to_thread(shutil.copytree, src, dest)
 
         # Reload character manager
         char_mgr.reload()
-        return {"ok": True, "id": char_id, "name": cfg_data.get("name")}
+        return {"ok": True, "id": new_id, "name": cfg_data.get("name")}
 
     except zipfile.BadZipFile:
         raise HTTPException(status_code=400, detail="Invalid zip file")
@@ -2031,7 +2545,13 @@ async def export_character(char_id: str, x_user_code: UserCodeHeader = None,
     """
     _require_creator_access(x_user_code, x_session_token)
     ch = char_mgr.get(char_id)
-    if not ch:
+    # 导出包含 Prompt 和知识库：看不到的角色（别人的私有角色、客户角色）一律当不存在；
+    # 别人公开的用户角色可以聊天，但 Prompt 和知识库只有创建者和管理员能导出
+    account = accounts.resolve_session(x_session_token)
+    owner = (ch or {}).get("owner")
+    is_admin = bool(account and account["role"] == "admin")
+    if not ch or not _can_view_character(account, ch) or (
+            owner and not is_admin and not (account and account["username"] == owner)):
         raise HTTPException(status_code=404, detail=f"Character '{char_id}' not found")
 
     char_dir = Path(ch["_dir"])
@@ -2053,12 +2573,13 @@ async def export_character(char_id: str, x_user_code: UserCodeHeader = None,
 # ── GET /health ─────────────────────────────────────────
 @app.get("/health")
 async def health():
-    chars = char_mgr.list_all()
+    chars = char_mgr.all()
     return {
         "status": "ok",
         "tts_model": TTS_MODEL,
         "characters_loaded": len(chars),
-        "characters": [c["id"] for c in chars],
+        # 公开接口，只列系统角色——私有角色的 id 本身也不应外泄
+        "characters": [c["id"] for c in chars if _character_visibility(c) == "system"],
         "minimax_configured": bool(MINIMAX_API_KEY),
     }
 
@@ -2949,11 +3470,38 @@ toggleAuto();
 
 
 # ── Static Files ───────────────────────────────────────
-GENERATED_DIR.mkdir(parents=True, exist_ok=True)
-# Mount characters/ for avatar resources (videos, icons)
-app.mount("/characters", StaticFiles(directory="characters"), name="characters")
+class MediaStaticFiles(StaticFiles):
+    """只提供图片/视频。角色目录和创作任务目录里还有 character.json、
+    knowledge.md、job.json（含 Prompt 与知识库），不能经 URL 直接下载。"""
+
+    async def get_response(self, path: str, scope):
+        if Path(path).suffix.lower() not in PUBLIC_MEDIA_SUFFIXES:
+            raise HTTPException(status_code=404)
+        return await super().get_response(path, scope)
+
+
+def _purge_stale_generated() -> None:
+    """清掉超过 7 天没完成的创作任务，Volume 空间有限。"""
+    cutoff = time.time() - CREATE_JOB_TTL_SECONDS
+    for base in (CREATE_JOBS_DIR, AGENT_TASKS_DIR):
+        if not base.is_dir():
+            continue
+        for d in base.iterdir():
+            try:
+                if d.is_dir() and d.stat().st_mtime < cutoff:
+                    shutil.rmtree(d, ignore_errors=True)
+            except OSError:
+                continue
+
+
+for _d in (GENERATED_DIR, USER_CHARACTERS_DIR):
+    _d.mkdir(parents=True, exist_ok=True)
+_purge_stale_generated()
+# 系统角色（git）与用户角色（Volume）的头像/视频
+app.mount("/characters", MediaStaticFiles(directory=str(SYSTEM_CHARACTERS_DIR)), name="characters")
+app.mount("/user-characters", MediaStaticFiles(directory=str(USER_CHARACTERS_DIR)), name="user-characters")
 # Mount generated previews for the creation wizard
-app.mount("/generated", StaticFiles(directory=str(GENERATED_DIR)), name="generated")
+app.mount("/generated", MediaStaticFiles(directory=str(GENERATED_DIR)), name="generated")
 # Mount the SPA (must be last)
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
 

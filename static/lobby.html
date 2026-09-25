@@ -66,7 +66,7 @@
   .wizard-body { padding: 22px; }
   .wizard-steps {
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(var(--steps, 7), 1fr);
     gap: 6px;
     margin-bottom: 22px;
   }
@@ -217,10 +217,118 @@
     border-radius: 12px;
   }
   #fileInput, #knowledgeInput { display: none; }
+  .field textarea.short { min-height: 72px; }
+  .field textarea.tall { min-height: 220px; }
+  .label-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 7px; }
+  .label-row label { margin-bottom: 0; }
+  .row-actions, .btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .wiz-btn.mini { min-width: auto; padding: 5px 10px; font-size: 12px; }
+  .link-btn {
+    border: none; background: none; padding: 0; cursor: pointer;
+    font: inherit; font-size: 12.5px; font-weight: 600; color: var(--ink-soft);
+    text-decoration: underline; text-underline-offset: 2px;
+  }
+  .link-btn:hover { color: var(--ink); }
+  #btnRetryKey { margin-left: 6px; }
+
+  /* 椭圆开关：普通模式 ◯ 智能模式 */
+  .mode-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .mode-label { font-size: 13px; font-weight: 600; color: var(--muted); }
+  .mode-row.smart .mode-label:last-child, .mode-row:not(.smart) .mode-label:first-child { color: var(--ink); }
+  .switch {
+    position: relative; width: 46px; height: 26px; flex-shrink: 0;
+    border: none; border-radius: 999px; background: #D5D9E0; cursor: pointer;
+    transition: background .18s ease;
+  }
+  .switch[aria-checked="true"] { background: var(--yellow-deep); }
+  .switch:disabled { opacity: .45; cursor: not-allowed; }
+  .switch-knob {
+    position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 3px rgba(16,24,40,.3); transition: transform .18s ease;
+  }
+  .switch[aria-checked="true"] .switch-knob { transform: translateX(20px); }
+
+  .file-list { list-style: none; margin: 0 0 8px; padding: 0; }
+  .file-list li {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 7px 10px; margin-bottom: 6px; border: 1px solid var(--line); border-radius: 8px;
+    font-size: 13px; background: #FCFDFD;
+  }
+  .file-list li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .agent-steps { list-style: none; margin: 12px 0 0; padding: 0; font-size: 13px; color: var(--ink-soft); }
+  .agent-steps li { display: flex; gap: 8px; padding: 3px 0; word-break: break-all; }
+  .agent-steps .ico { width: 16px; flex-shrink: 0; text-align: center; }
+  .agent-steps li.running .ico { animation: agent-spin 1s linear infinite; }
+  .agent-steps li.failed { color: #C8322D; }
+  @keyframes agent-spin { to { transform: rotate(360deg); } }
+  .agent-suggest { margin-top: 12px; padding: 12px; border: 1px dashed var(--line); border-radius: 10px; }
+  .agent-suggest label { display: flex; gap: 8px; align-items: flex-start; font-size: 13.5px; margin-bottom: 6px; cursor: pointer; }
+
+  /* 平台生成 | 上传 */
+  .seg { display: inline-flex; padding: 3px; border-radius: 10px; background: #EEF0F3; margin-bottom: 14px; }
+  .seg-btn {
+    border: none; background: none; padding: 7px 14px; border-radius: 8px; cursor: pointer;
+    font: inherit; font-size: 13px; font-weight: 600; color: var(--muted);
+  }
+  .seg-btn.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(16,24,40,.12); }
+  .ack { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; line-height: 1.45; margin: 4px 0 12px; cursor: pointer; }
+  .ack input { margin-top: 2px; flex-shrink: 0; }
+
+  /* 输入框右下角的 AI 辅助 */
+  .assist-wrap { position: relative; }
+  .assist-wrap > input { padding-right: 40px; }
+  .assist-wrap > textarea { padding-bottom: 36px; }
+  .assist-btn {
+    position: absolute; right: 7px; bottom: 7px; z-index: 3;
+    width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--line);
+    background: #fff; color: var(--ink-soft); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .assist-wrap > input + .assist-btn { bottom: 50%; transform: translateY(50%); }
+  .assist-btn:hover, .assist-btn.busy { background: var(--yellow-soft); border-color: var(--yellow-deep); color: var(--ink); }
+  .assist-btn.busy svg { animation: agent-spin 1s linear infinite; }
+  .assist-menu {
+    position: absolute; right: 0; top: calc(100% + 4px); z-index: 5; width: 220px;
+    background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 6px;
+    box-shadow: 0 18px 40px -18px rgba(16,24,40,.4);
+  }
+  .assist-menu button.item {
+    display: block; width: 100%; text-align: left; border: none; background: none;
+    padding: 8px 10px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 13.5px; color: var(--ink);
+  }
+  .assist-menu button.item:hover { background: #F5F6F8; }
+  .assist-menu button.item:disabled { color: var(--muted); cursor: default; background: none; }
+  .assist-custom { display: flex; gap: 6px; padding: 4px; }
+  .assist-custom input { flex: 1; min-width: 0; padding: 7px 9px !important; font-size: 13px !important; }
+  .assist-custom .wiz-btn { min-width: auto; padding: 6px 10px; font-size: 12.5px; }
+  .assist-error { color: #C8322D; font-size: 12px; padding: 4px 10px 2px; }
+
+  /* 生成中：锁住步骤切换和其余按钮 */
+  .busy-hint { flex: 1; align-self: center; text-align: center; font-size: 12.5px; color: var(--muted); }
+  .wizard.is-busy .wizard-actions .wiz-btn,
+  .wizard.is-busy .wizard-close { opacity: .4; cursor: not-allowed; }
+  .wizard.is-busy .seg-btn, .wizard.is-busy .switch, .wizard.is-busy .image-choice { cursor: not-allowed; }
+  .feedback-box { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line); }
+  .feedback-box .btn-row { margin-top: 8px; }
+  .btn-row + .field-hint { margin-top: 10px; }
+  .status-line.warn { color: #B26A00; }
+  .preview-video-grid .vid { position: relative; }
+  .vid-tag {
+    position: absolute; left: 8px; top: 8px; padding: 2px 9px; border-radius: 999px;
+    background: rgba(16,16,18,.62); color: #fff; font-size: 11px; font-weight: 600;
+  }
+
+  /* 大厅卡片上的「我的」角标 */
+  .card-badge {
+    position: absolute; top: 10px; left: 10px; z-index: 3;
+    padding: 3px 9px; border-radius: 999px; background: var(--ink); color: var(--yellow);
+    font-size: 11.5px; font-weight: 700; letter-spacing: .02em;
+  }
 
   @media (max-width: 620px) {
     .two-col, .preview-video-grid { grid-template-columns: 1fr; }
     .wizard-body { padding: 18px; }
+    .assist-menu { width: min(220px, calc(100vw - 72px)); }
   }
 </style>
 </head>
@@ -287,6 +395,10 @@
 
 <input type="file" id="fileInput" accept=".zip">
 <input type="file" id="knowledgeInput" accept=".txt,.pdf,.docx">
+<input type="file" id="smartFileInput" accept=".txt,.pdf,.docx" multiple hidden>
+<input type="file" id="imageUploadInput" accept=".jpg,.jpeg,.png,.webp" hidden>
+<input type="file" id="idleUploadInput" accept=".mp4,.mov,.webm,.m4v" hidden>
+<input type="file" id="talkUploadInput" accept=".mp4,.mov,.webm,.m4v" hidden>
 
 <div class="wizard-overlay" id="wizardOverlay">
   <div class="wizard">
@@ -294,12 +406,14 @@
       <div>
         <div class="wizard-title" data-i18n="wizard.title">創建新角色</div>
         <div class="status-line" id="wizardSubtitle" data-i18n="wizard.subtitle_default">API Key 只保存在本次頁面會話</div>
+        <button type="button" class="link-btn" id="btnRetryKey" data-i18n="wizard.retry" hidden>重試</button>
       </div>
       <button class="wizard-close" id="wizardClose" data-i18n-attr="title:wizard.close" title="關閉">×</button>
     </div>
     <div class="wizard-body">
       <div class="wizard-steps" id="wizardSteps"></div>
 
+      <!-- 0 · 连接（只有自带 Key 的用户会看到） -->
       <section class="wizard-panel active" data-step="0">
         <div class="field" id="apiKeyField">
           <label>MiniMax API Key</label>
@@ -312,6 +426,7 @@
         <div class="status-line" id="keyStatus"></div>
       </section>
 
+      <!-- 1 · 角色设定 -->
       <section class="wizard-panel" data-step="1">
         <div class="two-col">
           <div class="field"><label data-i18n="wizard.name_label">角色名稱</label><input id="wizName" data-i18n-attr="placeholder:wizard.name_placeholder" placeholder="例如：李白"></div>
@@ -326,64 +441,162 @@
         </div>
         <div class="field"><label data-i18n="wizard.background_label">背景設定</label><textarea id="wizBackground" data-i18n-attr="placeholder:wizard.background_placeholder" placeholder="輸入角色身份、經歷、性格、禁忌和目標受眾"></textarea></div>
         <div class="field"><label data-i18n="wizard.speaking_label">說話設定</label><textarea id="wizSpeaking" data-i18n-attr="placeholder:wizard.speaking_placeholder" placeholder="輸入語氣、稱呼、回覆長度、是否古風/粵語/英文等"></textarea></div>
-        <button class="wiz-btn primary" id="btnBuildPrompt" data-i18n="wizard.build_prompt">潤色角色 Prompt</button>
-        <div class="status-line" id="promptStatus"></div>
-        <div class="field" style="margin-top:14px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <label data-i18n="wizard.system_prompt_label" style="margin-bottom:0;">角色 Prompt（會參考秦始皇與 Elizabeth 的現有格式，可直接編輯）</label>
-            <div style="display:flex;gap:6px;flex-shrink:0;">
-              <button type="button" class="wiz-btn" id="btnPromptUndoStep1" data-i18n="wizard.undo" style="min-width:auto;padding:5px 10px;font-size:12px;" disabled>撤銷上一版</button>
-              <button type="button" class="wiz-btn" id="btnPromptRedoStep1" data-i18n="wizard.redo" style="min-width:auto;padding:5px 10px;font-size:12px;" disabled>恢復</button>
-            </div>
-          </div>
-          <textarea id="wizSystemPrompt" data-i18n-attr="placeholder:wizard.system_prompt_placeholder" placeholder="點擊潤色後會自動填入" style="margin-top:7px;"></textarea>
-        </div>
+        <p class="field-hint" data-i18n="wizard.assist_hint">每個輸入框右下角的 ✦ 可以讓 AI 幫你寫或者潤色，結果直接填回框內。</p>
       </section>
 
+      <!-- 2 · 知识库 -->
       <section class="wizard-panel" data-step="2">
-        <div class="field">
-          <label data-i18n="wizard.search_query_label">Web Search 關鍵詞（留空時根據前面角色內容生成）</label>
-          <input id="wizSearchQuery" data-i18n-attr="placeholder:wizard.search_query_placeholder" placeholder="例如：李白 生平 詩風 盛唐">
+        <div class="mode-row">
+          <span class="mode-label" data-i18n="wizard.knowledge_mode_normal">普通模式</span>
+          <button type="button" class="switch" id="knowledgeModeSwitch" role="switch" aria-checked="false" data-i18n-attr="aria-label:wizard.knowledge_mode_smart"><span class="switch-knob"></span></button>
+          <span class="mode-label" data-i18n="wizard.knowledge_mode_smart">智能模式</span>
         </div>
-        <div class="field">
-          <label data-i18n="wizard.knowledge_label">知識庫文本（最多 6000 字）</label>
-          <textarea id="wizKnowledge" maxlength="6000" data-i18n-attr="placeholder:wizard.knowledge_placeholder" placeholder="可直接粘貼，也可以上傳 txt/pdf/docx 後自動提取，或點擊 Web Search 生成"></textarea>
+        <p class="field-hint" id="knowledgeModeHint"></p>
+
+        <div id="knowledgeNormal">
+          <div class="field">
+            <label data-i18n="wizard.search_query_label">Web Search 關鍵詞（留空時根據前面角色內容生成）</label>
+            <input id="wizSearchQuery" data-i18n-attr="placeholder:wizard.search_query_placeholder" placeholder="例如：李白 生平 詩風 盛唐">
+          </div>
+          <button class="wiz-btn" id="btnKnowledgeUpload" data-i18n="wizard.upload_knowledge">上傳知識庫文件</button>
+          <button class="wiz-btn primary" id="btnKnowledgeSearch" data-i18n="wizard.web_search_gen">Web Search 生成知識庫</button>
         </div>
-        <button class="wiz-btn" id="btnKnowledgeUpload" data-i18n="wizard.upload_knowledge">上傳知識庫文件</button>
-        <button class="wiz-btn primary" id="btnKnowledgeSearch" data-i18n="wizard.web_search_gen">Web Search 生成知識庫</button>
-        <div class="status-line" id="knowledgeCount">0 / 6000</div>
+
+        <div id="knowledgeSmart" hidden>
+          <div class="field">
+            <label data-i18n="wizard.knowledge_request_label">想讓角色掌握哪些知識？</label>
+            <textarea id="wizKnowledgeRequest" class="short" data-i18n-attr="placeholder:wizard.knowledge_request_placeholder"></textarea>
+          </div>
+          <div class="field">
+            <label data-i18n="wizard.knowledge_files_label">參考文件</label>
+            <ul class="file-list" id="smartFileList"></ul>
+            <button type="button" class="wiz-btn" id="btnSmartAddFiles" data-i18n="wizard.knowledge_add_files">添加文件</button>
+          </div>
+          <div class="field">
+            <label data-i18n="wizard.knowledge_urls_label">參考網址</label>
+            <textarea id="wizKnowledgeUrls" class="short" placeholder="https://..."></textarea>
+          </div>
+          <button type="button" class="wiz-btn primary" id="btnKnowledgeAgent" data-i18n="wizard.knowledge_agent_start">開始整理知識庫</button>
+          <div class="agent-suggest" id="agentSuggest" hidden>
+            <p class="field-hint" data-i18n="wizard.knowledge_agent_suggest"></p>
+            <div id="agentSuggestList"></div>
+            <button type="button" class="wiz-btn primary" id="btnAgentContinue" data-i18n="wizard.knowledge_agent_continue"></button>
+          </div>
+          <ul class="agent-steps" id="agentSteps"></ul>
+        </div>
+
+        <div class="field" style="margin-top:16px;">
+          <div class="label-row">
+            <label data-i18n="wizard.knowledge_label">知識庫文本</label>
+            <button type="button" class="link-btn" id="btnKnowledgeDownload" data-i18n="wizard.knowledge_download">下載 .md</button>
+          </div>
+          <textarea id="wizKnowledge" class="tall" data-i18n-attr="placeholder:wizard.knowledge_placeholder"></textarea>
+        </div>
+        <div class="status-line" id="knowledgeCount"></div>
         <div class="status-line" id="knowledgeStatus"></div>
       </section>
 
+      <!-- 3 · 角色 Prompt -->
       <section class="wizard-panel" data-step="3">
-        <div class="field">
-          <label data-i18n="wizard.image_prompt_label">形象描述 / 圖像 Prompt</label>
-          <textarea id="wizImagePrompt" data-i18n-attr="placeholder:wizard.image_prompt_placeholder" placeholder="描述角色外觀、服裝、鏡頭、光線、背景。建議 3:4 半身像，背景乾淨。"></textarea>
-        </div>
-        <button class="wiz-btn" id="btnBuildImagePrompt" data-i18n="wizard.build_image_prompt">根據角色內容生成圖像 Prompt</button>
-        <button class="wiz-btn primary" id="btnGenerateImages" data-i18n="wizard.generate_images">生成 4 張候選圖</button>
-        <div class="status-line" id="imageStatus"></div>
-      </section>
-
-      <section class="wizard-panel" data-step="4">
-        <div class="image-choice-grid" id="imageChoices"></div>
-        <button class="wiz-btn primary" id="btnGenerateVideos" data-i18n="wizard.generate_videos">生成 idle/talk 視頻</button>
-        <div class="status-line" id="videoStatus"></div>
-      </section>
-
-      <section class="wizard-panel" data-step="5">
-        <div class="preview-video-grid" id="videoPreview"></div>
-        <div class="field" style="margin-top:14px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <label data-i18n="wizard.final_prompt_label" style="margin-bottom:0;">最終 System Prompt</label>
-            <div style="display:flex;gap:6px;flex-shrink:0;">
-              <button type="button" class="wiz-btn" id="btnPromptUndoStep5" data-i18n="wizard.undo" style="min-width:auto;padding:5px 10px;font-size:12px;" disabled>撤銷上一版</button>
-              <button type="button" class="wiz-btn" id="btnPromptRedoStep5" data-i18n="wizard.redo" style="min-width:auto;padding:5px 10px;font-size:12px;" disabled>恢復</button>
+        <p class="field-hint" data-i18n="wizard.prompt_step_hint">會綜合角色設定和知識庫生成；知識庫全文會在對話時另外附上。</p>
+        <button class="wiz-btn primary" id="btnBuildPrompt" data-i18n="wizard.build_prompt">生成角色 Prompt</button>
+        <div class="status-line" id="promptStatus"></div>
+        <div class="field" style="margin-top:10px;">
+          <div class="label-row">
+            <label data-i18n="wizard.system_prompt_label">角色 Prompt</label>
+            <div class="row-actions">
+              <button type="button" class="wiz-btn mini" id="btnPromptUndo" data-i18n="wizard.undo" disabled>撤銷上一版</button>
+              <button type="button" class="wiz-btn mini" id="btnPromptRedo" data-i18n="wizard.redo" disabled>恢復</button>
             </div>
           </div>
-          <textarea id="wizFinalPrompt" style="margin-top:7px;"></textarea>
+          <textarea id="wizSystemPrompt" class="tall" data-i18n-attr="placeholder:wizard.system_prompt_placeholder"></textarea>
         </div>
-        <div class="two-col" style="margin-top:14px;">
+      </section>
+
+      <!-- 4 · 形象 -->
+      <section class="wizard-panel" data-step="4">
+        <div class="seg" id="imageSourceSeg">
+          <button type="button" class="seg-btn on" data-value="generate" data-i18n="wizard.image_source_generate">平台生成</button>
+          <button type="button" class="seg-btn" data-value="upload" data-i18n="wizard.image_source_upload">上傳我的圖</button>
+        </div>
+
+        <div id="imageGenerate">
+          <div class="field">
+            <label data-i18n="wizard.image_prompt_label">形象描述 / 圖像 Prompt</label>
+            <textarea id="wizImagePrompt" data-i18n-attr="placeholder:wizard.image_prompt_placeholder"></textarea>
+          </div>
+          <div class="btn-row">
+            <button class="wiz-btn" id="btnBuildImagePrompt" data-i18n="wizard.build_image_prompt">根據角色內容生成圖像 Prompt</button>
+            <button class="wiz-btn" id="btnCopyImagePrompt" data-i18n="wizard.copy_prompt">複製 Prompt</button>
+            <button class="wiz-btn" id="btnExternalPrompt" data-i18n="wizard.external_prompt">生成英文版</button>
+            <button class="wiz-btn primary" id="btnGenerateImages" data-i18n="wizard.generate_images">生成 4 張候選圖</button>
+          </div>
+          <div class="field" id="externalPromptBox" hidden style="margin-top:14px;">
+            <div class="label-row">
+              <label data-i18n="wizard.external_prompt_label">外部平台用英文 Prompt</label>
+              <button type="button" class="link-btn" id="btnCopyExternalPrompt" data-i18n="wizard.copy_prompt">複製 Prompt</button>
+            </div>
+            <p class="field-hint" data-i18n="wizard.external_prompt_hint"></p>
+            <textarea id="wizExternalPrompt" class="short" readonly></textarea>
+          </div>
+        </div>
+
+        <div id="imageUpload" hidden>
+          <p class="field-hint" data-i18n="wizard.upload_image_hint"></p>
+          <label class="ack"><input type="checkbox" id="imageRightsAck"> <span data-i18n="wizard.rights_ack"></span></label>
+          <button type="button" class="wiz-btn primary" id="btnUploadImage" data-i18n="wizard.upload_image">選擇圖片上傳</button>
+        </div>
+
+        <div class="status-line" id="imageStatus"></div>
+        <div class="image-choice-grid" id="imageChoices"></div>
+
+        <div class="field feedback-box" id="imageFeedbackBox" hidden>
+          <label data-i18n="wizard.image_feedback_label">對這些圖片有什麼想改的？</label>
+          <textarea id="wizImageFeedback" class="short" data-i18n-attr="placeholder:wizard.image_feedback_placeholder"></textarea>
+          <div class="btn-row">
+            <button type="button" class="wiz-btn primary" id="btnImageFeedback" data-i18n="wizard.image_feedback_apply">按反饋重新生成</button>
+          </div>
+          <p class="field-hint" data-i18n="wizard.image_regen_note"></p>
+        </div>
+      </section>
+
+      <!-- 5 · 视频 -->
+      <section class="wizard-panel" data-step="5">
+        <div class="seg" id="videoSourceSeg">
+          <button type="button" class="seg-btn on" data-value="generate" data-i18n="wizard.video_source_generate">平台生成</button>
+          <button type="button" class="seg-btn" data-value="upload" data-i18n="wizard.video_source_upload">上傳我的視頻</button>
+        </div>
+
+        <div id="videoGenerate">
+          <p class="field-hint" data-i18n="wizard.video_generate_hint"></p>
+          <div class="field">
+            <label data-i18n="wizard.video_feedback_label">對視頻有什麼要求或想調整的？（可選）</label>
+            <textarea id="wizVideoFeedback" class="short" data-i18n-attr="placeholder:wizard.video_feedback_placeholder"></textarea>
+          </div>
+          <div class="btn-row">
+            <button class="wiz-btn primary" id="btnGenerateVideos" data-i18n="wizard.generate_videos">生成 idle/talk 視頻</button>
+            <button class="wiz-btn" id="btnRegenIdle" data-i18n="wizard.regen_video_idle" hidden>只重生成 idle</button>
+            <button class="wiz-btn" id="btnRegenTalk" data-i18n="wizard.regen_video_talk" hidden>只重生成 talk</button>
+          </div>
+          <p class="field-hint" id="videoRegenNote" data-i18n="wizard.video_regen_note" hidden></p>
+        </div>
+
+        <div id="videoUpload" hidden>
+          <p class="field-hint" data-i18n="wizard.upload_video_hint"></p>
+          <label class="ack"><input type="checkbox" id="videoRightsAck"> <span data-i18n="wizard.rights_ack"></span></label>
+          <div class="btn-row">
+            <button type="button" class="wiz-btn" id="btnUploadIdle" data-i18n="wizard.upload_idle">上傳 idle 視頻</button>
+            <button type="button" class="wiz-btn" id="btnUploadTalk" data-i18n="wizard.upload_talk">上傳 talk 視頻</button>
+          </div>
+        </div>
+
+        <div class="status-line" id="videoStatus"></div>
+        <div class="preview-video-grid" id="videoPreview"></div>
+      </section>
+
+      <!-- 6 · 语音并完成 -->
+      <section class="wizard-panel" data-step="6">
+        <div class="two-col">
           <div class="field">
             <label data-i18n="wizard.tts_lang_label">TTS 語言</label>
             <p class="field-hint" data-i18n="chat.settings.tts_lang_hint">這個只是給 TTS 的讀音提示（消除多音字歧義），不是選「用哪種語言回答」——回答語言由角色自己決定。</p>
@@ -407,8 +620,9 @@
       </section>
 
       <div class="wizard-actions">
-        <button class="wiz-btn" id="wizPrev">上一步</button>
-        <button class="wiz-btn primary" id="wizNext">下一步</button>
+        <button class="wiz-btn" id="wizPrev" data-i18n="wizard.prev">上一步</button>
+        <span class="busy-hint" id="busyHint" role="status" hidden data-i18n="wizard.busy_hint">處理中，請稍候…</span>
+        <button class="wiz-btn primary" id="wizNext" data-i18n="wizard.next">下一步</button>
       </div>
     </div>
   </div>
@@ -599,6 +813,13 @@ function buildCard(ch, index) {
     img.src = ch.icon;
   };
   media.appendChild(img);
+  if (ch.owned) {
+    const badge = document.createElement('span');
+    badge.className = 'card-badge';
+    badge.dataset.i18n = 'card.mine';
+    badge.textContent = I18N.t('card.mine');
+    media.appendChild(badge);
+  }
   card.appendChild(media);
 
   const foot = document.createElement('div');
@@ -713,12 +934,16 @@ I18N.onChange(() => {
 });
 
 // ── Creation Wizard ───────────────────────────────────
+// 步骤：0 连接（只有自带 Key 才显示）→ 1 角色设定 → 2 知识库 → 3 角色 Prompt
+//       → 4 形象 → 5 视频 → 6 语音并完成
 const wizardOverlay = document.getElementById('wizardOverlay');
 const wizardPanels = [...document.querySelectorAll('.wizard-panel')];
 const wizardSteps = document.getElementById('wizardSteps');
 let wizardStep = 0;
 let sessionMiniMaxKey = '';
 let keyValidated = false;
+// 知识库上限（token），以服务端 KNOWLEDGE_TOKEN_BUDGET 为准，智能模式返回时同步
+let knowledgeBudget = 20000;
 
 // 高級／管理員帳戶：後端已按帳戶備好 Key，前端無需手填也拿不到 Key 值
 function canCreateWithSession() {
@@ -727,52 +952,78 @@ function canCreateWithSession() {
 function usesServerKey() {
   return !!(SESSION && SESSION.features && SESSION.features.server_key);
 }
-let createState = {
+function isPremium() {
+  return !!(SESSION && (SESSION.role === 'premium' || SESSION.role === 'admin'));
+}
+
+const emptyCreateState = () => ({
   promptJobId: '',
   systemPrompt: '',
   images: [],
   selectedImageId: '',
   videos: null,
-};
+  // 平台生成视频时用的形象图 id；空 = 没有平台生成的视频（或用户上传过自己的）。
+  // 换了形象图之后据此判断视频是不是「旧图生成的」。
+  videoImageId: '',
+});
+let createState = emptyCreateState();
 
-// ── 角色 Prompt 文本撤销/恢复（Ctrl+Z 风格），只针对这一份文本 ──────
-// wizSystemPrompt（步骤1）和 wizFinalPrompt（步骤5）是同一份内容的两个
-// 显示位置，共用这一条历史栈。_promptHistory 最后一项永远是"当前值"。
-let _promptHistory = [];
-let _promptFuture = [];
-
-function pushPromptHistory(val) {
-  if (!val || _promptHistory[_promptHistory.length - 1] === val) return;
-  _promptHistory.push(val);
-  _promptFuture = [];
-  updatePromptUndoButtons();
+// ── 撤销/恢复历史栈：最后一项永远是「当前值」 ─────────────
+function makeHistory(apply, onChange) {
+  let past = [];
+  let future = [];
+  const notify = () => onChange && onChange();
+  return {
+    push(val) {
+      if (past[past.length - 1] === val) return;
+      past.push(val);
+      future = [];
+      notify();
+    },
+    undo() {
+      if (past.length < 2) return;
+      future.push(past.pop());
+      apply(past[past.length - 1]);
+      notify();
+    },
+    redo() {
+      if (!future.length) return;
+      const val = future.pop();
+      past.push(val);
+      apply(val);
+      notify();
+    },
+    reset() { past = []; future = []; notify(); },
+    get canUndo() { return past.length > 1; },
+    get canRedo() { return future.length > 0; },
+  };
 }
 
-function applyPromptValue(val) {
+// 角色 Prompt：生成、AI 辅助、手动编辑都记进同一条历史
+const promptHistory = makeHistory(val => {
   createState.systemPrompt = val;
   $('wizSystemPrompt').value = val;
-  $('wizFinalPrompt').value = val;
-  updatePromptUndoButtons();
+}, () => {
+  $('btnPromptUndo').disabled = !promptHistory.canUndo;
+  $('btnPromptRedo').disabled = !promptHistory.canRedo;
+});
+
+function currentPrompt() {
+  return $('wizSystemPrompt').value.trim() || createState.systemPrompt || '';
 }
 
-function undoPrompt() {
-  if (_promptHistory.length < 2) return;
-  _promptFuture.push(_promptHistory.pop());
-  applyPromptValue(_promptHistory[_promptHistory.length - 1]);
+function setPromptValue(val) {
+  createState.systemPrompt = val;
+  $('wizSystemPrompt').value = val;
+  if (val) promptHistory.push(val);
 }
 
-function redoPrompt() {
-  if (!_promptFuture.length) return;
-  const val = _promptFuture.pop();
-  _promptHistory.push(val);
-  applyPromptValue(val);
-}
-
-function updatePromptUndoButtons() {
-  const canUndo = _promptHistory.length > 1;
-  const canRedo = _promptFuture.length > 0;
-  ['btnPromptUndoStep1', 'btnPromptUndoStep5'].forEach(id => { const b = $(id); if (b) b.disabled = !canUndo; });
-  ['btnPromptRedoStep1', 'btnPromptRedoStep5'].forEach(id => { const b = $(id); if (b) b.disabled = !canRedo; });
+// 手动编辑完，一离开输入框就记一个历史点（不是每个按键都记，避免历史栈太乱）
+function recordPromptEdit() {
+  const val = $('wizSystemPrompt').value.trim();
+  if (!val) return;
+  createState.systemPrompt = val;
+  promptHistory.push(val);
 }
 
 for (let i = 0; i < wizardPanels.length; i++) {
@@ -790,27 +1041,48 @@ function setStatus(id, text, isError = false) {
   el.classList.toggle('error', !!isError);
 }
 
+// 正在跑的耗时操作（生成 / 上传 / AI 辅助）。非空时整个向导锁住：不能切步骤、
+// 不能关闭、也不能同时启动第二个操作，直到这一步结束——否则用户跳走后结果会
+// 悄悄写进看不见的面板，或者重复扣额度。
+const wizardBusy = new Set();
+function updateWizardBusy() {
+  const busy = wizardBusy.size > 0;
+  document.querySelector('.wizard').classList.toggle('is-busy', busy);
+  $('busyHint').hidden = !busy;
+}
+// 捕获阶段拦截：连键盘触发的点击（Enter/空格）也一起挡住，并且不会走到各按钮自己的 onclick
+wizardOverlay.addEventListener('click', e => {
+  if (wizardBusy.size && e.target.closest('button, .image-choice, .ack, .seg-btn')) {
+    e.stopPropagation();
+    e.preventDefault();
+  }
+}, true);
+window.addEventListener('beforeunload', e => {
+  if (wizardBusy.size) { e.preventDefault(); e.returnValue = ''; }
+});
+
 function setBusy(btn, busy, text) {
   if (!btn) return;
   if (busy) {
     btn.dataset.oldText = btn.textContent;
     btn.textContent = text || I18N.t('wizard.testing_own');
     btn.disabled = true;
+    wizardBusy.add(btn);
   } else {
     btn.textContent = btn.dataset.oldText || btn.textContent;
     btn.disabled = false;
+    wizardBusy.delete(btn);
   }
+  updateWizardBusy();
 }
 
-function clampKnowledgeInput() {
-  const el = $('wizKnowledge');
-  if (!el) return;
-  if (el.value.length > 6000) el.value = el.value.slice(0, 6000);
-  $('knowledgeCount').textContent = `${el.value.length} / 6000`;
+function errMsg(data, fallback) {
+  return typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || fallback);
 }
 
-function headersJson() {
-  const h = { 'Content-Type': 'application/json' };
+// 不带 Content-Type，给 FormData 上传用
+function authHeaders() {
+  const h = {};
   // 不帶此 header 時後端按帳戶回退到服務端 Key；Key 值不會出現在前端
   if (sessionMiniMaxKey) h['X-MiniMax-API-Key'] = sessionMiniMaxKey;
   if (userCode) h['X-User-Code'] = userCode;
@@ -818,10 +1090,42 @@ function headersJson() {
   return h;
 }
 
+function headersJson() {
+  return { 'Content-Type': 'application/json', ...authHeaders() };
+}
+
+async function postJson(url, body) {
+  const res = await fetch(url, { method: 'POST', headers: headersJson(), body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  return { res, data };
+}
+
+// ── 步骤导航 ─────────────────────────────────────────────
+// 平台备好 Key 的高级用户直接从「角色设定」开始，连接检查在后台跑
+function firstStep() {
+  return usesServerKey() ? 1 : 0;
+}
+
+function showWizardStep(step) {
+  const first = firstStep();
+  wizardStep = Math.max(first, Math.min(step, wizardPanels.length - 1));
+  wizardPanels.forEach((panel, idx) => panel.classList.toggle('active', idx === wizardStep));
+  [...wizardSteps.children].forEach((dot, idx) => {
+    dot.hidden = idx < first;
+    dot.classList.toggle('on', idx <= wizardStep);
+  });
+  wizardSteps.style.setProperty('--steps', wizardPanels.length - first);
+  if (wizardStep === 5) refreshVideoUi();
+  $('wizPrev').style.visibility = wizardStep === first ? 'hidden' : 'visible';
+  $('wizNext').style.visibility = wizardStep === wizardPanels.length - 1 ? 'hidden' : 'visible';
+}
+
 function openWizard() {
   applyKeyMode();
+  setKnowledgeMode(knowledgeSmart);
   wizardOverlay.classList.add('open');
-  showWizardStep(0);
+  showWizardStep(firstStep());
+  if (usesServerKey()) backgroundKeyCheck();
 }
 
 // 依帳戶決定第 0 步的形態：平台備好 Key 時只留連結穩定性測試
@@ -837,35 +1141,41 @@ function applyKeyMode() {
     sessionMiniMaxKey = '';
     const input = $('wizApiKey');
     if (input) input.value = '';
+    if (!$('btnRetryKey').hidden) return;  // 保留上次后台检查失败的提示
     setStatus('wizardSubtitle', I18N.t('wizard.subtitle_platform'));
   }
 }
+
+// 平台 Key 的连接检查只在后台跑一次，失败才提示，不拦用户
+let _bgKeyCheck = null;
+function backgroundKeyCheck() {
+  if (_bgKeyCheck || keyValidated) return _bgKeyCheck;
+  $('btnRetryKey').hidden = true;
+  setStatus('wizardSubtitle', I18N.t('wizard.subtitle_platform'));
+  _bgKeyCheck = (async () => {
+    try {
+      const res = await fetch('/api/create/test-key', { method: 'POST', headers: headersJson() });
+      if (!res.ok) throw new Error(String(res.status));
+      keyValidated = true;
+    } catch (_) {
+      setStatus('wizardSubtitle', I18N.t('wizard.key_bg_failed'), true);
+      $('btnRetryKey').hidden = false;
+    } finally {
+      _bgKeyCheck = null;
+    }
+  })();
+  return _bgKeyCheck;
+}
+$('btnRetryKey').onclick = () => backgroundKeyCheck();
 
 function closeWizard() {
   wizardOverlay.classList.remove('open');
 }
 
-function showWizardStep(step) {
-  wizardStep = Math.max(0, Math.min(step, wizardPanels.length - 1));
-  wizardPanels.forEach((panel, idx) => panel.classList.toggle('active', idx === wizardStep));
-  [...wizardSteps.children].forEach((dot, idx) => dot.classList.toggle('on', idx <= wizardStep));
-  $('wizPrev').style.visibility = wizardStep === 0 ? 'hidden' : 'visible';
-  $('wizNext').style.visibility = wizardStep === wizardPanels.length - 1 ? 'hidden' : 'visible';
-}
-
 function requireKey() {
   sessionMiniMaxKey = $('wizApiKey').value.trim();
-  if (!sessionMiniMaxKey && usesServerKey()) {
-    // 服務端已備好 Key，只要求先做一次連結穩定性測試
-    if (!keyValidated) {
-      setStatus('keyStatus', I18N.t('wizard.next_blocked_test'), true);
-      setStatus('wizardSubtitle', I18N.t('wizard.subtitle_not_tested'), true);
-      showWizardStep(0);
-      return false;
-    }
-    setStatus('wizardSubtitle', I18N.t('wizard.subtitle_platform'));
-    return true;
-  }
+  // 平台 Key：连接检查在后台跑，不拦用户
+  if (!sessionMiniMaxKey && usesServerKey()) return true;
   if (!sessionMiniMaxKey) {
     setStatus('wizardSubtitle', I18N.t('wizard.subtitle_fill_key'), true);
     showWizardStep(0);
@@ -888,7 +1198,7 @@ function baseCharacterPayload() {
     role: $('wizRole').value.trim(),
     background: $('wizBackground').value.trim(),
     speaking_style: $('wizSpeaking').value.trim(),
-    knowledge_text: $('wizKnowledge').value.trim().slice(0, 6000),
+    knowledge_text: $('wizKnowledge').value.trim(),
     language: $('wizReplyLanguage').value || 'Chinese,Yue',
   };
 }
@@ -900,45 +1210,25 @@ async function ensurePrompt(force = false) {
   if (!payload.name || !payload.background || !payload.speaking_style) {
     throw new Error(I18N.t('wizard.err.fill_required'));
   }
-  const res = await fetch('/api/create/prompt', {
-    method: 'POST',
-    headers: headersJson(),
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || I18N.t('wizard.err.prompt_failed')));
+  payload.job_id = createState.promptJobId || '';
+  const { res, data } = await postJson('/api/create/prompt', payload);
+  if (!res.ok) throw new Error(errMsg(data, I18N.t('wizard.err.prompt_failed')));
   createState.promptJobId = data.job_id;
-  createState.systemPrompt = data.system_prompt;
-  $('wizSystemPrompt').value = data.system_prompt;
-  $('wizFinalPrompt').value = data.system_prompt;
-  pushPromptHistory(data.system_prompt);
+  recordPromptEdit();
+  setPromptValue(data.system_prompt);
   return data.system_prompt;
 }
 
 $('wizardClose').onclick = closeWizard;
-wizardOverlay.addEventListener('click', e => { if (e.target === wizardOverlay) closeWizard(); });
-// 步骤 1（wizSystemPrompt）和步骤 5（wizFinalPrompt）是同一份角色 Prompt
-// 的两个显示位置。之前只有"前进"方向会同步，如果用户在步骤 5 改完
-// 直接点"上一步"，步骤 1 会看到旧版本，还要用户自己复制过去。现在不论
-// 哪个方向离开哪一步，都以「刚刚离开的那个 textarea」的内容为准，同步到
-// 另一边，两个方向都不会遗漏。
-function syncPromptOnLeaveStep(leavingStep) {
-  if (leavingStep === 1) {
-    const val = $('wizSystemPrompt').value.trim();
-    if (val) { pushPromptHistory(val); createState.systemPrompt = val; $('wizFinalPrompt').value = val; }
-  } else if (leavingStep === 5) {
-    const val = $('wizFinalPrompt').value.trim();
-    if (val) { pushPromptHistory(val); createState.systemPrompt = val; $('wizSystemPrompt').value = val; }
-  }
-}
+wizardOverlay.addEventListener('click', e => { if (e.target === wizardOverlay && !wizardBusy.size) closeWizard(); });
 
 $('wizPrev').onclick = () => {
-  syncPromptOnLeaveStep(wizardStep);
+  recordPromptEdit();
   showWizardStep(wizardStep - 1);
 };
-$('wizNext').onclick = async () => {
+$('wizNext').onclick = () => {
   if (wizardStep === 0 && !requireKey()) return;
-  syncPromptOnLeaveStep(wizardStep);
+  recordPromptEdit();
   showWizardStep(wizardStep + 1);
 };
 
@@ -961,7 +1251,7 @@ $('btnTestKey').onclick = async () => {
   try {
     const res = await fetch('/api/create/test-key', { method: 'POST', headers: headersJson() });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || I18N.t('wizard.err.connection_failed')));
+    if (!res.ok) throw new Error(errMsg(data, I18N.t('wizard.err.connection_failed')));
     keyValidated = true;
     setStatus('keyStatus', I18N.t('wizard.test_ok', { ms: data.latency_ms }));
     setStatus('wizardSubtitle', data.server_key ? I18N.t('wizard.subtitle_platform') : I18N.t('wizard.subtitle_key_tested'));
@@ -974,6 +1264,141 @@ $('btnTestKey').onclick = async () => {
   }
 };
 
+// ── 输入框右下角的 AI 辅助 ────────────────────────────────
+// 结果直接写回该输入框，不再显示在下面让用户自己复制粘贴
+const SPARK_SVG =
+  '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true">' +
+  '<path d="M11 2.5l1.9 5.6 5.6 1.9-5.6 1.9L11 17.5l-1.9-5.6L3.5 10l5.6-1.9z"/>' +
+  '<path d="M18.5 14.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></svg>';
+const ASSIST_FIELDS = {
+  wizName: 'name',
+  wizNameEn: 'name_en',
+  wizRole: 'role',
+  wizBackground: 'background',
+  wizSpeaking: 'speaking_style',
+  wizKnowledgeRequest: 'knowledge_request',
+  wizImagePrompt: 'image_prompt',
+  wizSystemPrompt: 'system_prompt',
+};
+const SHORT_ASSIST_FIELDS = new Set(['name', 'name_en', 'role']);
+let _openAssistMenu = null;
+
+function closeAssistMenu() {
+  if (_openAssistMenu) _openAssistMenu.hidden = true;
+  _openAssistMenu = null;
+}
+document.addEventListener('click', closeAssistMenu);
+
+function assistContext() {
+  const ctx = {};
+  for (const [id, field] of Object.entries(ASSIST_FIELDS)) ctx[field] = $(id).value.trim();
+  return ctx;
+}
+
+function attachAssist(el) {
+  const field = ASSIST_FIELDS[el.id];
+  const isPrompt = el.id === 'wizSystemPrompt';
+  const wrap = document.createElement('div');
+  wrap.className = 'assist-wrap';
+  el.parentNode.insertBefore(wrap, el);
+  wrap.appendChild(el);
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'assist-btn';
+  btn.innerHTML = SPARK_SVG;
+  btn.setAttribute('data-i18n-attr', 'title:wizard.assist.title,aria-label:wizard.assist.title');
+  btn.title = I18N.t('wizard.assist.title');
+  btn.setAttribute('aria-label', btn.title);
+  wrap.appendChild(btn);
+
+  const actions = SHORT_ASSIST_FIELDS.has(field) ? ['write', 'polish'] : ['write', 'polish', 'expand', 'shorten'];
+  const item = (action, key) =>
+    `<button type="button" class="item" data-action="${action}" data-i18n="${key}">${escapeHtml(I18N.t(key))}</button>`;
+  const menu = document.createElement('div');
+  menu.className = 'assist-menu';
+  menu.hidden = true;
+  menu.innerHTML =
+    actions.map(a => item(a, `wizard.assist.${a}`)).join('') +
+    `<div class="assist-custom"><input type="text" data-i18n-attr="placeholder:wizard.assist.custom_placeholder" placeholder="${escapeHtml(I18N.t('wizard.assist.custom_placeholder'))}">` +
+    `<button type="button" class="wiz-btn" data-action="custom" data-i18n="wizard.assist.run">${escapeHtml(I18N.t('wizard.assist.run'))}</button></div>` +
+    item('undo', 'wizard.assist.undo') +
+    '<div class="assist-error" hidden></div>';
+  wrap.appendChild(menu);
+
+  const customInput = menu.querySelector('.assist-custom input');
+  const errorEl = menu.querySelector('.assist-error');
+  const undoBtn = menu.querySelector('[data-action="undo"]');
+  // 普通字段：每次 AI 改写前的值；角色 Prompt 走 promptHistory
+  const undoStack = [];
+  const refreshUndo = () => { undoBtn.disabled = isPrompt ? !promptHistory.canUndo : !undoStack.length; };
+
+  btn.onclick = e => {
+    e.stopPropagation();
+    const willOpen = menu.hidden;
+    closeAssistMenu();
+    if (!willOpen) return;
+    errorEl.hidden = true;
+    refreshUndo();
+    menu.hidden = false;
+    _openAssistMenu = menu;
+  };
+  menu.addEventListener('click', e => e.stopPropagation());
+  customInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); run('custom'); }
+  });
+  menu.querySelectorAll('[data-action]').forEach(b => {
+    b.onclick = () => {
+      if (b.dataset.action !== 'undo') { run(b.dataset.action); return; }
+      if (isPrompt) promptHistory.undo();
+      else if (undoStack.length) { el.value = undoStack.pop(); el.dispatchEvent(new Event('input')); }
+      refreshUndo();
+    };
+  });
+
+  async function run(action) {
+    if (wizardBusy.size || !requireKey()) return;
+    closeAssistMenu();
+    btn.classList.add('busy');
+    btn.disabled = true;
+    wizardBusy.add(btn);
+    updateWizardBusy();
+    try {
+      const { res, data } = await postJson('/api/create/field-assist', {
+        field,
+        action,
+        value: el.value,
+        instruction: action === 'custom' ? customInput.value.trim() : '',
+        context: assistContext(),
+        language: $('wizReplyLanguage').value || '',
+      });
+      if (!res.ok) throw new Error(errMsg(data, I18N.t('wizard.assist.failed')));
+      if (isPrompt) {
+        recordPromptEdit();
+        setPromptValue(data.text);
+      } else {
+        undoStack.push(el.value);
+        el.value = data.text;
+        el.dispatchEvent(new Event('input'));
+      }
+      if (action === 'custom') customInput.value = '';
+    } catch (e) {
+      errorEl.textContent = e.message;
+      errorEl.hidden = false;
+      refreshUndo();
+      menu.hidden = false;
+      _openAssistMenu = menu;
+    } finally {
+      btn.classList.remove('busy');
+      btn.disabled = false;
+      wizardBusy.delete(btn);
+      updateWizardBusy();
+    }
+  }
+}
+Object.keys(ASSIST_FIELDS).forEach(id => attachAssist($(id)));
+
+// ── 角色 Prompt ──────────────────────────────────────────
 $('btnBuildPrompt').onclick = async () => {
   const btn = $('btnBuildPrompt');
   setBusy(btn, true, I18N.t('wizard.polishing_ellipsis'));
@@ -987,6 +1412,46 @@ $('btnBuildPrompt').onclick = async () => {
     setBusy(btn, false);
   }
 };
+$('btnPromptUndo').onclick = () => promptHistory.undo();
+$('btnPromptRedo').onclick = () => promptHistory.redo();
+$('wizSystemPrompt').addEventListener('blur', recordPromptEdit);
+
+// ── 知识库：普通模式 / 智能模式 ─────────────────────────────
+// 与 knowledge_agent.estimate_tokens 同一套估算：中日韩字符每个算 1，其余每 4 个字符算 1
+const CJK_RE = /[぀-ヿ㐀-䶿一-鿿가-힯豈-﫿＀-￯]/g;
+function estimateTokens(text) {
+  if (!text) return 0;
+  const cjk = (text.match(CJK_RE) || []).length;
+  return cjk + Math.floor((text.length - cjk + 3) / 4);
+}
+
+function updateKnowledgeCount() {
+  const tokens = estimateTokens($('wizKnowledge').value);
+  const over = tokens > knowledgeBudget;
+  setStatus('knowledgeCount',
+    I18N.t('wizard.knowledge_tokens', { tokens, budget: knowledgeBudget }) +
+    (over ? ' · ' + I18N.t('wizard.knowledge_over_budget', { budget: knowledgeBudget }) : ''),
+    over);
+}
+$('wizKnowledge').addEventListener('input', updateKnowledgeCount);
+updateKnowledgeCount();
+
+let knowledgeSmart = false;
+function setKnowledgeMode(smart) {
+  // 智能模式只开放给高级用户
+  knowledgeSmart = smart && isPremium();
+  const sw = $('knowledgeModeSwitch');
+  sw.disabled = !isPremium();
+  sw.setAttribute('aria-checked', String(knowledgeSmart));
+  sw.closest('.mode-row').classList.toggle('smart', knowledgeSmart);
+  $('knowledgeNormal').hidden = knowledgeSmart;
+  $('knowledgeSmart').hidden = !knowledgeSmart;
+  $('knowledgeModeHint').textContent =
+    I18N.t(knowledgeSmart ? 'wizard.knowledge_mode_hint_smart' : 'wizard.knowledge_mode_hint_normal') +
+    (isPremium() ? '' : ' ' + I18N.t('wizard.knowledge_smart_premium_only'));
+}
+$('knowledgeModeSwitch').onclick = () => setKnowledgeMode(!knowledgeSmart);
+setKnowledgeMode(false);
 
 $('btnKnowledgeUpload').onclick = () => knowledgeInput.click();
 knowledgeInput.onchange = async () => {
@@ -996,24 +1461,18 @@ knowledgeInput.onchange = async () => {
   form.append('file', file);
   setStatus('knowledgeStatus', I18N.t('wizard.extracting'));
   try {
-    const h = {};
-    if (userCode) h['X-User-Code'] = userCode;
-    if (SESSION_TOKEN) h['X-Session-Token'] = SESSION_TOKEN;
-    const res = await fetch('/api/create/knowledge', { method: 'POST', body: form, headers: h });
-    const data = await res.json();
-    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || I18N.t('wizard.err.knowledge_extract_failed')));
+    const res = await fetch('/api/create/knowledge', { method: 'POST', body: form, headers: authHeaders() });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(errMsg(data, I18N.t('wizard.err.knowledge_extract_failed')));
     $('wizKnowledge').value = data.text;
-    clampKnowledgeInput();
-    setStatus('knowledgeStatus', I18N.t('wizard.extracted', { chars: data.chars, truncated: data.truncated ? I18N.t('wizard.truncated_suffix') : '' }));
+    updateKnowledgeCount();
+    setStatus('knowledgeStatus', I18N.t('wizard.extracted', { tokens: data.tokens, truncated: data.truncated ? I18N.t('wizard.truncated_suffix') : '' }));
   } catch (e) {
     setStatus('knowledgeStatus', e.message, true);
   } finally {
     knowledgeInput.value = '';
   }
 };
-
-$('wizKnowledge').addEventListener('input', clampKnowledgeInput);
-clampKnowledgeInput();
 
 $('btnKnowledgeSearch').onclick = async () => {
   const btn = $('btnKnowledgeSearch');
@@ -1023,15 +1482,10 @@ $('btnKnowledgeSearch').onclick = async () => {
   try {
     const payload = baseCharacterPayload();
     payload.query = $('wizSearchQuery').value.trim();
-    const res = await fetch('/api/create/knowledge/search', {
-      method: 'POST',
-      headers: headersJson(),
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || I18N.t('wizard.err.websearch_failed')));
+    const { res, data } = await postJson('/api/create/knowledge/search', payload);
+    if (!res.ok) throw new Error(errMsg(data, I18N.t('wizard.err.websearch_failed')));
     $('wizKnowledge').value = data.text || '';
-    clampKnowledgeInput();
+    updateKnowledgeCount();
     setStatus('knowledgeStatus', I18N.t('wizard.knowledge_ready', { query: data.query, count: data.sources?.length || 0 }));
   } catch (e) {
     setStatus('knowledgeStatus', e.message, true);
@@ -1040,22 +1494,208 @@ $('btnKnowledgeSearch').onclick = async () => {
   }
 };
 
+$('btnKnowledgeDownload').onclick = () => {
+  const text = $('wizKnowledge').value;
+  if (!text.trim()) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' }));
+  a.download = `${($('wizName').value.trim() || 'knowledge').replace(/[\\/:*?"<>|]+/g, '_')}-knowledge.md`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+
+// 智能模式的参考文件
+const SMART_MAX_FILES = 10;
+const SMART_MAX_FILE_BYTES = 10 * 1024 * 1024;
+let smartFiles = [];
+function renderSmartFiles() {
+  const list = $('smartFileList');
+  list.innerHTML = '';
+  smartFiles.forEach((f, i) => {
+    const li = document.createElement('li');
+    li.innerHTML =
+      `<span>${escapeHtml(f.name)}</span>` +
+      `<button type="button" class="link-btn" data-i18n="wizard.knowledge_remove_file">${escapeHtml(I18N.t('wizard.knowledge_remove_file'))}</button>`;
+    li.querySelector('button').onclick = () => { smartFiles.splice(i, 1); renderSmartFiles(); };
+    list.appendChild(li);
+  });
+}
+$('btnSmartAddFiles').onclick = () => $('smartFileInput').click();
+$('smartFileInput').onchange = () => {
+  for (const f of $('smartFileInput').files) {
+    if (smartFiles.length >= SMART_MAX_FILES) break;
+    if (f.size > SMART_MAX_FILE_BYTES) {
+      setStatus('knowledgeStatus', I18N.t('wizard.err.file_too_large', { name: f.name, mb: 10 }), true);
+      continue;
+    }
+    smartFiles.push(f);
+  }
+  $('smartFileInput').value = '';
+  renderSmartFiles();
+};
+
+// 智能知识库 Agent：后台跑，前端每 2 秒拉一次进度
+const AGENT_ICONS = { running: '◌', done: '✓', failed: '✕' };
+let _agentPoll = null;
+let _agentSteps = [];
+let _agentSuggestions = [];
+
+function renderAgentSteps(steps) {
+  _agentSteps = steps;
+  $('agentSteps').innerHTML = steps.map(s => {
+    const text = I18N.t('wizard.agent.' + s.code, {
+      name: s.name || '', url: s.url || '', query: s.query || '', i: s.i ?? '', n: s.n ?? '',
+    });
+    const err = s.state === 'failed' && s.error ? ` — ${s.error}` : '';
+    return `<li class="${s.state}"><span class="ico">${AGENT_ICONS[s.state] || ''}</span><span>${escapeHtml(text + err)}</span></li>`;
+  }).join('');
+}
+
+function renderAgentSuggestions(list) {
+  _agentSuggestions = list;
+  $('agentSuggestList').innerHTML = list.map((s, i) =>
+    `<label><input type="checkbox" value="${i}" checked> <span>${escapeHtml(s)}</span></label>`).join('');
+  $('agentSuggest').hidden = !list.length;
+}
+
+$('btnAgentContinue').onclick = () => {
+  const chosen = [...$('agentSuggestList').querySelectorAll('input:checked')].map(c => _agentSuggestions[+c.value]);
+  if (chosen.length) startKnowledgeAgent(chosen);
+};
+
+async function startKnowledgeAgent(directions = []) {
+  if (!requireKey()) return;
+  const urls = $('wizKnowledgeUrls').value.split(/\s+/).map(s => s.trim()).filter(Boolean);
+  if (urls.length > 10) {
+    setStatus('knowledgeStatus', I18N.t('wizard.err.too_many_urls', { max: 10 }), true);
+    return;
+  }
+  const form = new FormData();
+  form.append('request', $('wizKnowledgeRequest').value.trim());
+  form.append('urls', JSON.stringify(urls));
+  form.append('directions', JSON.stringify(directions));
+  form.append('name', $('wizName').value.trim());
+  form.append('role', $('wizRole').value.trim());
+  form.append('background', $('wizBackground').value.trim());
+  form.append('language', $('wizReplyLanguage').value || '');
+  smartFiles.forEach(f => form.append('files', f));
+
+  const btn = $('btnKnowledgeAgent');
+  setBusy(btn, true, I18N.t('wizard.knowledge_agent_running'));
+  $('agentSuggest').hidden = true;
+  renderAgentSteps([]);
+  setStatus('knowledgeStatus', '');
+  try {
+    const res = await fetch('/api/create/knowledge/agent', { method: 'POST', headers: authHeaders(), body: form });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(errMsg(data, I18N.t('wizard.knowledge_agent_failed', { error: res.status })));
+    knowledgeBudget = data.budget || knowledgeBudget;
+    pollKnowledgeAgent(data.task_id);
+  } catch (e) {
+    setBusy(btn, false);
+    setStatus('knowledgeStatus', e.message, true);
+  }
+}
+$('btnKnowledgeAgent').onclick = () => startKnowledgeAgent();
+
+function pollKnowledgeAgent(taskId) {
+  clearTimeout(_agentPoll);
+  const finish = () => setBusy($('btnKnowledgeAgent'), false);
+  const tick = async () => {
+    let status;
+    try {
+      const res = await fetch(`/api/create/knowledge/agent/${taskId}`, { headers: authHeaders() });
+      status = await res.json().catch(() => ({}));
+      if (res.status === 404) {
+        finish();
+        setStatus('knowledgeStatus', I18N.t('wizard.knowledge_agent_failed', { error: errMsg(status, '404') }), true);
+        return;
+      }
+      if (!res.ok) throw new Error(String(res.status));
+    } catch (_) {
+      _agentPoll = setTimeout(tick, 4000);  // 网络抖动：稍后再拉
+      return;
+    }
+    knowledgeBudget = status.budget || knowledgeBudget;
+    renderAgentSteps(status.steps || []);
+    if (status.state === 'running') {
+      _agentPoll = setTimeout(tick, 2000);
+      return;
+    }
+    finish();
+    if (status.state === 'needs_input') {
+      renderAgentSuggestions(status.suggestions || []);
+    } else if (status.state === 'done') {
+      $('wizKnowledge').value = status.text || '';
+      updateKnowledgeCount();
+      setStatus('knowledgeStatus', I18N.t('wizard.knowledge_agent_done', {
+        tokens: status.tokens,
+        count: (status.sources || []).length,
+        truncated: status.truncated ? I18N.t('wizard.knowledge_agent_truncated') : '',
+      }));
+    } else {
+      setStatus('knowledgeStatus', I18N.t('wizard.knowledge_agent_failed', { error: status.error || '' }), true);
+    }
+  };
+  tick();
+}
+
+// ── 形象：平台生成 | 上传我的图 ──────────────────────────
+function bindSeg(segId, onChange) {
+  const seg = $(segId);
+  seg.querySelectorAll('.seg-btn').forEach(b => {
+    b.onclick = () => {
+      seg.querySelectorAll('.seg-btn').forEach(x => x.classList.toggle('on', x === b));
+      onChange(b.dataset.value);
+    };
+  });
+}
+bindSeg('imageSourceSeg', v => {
+  $('imageGenerate').hidden = v !== 'generate';
+  $('imageUpload').hidden = v !== 'upload';
+});
+bindSeg('videoSourceSeg', v => {
+  $('videoGenerate').hidden = v !== 'generate';
+  $('videoUpload').hidden = v !== 'upload';
+});
+
+async function copyText(text, statusId) {
+  if (!text.trim()) return;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (_) {
+    // 非 https（例如用局域网 IP 打开）时没有 clipboard API，退回旧办法
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    if (!ok) { setStatus(statusId, I18N.t('wizard.copy_failed'), true); return; }
+  }
+  setStatus(statusId, I18N.t('wizard.copied'));
+}
+$('btnCopyImagePrompt').onclick = () => copyText($('wizImagePrompt').value, 'imageStatus');
+$('btnCopyExternalPrompt').onclick = () => copyText($('wizExternalPrompt').value, 'imageStatus');
+
+async function requestImagePrompt(target) {
+  const payload = baseCharacterPayload();
+  payload.system_prompt = currentPrompt();
+  payload.target = target;
+  const { res, data } = await postJson('/api/create/image-prompt', payload);
+  if (!res.ok) throw new Error(errMsg(data, I18N.t('wizard.err.image_prompt_failed')));
+  return data.prompt || '';
+}
+
 $('btnBuildImagePrompt').onclick = async () => {
   const btn = $('btnBuildImagePrompt');
   if (!requireKey()) return;
   setBusy(btn, true, I18N.t('wizard.generating_ellipsis'));
   setStatus('imageStatus', I18N.t('wizard.building_image_prompt'));
   try {
-    const payload = baseCharacterPayload();
-    payload.system_prompt = $('wizSystemPrompt').value.trim() || createState.systemPrompt || '';
-    const res = await fetch('/api/create/image-prompt', {
-      method: 'POST',
-      headers: headersJson(),
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || I18N.t('wizard.err.image_prompt_failed')));
-    $('wizImagePrompt').value = data.prompt || '';
+    $('wizImagePrompt').value = await requestImagePrompt('minimax');
     setStatus('imageStatus', I18N.t('wizard.image_prompt_ready'));
   } catch (e) {
     setStatus('imageStatus', e.message, true);
@@ -1064,37 +1704,138 @@ $('btnBuildImagePrompt').onclick = async () => {
   }
 };
 
+$('btnExternalPrompt').onclick = async () => {
+  const btn = $('btnExternalPrompt');
+  if (!requireKey()) return;
+  setBusy(btn, true, I18N.t('wizard.generating_ellipsis'));
+  try {
+    $('wizExternalPrompt').value = await requestImagePrompt('external_en');
+    $('externalPromptBox').hidden = false;
+    setStatus('imageStatus', '');
+  } catch (e) {
+    setStatus('imageStatus', e.message, true);
+  } finally {
+    setBusy(btn, false);
+  }
+};
+
+// 一次图片生成（不含忙碌状态管理，由调用方包裹）
+async function doGenerateImages() {
+  setStatus('imageStatus', I18N.t('wizard.generating_images'));
+  if ($('wizSystemPrompt').value.trim()) recordPromptEdit();
+  else await ensurePrompt(true);
+  const imagePrompt = $('wizImagePrompt').value.trim();
+  if (!imagePrompt) throw new Error(I18N.t('wizard.err.fill_image_desc'));
+  const { res, data } = await postJson('/api/create/images', {
+    prompt: imagePrompt,
+    reference_description: `${$('wizName').value.trim()} ${$('wizRole').value.trim()}`.trim(),
+    count: 4,
+    job_id: createState.promptJobId || '',
+  });
+  if (!res.ok) throw new Error(errMsg(data, I18N.t('wizard.err.image_gen_failed')));
+  createState.promptJobId = data.job_id;
+  createState.images = data.images || [];
+  _imagesVersion = Date.now();
+  // 每批生成图的 id 都是新的，上一批选中的图不在了就重新选第一张
+  if (!createState.images.some(img => img.id === createState.selectedImageId)) createState.selectedImageId = '';
+  renderImageChoices();
+  setStatus('imageStatus', I18N.t('wizard.images_ready', { count: createState.images.length }));
+}
+
 $('btnGenerateImages').onclick = async () => {
   const btn = $('btnGenerateImages');
   if (!requireKey()) return;
   setBusy(btn, true, I18N.t('wizard.generating_ellipsis'));
-  setStatus('imageStatus', I18N.t('wizard.generating_images'));
   try {
-    if ($('wizSystemPrompt').value.trim()) {
-      createState.systemPrompt = $('wizSystemPrompt').value.trim();
-      $('wizFinalPrompt').value = createState.systemPrompt;
-    } else {
-      await ensurePrompt(true);
-    }
-    const imagePrompt = $('wizImagePrompt').value.trim();
-    if (!imagePrompt) throw new Error(I18N.t('wizard.err.fill_image_desc'));
-    const res = await fetch('/api/create/images', {
-      method: 'POST',
-      headers: headersJson(),
-      body: JSON.stringify({
-        prompt: imagePrompt,
-        reference_description: `${$('wizName').value.trim()} ${$('wizRole').value.trim()}`.trim(),
-        count: 4,
-        job_id: createState.promptJobId || '',
-      }),
+    await doGenerateImages();
+  } catch (e) {
+    setStatus('imageStatus', e.message, true);
+  } finally {
+    setBusy(btn, false);
+  }
+  refreshRegenUi();
+};
+
+// 对生成的图不满意：把反馈交给 AI 改写图像 Prompt，然后直接重新生成
+$('btnImageFeedback').onclick = async () => {
+  const btn = $('btnImageFeedback');
+  const feedback = $('wizImageFeedback').value.trim();
+  if (!feedback) { setStatus('imageStatus', I18N.t('wizard.image_feedback_empty'), true); return; }
+  if (!requireKey()) return;
+  setBusy(btn, true, I18N.t('wizard.generating_ellipsis'));
+  try {
+    setStatus('imageStatus', I18N.t('wizard.image_feedback_rewriting'));
+    const { res, data } = await postJson('/api/create/field-assist', {
+      field: 'image_prompt',
+      action: 'custom',
+      value: $('wizImagePrompt').value,
+      instruction: feedback,
+      context: assistContext(),
+      language: $('wizReplyLanguage').value || '',
     });
+    if (!res.ok) throw new Error(errMsg(data, I18N.t('wizard.assist.failed')));
+    $('wizImagePrompt').value = data.text;
+    $('wizImageFeedback').value = '';
+    await doGenerateImages();
+  } catch (e) {
+    setStatus('imageStatus', e.message, true);
+  } finally {
+    setBusy(btn, false);
+  }
+  refreshRegenUi();
+};
+
+// 生成过之后，按钮改成「重新生成」，并出现反馈框；视频那边同理
+function setLabel(btn, key) {
+  if (btn.disabled) return;  // 忙碌中按钮显示的是「生成中…」，结束后会再刷新一次
+  btn.dataset.i18n = key;
+  btn.textContent = I18N.t(key);
+}
+function refreshRegenUi() {
+  const generated = createState.images.some(img => img.source === 'minimax');
+  setLabel($('btnGenerateImages'), generated ? 'wizard.regen_images' : 'wizard.generate_images');
+  $('imageFeedbackBox').hidden = !generated;
+  refreshVideoUi();
+}
+
+// 重新生成的候选图沿用同样的文件名，换一个版本号避免浏览器显示旧图
+let _imagesVersion = Date.now();
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+
+$('btnUploadImage').onclick = () => {
+  if (!$('imageRightsAck').checked) {
+    setStatus('imageStatus', I18N.t('wizard.rights_ack_required'), true);
+    return;
+  }
+  $('imageUploadInput').click();
+};
+$('imageUploadInput').onchange = async () => {
+  const input = $('imageUploadInput');
+  const file = input.files[0];
+  input.value = '';
+  if (!file) return;
+  if (file.size > MAX_IMAGE_BYTES) {
+    setStatus('imageStatus', I18N.t('wizard.err.file_too_large', { name: file.name, mb: 10 }), true);
+    return;
+  }
+  const form = new FormData();
+  form.append('file', file);
+  form.append('job_id', createState.promptJobId || '');
+  form.append('rights_ack', 'true');
+  const btn = $('btnUploadImage');
+  setBusy(btn, true, I18N.t('wizard.uploading'));
+  setStatus('imageStatus', I18N.t('wizard.uploading'));
+  try {
+    const res = await fetch('/api/create/images/upload', { method: 'POST', headers: authHeaders(), body: form });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || I18N.t('wizard.err.image_gen_failed')));
+    if (!res.ok) throw new Error(errMsg(data, I18N.t('wizard.err.upload_failed')));
     createState.promptJobId = data.job_id;
     createState.images = data.images || [];
+    _imagesVersion = Date.now();
+    createState.selectedImageId = data.image.id;
     renderImageChoices();
-    setStatus('imageStatus', I18N.t('wizard.images_ready', { count: createState.images.length }));
-    showWizardStep(4);
+    setStatus('imageStatus', I18N.t('wizard.image_uploaded'));
   } catch (e) {
     setStatus('imageStatus', e.message, true);
   } finally {
@@ -1117,13 +1858,16 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeImageLi
 function renderImageChoices() {
   const box = $('imageChoices');
   box.innerHTML = '';
+  if (!createState.selectedImageId && createState.images[0]) {
+    createState.selectedImageId = createState.images[0].id;
+  }
   createState.images.forEach(img => {
     const item = document.createElement('div');
     item.className = 'image-choice' + (img.id === createState.selectedImageId ? ' selected' : '');
     const altText = escapeHtml(I18N.t('wizard.candidate_image_alt'));
     item.innerHTML =
-      `<img src="${img.url}" alt="${altText}">` +
-      `<button type="button" class="image-zoom-btn" data-i18n-attr="title:wizard.image_zoom_hint" title="點擊圖片放大查看" aria-label="${altText}">` +
+      `<img src="${img.url}?v=${_imagesVersion}" alt="${altText}">` +
+      `<button type="button" class="image-zoom-btn" data-i18n-attr="title:wizard.image_zoom_hint" title="${escapeHtml(I18N.t('wizard.image_zoom_hint'))}" aria-label="${altText}">` +
       `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>` +
       `</button>`;
     item.onclick = () => {
@@ -1132,80 +1876,178 @@ function renderImageChoices() {
     };
     item.querySelector('.image-zoom-btn').onclick = e => {
       e.stopPropagation();
-      openImageLightbox(img.url);
+      openImageLightbox(`${img.url}?v=${_imagesVersion}`);
     };
     box.appendChild(item);
   });
-  if (!createState.selectedImageId && createState.images[0]) {
-    createState.selectedImageId = createState.images[0].id;
-    renderImageChoices();
-  }
+  refreshRegenUi();
 }
 
-$('btnGenerateVideos').onclick = async () => {
-  const btn = $('btnGenerateVideos');
+// ── 视频：平台生成 | 上传我的 idle + talk ─────────────────
+function renderVideoPreview() {
+  const v = createState.videos || {};
+  const bust = Date.now();
+  $('videoPreview').innerHTML = ['idle', 'talk']
+    .filter(k => v[k])
+    .map(k => `<div class="vid"><video src="${v[k]}?t=${bust}" autoplay muted loop playsinline></video><span class="vid-tag">${k}</span></div>`)
+    .join('');
+}
+
+// 平台生成的视频是用某一张形象图做首帧的；之后换了形象图（或整批重新生成图片），
+// 视频里的人就和新形象对不上了，需要提示并要求重新生成
+function videosStale() {
+  return !!createState.videoImageId && createState.videoImageId !== createState.selectedImageId;
+}
+
+function refreshVideoUi() {
+  const platform = !!createState.videoImageId;
+  const stale = videosStale();
+  setLabel($('btnGenerateVideos'), platform ? 'wizard.regen_videos_both' : 'wizard.generate_videos');
+  // 只重做一段的前提是形象图没换，否则 idle 和 talk 里的人会对不上
+  $('btnRegenIdle').hidden = $('btnRegenTalk').hidden = !platform || stale;
+  $('videoRegenNote').hidden = !platform;
+  const status = $('videoStatus');
+  if (stale) setStatus('videoStatus', I18N.t('wizard.video_stale'), false), status.classList.add('warn');
+  else if (status.classList.contains('warn')) { setStatus('videoStatus', ''); status.classList.remove('warn'); }
+}
+
+// which: both | idle | talk。feedback 是用户对视频的要求，每次生成都会带上
+async function generateVideos(btn, which) {
   if (!requireKey()) return;
   if (!createState.selectedImageId) {
     setStatus('videoStatus', I18N.t('wizard.select_image_first'), true);
     return;
   }
+  $('videoStatus').classList.remove('warn');
   setBusy(btn, true, I18N.t('wizard.video_generating_ellipsis'));
-  setStatus('videoStatus', I18N.t('wizard.generating_videos'));
+  setStatus('videoStatus', I18N.t(which === 'both' ? 'wizard.generating_videos' : 'wizard.generating_video_one', { kind: which }));
   try {
-    const res = await fetch('/api/create/videos', {
-      method: 'POST',
-      headers: headersJson(),
-      body: JSON.stringify({
-        job_id: createState.promptJobId,
-        image_id: createState.selectedImageId,
-        character_name: $('wizName').value.trim(),
-        image_prompt: $('wizImagePrompt').value.trim(),
-      }),
+    const { res, data } = await postJson('/api/create/videos', {
+      job_id: createState.promptJobId,
+      image_id: createState.selectedImageId,
+      character_name: $('wizName').value.trim(),
+      image_prompt: $('wizImagePrompt').value.trim(),
+      feedback: $('wizVideoFeedback').value.trim(),
+      which,
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || I18N.t('wizard.err.video_gen_failed')));
+    if (!res.ok) throw new Error(errMsg(data, I18N.t('wizard.err.video_gen_failed')));
     createState.videos = data.videos;
-    $('videoPreview').innerHTML = `
-      <video src="${data.videos.idle}" autoplay muted loop playsinline></video>
-      <video src="${data.videos.talk}" autoplay muted loop playsinline></video>`;
+    createState.videoImageId = data.videos_image_id || createState.selectedImageId;
+    renderVideoPreview();
     setStatus('videoStatus', I18N.t('wizard.videos_ready'));
-    showWizardStep(5);
   } catch (e) {
     setStatus('videoStatus', e.message, true);
   } finally {
     setBusy(btn, false);
   }
-};
+  refreshVideoUi();
+}
+$('btnGenerateVideos').onclick = () => generateVideos($('btnGenerateVideos'), 'both');
+$('btnRegenIdle').onclick = () => generateVideos($('btnRegenIdle'), 'idle');
+$('btnRegenTalk').onclick = () => generateVideos($('btnRegenTalk'), 'talk');
+
+function pickVideo(kind) {
+  if (!$('videoRightsAck').checked) {
+    setStatus('videoStatus', I18N.t('wizard.rights_ack_required'), true);
+    return;
+  }
+  $(`${kind}UploadInput`).click();
+}
+$('btnUploadIdle').onclick = () => pickVideo('idle');
+$('btnUploadTalk').onclick = () => pickVideo('talk');
+
+async function uploadVideo(kind) {
+  const input = $(`${kind}UploadInput`);
+  const file = input.files[0];
+  input.value = '';
+  if (!file) return;
+  if (file.size > MAX_VIDEO_BYTES) {
+    setStatus('videoStatus', I18N.t('wizard.err.file_too_large', { name: file.name, mb: 100 }), true);
+    return;
+  }
+  const form = new FormData();
+  form.append('file', file);
+  form.append('kind', kind);
+  form.append('job_id', createState.promptJobId || '');
+  form.append('rights_ack', 'true');
+  const btn = $(kind === 'idle' ? 'btnUploadIdle' : 'btnUploadTalk');
+  setBusy(btn, true, I18N.t('wizard.uploading'));
+  setStatus('videoStatus', I18N.t('wizard.uploading'));
+  try {
+    const res = await fetch('/api/create/videos/upload', { method: 'POST', headers: authHeaders(), body: form });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(errMsg(data, I18N.t('wizard.err.upload_failed')));
+    createState.promptJobId = data.job_id;
+    createState.videos = data.videos;
+    createState.videoImageId = '';  // 用户自己的视频，不再和形象图绑定
+    renderVideoPreview();
+    setStatus('videoStatus', I18N.t('wizard.video_uploaded', { kind }));
+  } catch (e) {
+    setStatus('videoStatus', e.message, true);
+  } finally {
+    setBusy(btn, false);
+  }
+}
+$('idleUploadInput').onchange = () => uploadVideo('idle');
+$('talkUploadInput').onchange = () => uploadVideo('talk');
+
+// ── 完成 ─────────────────────────────────────────────────
+function resetWizard() {
+  createState = emptyCreateState();
+  promptHistory.reset();
+  ['wizName', 'wizNameEn', 'wizRole', 'wizBackground', 'wizSpeaking', 'wizSearchQuery', 'wizKnowledge',
+   'wizKnowledgeRequest', 'wizKnowledgeUrls', 'wizSystemPrompt', 'wizImagePrompt', 'wizExternalPrompt',
+   'wizImageFeedback', 'wizVideoFeedback']
+    .forEach(id => { $(id).value = ''; });
+  smartFiles = [];
+  renderSmartFiles();
+  renderAgentSteps([]);
+  $('agentSuggest').hidden = true;
+  $('externalPromptBox').hidden = true;
+  $('imageChoices').innerHTML = '';
+  $('videoPreview').innerHTML = '';
+  $('imageRightsAck').checked = false;
+  $('videoRightsAck').checked = false;
+  ['knowledgeStatus', 'promptStatus', 'imageStatus', 'videoStatus', 'finalStatus'].forEach(id => setStatus(id, ''));
+  $('videoStatus').classList.remove('warn');
+  updateKnowledgeCount();
+  refreshRegenUi();
+}
 
 $('btnFinalize').onclick = async () => {
   const btn = $('btnFinalize');
-  if (!createState.videos) {
+  const videos = createState.videos || {};
+  if (!videos.idle || !videos.talk) {
     setStatus('finalStatus', I18N.t('wizard.videos_required'), true);
+    return;
+  }
+  if (!currentPrompt()) {
+    setStatus('finalStatus', I18N.t('wizard.err.prompt_required'), true);
+    return;
+  }
+  if (videosStale()) {
+    setStatus('finalStatus', I18N.t('wizard.video_stale'), true);
     return;
   }
   setBusy(btn, true, I18N.t('wizard.writing_ellipsis'));
   setStatus('finalStatus', I18N.t('wizard.writing'));
   try {
-    const name = $('wizName').value.trim();
-    const res = await fetch('/api/create/finalize', {
-      method: 'POST',
-      headers: headersJson(),
-      body: JSON.stringify({
-        job_id: createState.promptJobId,
-        character_id: name,
-        name,
-        name_en: $('wizNameEn').value.trim(),
-        role: $('wizRole').value.trim(),
-        system_prompt: $('wizFinalPrompt').value.trim() || createState.systemPrompt,
-        tts_voice_id: $('wizTtsVoice').value.trim() || 'Cantonese_PlayfulMan',
-        tts_language: $('wizTtsLanguage').value.trim() || 'Chinese,Yue',
-        asr_lang: $('wizAsrLang').value.trim() || 'zh-HK',
-        theme_color: '#8A6D3B',
-      }),
+    const { res, data } = await postJson('/api/create/finalize', {
+      job_id: createState.promptJobId,
+      image_id: createState.selectedImageId || '',
+      name: $('wizName').value.trim(),
+      name_en: $('wizNameEn').value.trim(),
+      role: $('wizRole').value.trim(),
+      system_prompt: currentPrompt(),
+      knowledge_text: $('wizKnowledge').value.trim(),
+      tts_voice_id: $('wizTtsVoice').value.trim() || 'Cantonese_PlayfulMan',
+      tts_language: $('wizTtsLanguage').value.trim() || 'Chinese,Yue',
+      asr_lang: $('wizAsrLang').value.trim() || 'zh-HK',
+      theme_color: '#8A6D3B',
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(typeof data.detail === 'object' ? JSON.stringify(data.detail) : (data.detail || I18N.t('wizard.err.char_write_failed')));
+    if (!res.ok) throw new Error(errMsg(data, I18N.t('wizard.err.char_write_failed')));
     setStatus('finalStatus', I18N.t('wizard.done'));
+    resetWizard();
     closeWizard();
     await loadCharacters();
   } catch (e) {
@@ -1214,6 +2056,13 @@ $('btnFinalize').onclick = async () => {
     setBusy(btn, false);
   }
 };
+
+I18N.onChange(() => {
+  refreshRegenUi();
+  setKnowledgeMode(knowledgeSmart);
+  renderAgentSteps(_agentSteps);
+  updateKnowledgeCount();
+});
 
 fileInput.onchange = async () => {
   const file = fileInput.files[0];
@@ -1242,13 +2091,6 @@ VoiceUI.attachFilter($('wizTtsLanguageSearch'), $('wizTtsLanguage'));
 VoiceUI.attachFilter($('wizTtsVoiceSearch'), $('wizTtsVoice'));
 VoiceUI.attachFilter($('wizAsrLangSearch'), $('wizAsrLang'));
 VoiceUI.attachFilter($('wizReplyLanguageSearch'), $('wizReplyLanguage'));
-
-// 角色 Prompt 撤销/恢复：两个步骤各有一对按钮，共用同一条历史栈
-['btnPromptUndoStep1', 'btnPromptUndoStep5'].forEach(id => $(id).onclick = undoPrompt);
-['btnPromptRedoStep1', 'btnPromptRedoStep5'].forEach(id => $(id).onclick = redoPrompt);
-// 手动编辑完，一离开个 textarea 就记一个历史点（唔系每个按键都记，避免历史栈太乱）
-$('wizSystemPrompt').addEventListener('blur', () => pushPromptHistory($('wizSystemPrompt').value.trim()));
-$('wizFinalPrompt').addEventListener('blur', () => pushPromptHistory($('wizFinalPrompt').value.trim()));
 
 // Voice-language sync: auto-switch language when voice changes
 $('wizTtsVoice').addEventListener('change', function() {
